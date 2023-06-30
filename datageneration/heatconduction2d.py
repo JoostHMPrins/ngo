@@ -44,7 +44,6 @@ def main(params, save, savedir, label):
     sqr += domain.boundary['right'].integral('(u - gr)^2 dS' @ ns, degree=params['intdegree'])
     cons = solver.optimize('lhs', sqr, droptol=1e-15)
 
-    # The unconstrained entries of ``?lhs`` are to be determined such that the
     # residual vector evaluates to zero in the corresponding entries. This step
     # involves a linearization of ``res``, resulting in a jacobian matrix and
     # right hand side vector that are subsequently assembled and solved. The
@@ -54,6 +53,9 @@ def main(params, save, savedir, label):
     #Sampling of the input functions and solution
     bezier = domain.sample('bezier', params['nfemsamples'])
     x, theta, f, etat, etab, gl, gr, u = bezier.eval(['x_i', 'theta', 'f', 'etat', 'etab', 'gl', 'gr', 'u'] @ ns, lhs=lhs)
+    
+    #post-processing of data
+    print(x.shape)
     
     #Save data
     if save==True:        
@@ -121,6 +123,5 @@ def main(params, save, savedir, label):
 #     plt.colorbar(fig)
 
     # plt.savefig("heatconduction_u.svg", bbox_inches='tight')
-
     
     return x, theta, f, etat, etab, gl, gr, u
