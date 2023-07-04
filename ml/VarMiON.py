@@ -71,18 +71,14 @@ class VarMiON(pl.LightningModule):
         return optimizer
 
     def training_step(self, train_batch, batch_idx):
-        x, y = train_batch
-        x = x.view(x.size(0), -1)
-        z = self.encoder(x)    
-        x_hat = self.decoder(z)
-        loss = F.mse_loss(x_hat, x)
+        Theta, F, N, x, u = train_batch
+        u_hat = VarMiON().forward(Theta, F, N, x)
+        loss = F.mse_loss(u_hat, u)
         self.log('train_loss', loss)
         return loss
 
     def validation_step(self, val_batch, batch_idx):
-        x, y = val_batch
-        x = x.view(x.size(0), -1)
-        z = self.encoder(x)
-        x_hat = self.decoder(z)
-        loss = F.mse_loss(x_hat, x)
+        Theta, F, N, x, u = val_batch
+        u_hat = VarMiON().forward(Theta, F, N, x)
+        loss = F.mse_loss(u_hat, u)
         self.log('val_loss', loss)
