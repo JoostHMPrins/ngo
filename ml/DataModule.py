@@ -18,18 +18,18 @@ class DataModule(pl.LightningDataModule):
             self.params = params
 
     def setup(self, stage=None):
-        self.theta = np.load(self.data_dir + '/theta.npy')
-        self.f = np.load(self.data_dir + '/f.npy')
-        self.eta = np.load(self.data_dir + '/eta.npy')
+        self.Theta = np.load(self.data_dir + '/Theta.npy')
+        self.F = np.load(self.data_dir + '/f.npy')
+        self.N = np.load(self.data_dir + '/eta.npy')
         self.x = np.load(self.data_dir + '/x.npy')
         self.u = np.load(self.data_dir + '/u.npy')
-        self.theta = torch.tensor(self.theta, dtype=self.hparams['dtype'])
-        self.f = torch.tensor(self.f, dtype=self.hparams['dtype'])
-        self.eta = torch.tensor(self.eta, dtype=self.hparams['dtype'])
+        self.Theta = torch.tensor(self.Theta, dtype=self.hparams['dtype'])
+        self.F = torch.tensor(self.F, dtype=self.hparams['dtype'])
+        self.N = torch.tensor(self.N, dtype=self.hparams['dtype'])
         self.x = torch.tensor(self.x, dtype=self.hparams['dtype'])
         self.u = torch.tensor(self.u, dtype=self.hparams['dtype'])
         
-        self.dataset = torch.utils.data.TensorDataset(self.f, self.theta, self.eta, self.x, self.u)
+        self.dataset = torch.utils.data.TensorDataset(self.Theta, self.F, self.N, self.x, self.u)
         self.trainingset, self.validationset = random_split(self.dataset, [int(0.9*self.u.shape[0]), int(0.1*self.u.shape[0])])
 
     def train_dataloader(self):
