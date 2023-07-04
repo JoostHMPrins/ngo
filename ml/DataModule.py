@@ -8,26 +8,23 @@ import pytorch_lightning as pl
     
 class DataModule(pl.LightningDataModule):
 
-    def __init__(self, data_dir, hparams):
+    def __init__(self, data_dir, params):
         super().__init__()
         
         self.data_dir = data_dir
         
         with open(self.data_dir + '/params.json', 'r') as fp:
-            trainingdataparams = json.load(fp)
-        self.trainingdataparams = trainingdataparams
-        
-        self.hparams = hparams
+            params = json.load(fp)
+            self.params = params
 
     def setup(self, stage=None):
-        self.f = np.load(self.data_dir + '/f.npy')
         self.theta = np.load(self.data_dir + '/theta.npy')
+        self.f = np.load(self.data_dir + '/f.npy')
         self.eta = np.load(self.data_dir + '/eta.npy')
         self.x = np.load(self.data_dir + '/x.npy')
         self.u = np.load(self.data_dir + '/u.npy')
-
-        self.f = torch.tensor(self.f, dtype=self.hparams['dtype'])
         self.theta = torch.tensor(self.theta, dtype=self.hparams['dtype'])
+        self.f = torch.tensor(self.f, dtype=self.hparams['dtype'])
         self.eta = torch.tensor(self.eta, dtype=self.hparams['dtype'])
         self.x = torch.tensor(self.x, dtype=self.hparams['dtype'])
         self.u = torch.tensor(self.u, dtype=self.hparams['dtype'])
