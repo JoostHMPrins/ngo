@@ -96,9 +96,9 @@ def postprocessdata(params, inputs, outputs):
     u_post = u_output
     
     data_postprocessed = {}
-    data_postprocessed['theta'] = theta_post
-    data_postprocessed['f'] = f_post
-    data_postprocessed['eta'] = eta_post
+    data_postprocessed['Theta'] = theta_post
+    data_postprocessed['F'] = f_post
+    data_postprocessed['N'] = eta_post
     data_postprocessed['x'] = x_post
     data_postprocessed['u'] = u_post
     
@@ -107,9 +107,9 @@ def postprocessdata(params, inputs, outputs):
 
 def datasetgenerator(params, save, savedir, label):
     
-    theta_array = []
-    f_array = []
-    eta_array = []
+    Theta_array = []
+    F_array = []
+    N_array = []
     x_array = []
     u_array = []
     
@@ -137,18 +137,18 @@ def datasetgenerator(params, save, savedir, label):
         data_postprocessed = postprocessdata(params, inputs, outputs)
         
         #Collect data
-        theta_array.append(data_postprocessed['theta'])
-        f_array.append(data_postprocessed['f'])
-        eta_array.append(data_postprocessed['eta'])
+        Theta_array.append(data_postprocessed['Theta'])
+        F_array.append(data_postprocessed['F'])
+        N_array.append(data_postprocessed['N'])
         x_array.append(data_postprocessed['x'])
         u_array.append(data_postprocessed['u'])
     
     #Convert to numpy and save
-    theta_array = np.array(theta_array)
-    f_array = np.array(f_array)
-    eta_array = np.array(eta_array)
+    Theta_array = np.array(Theta_array)
+    F_array = np.array(F_array)
+    N_array = np.array(N_array)
     x_array = np.array(x_array)
     u_array = np.array(u_array)
-    data = {'theta': theta_array, 'f': f_array, 'eta': eta_array, 'x': x_array, 'u': u_array}
+    data = {'Theta': Theta_array, 'F': F_array, 'N': N_array, 'x': x_array, 'u': u_array}
     if save==True:
         savedata(params, data, savedir, label)
