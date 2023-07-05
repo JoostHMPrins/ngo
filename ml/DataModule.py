@@ -8,7 +8,7 @@ import pytorch_lightning as pl
     
 class DataModule(pl.LightningDataModule):
 
-    def __init__(self, data_dir, params):
+    def __init__(self, data_dir, hparams):
         super().__init__()
         
         self.data_dir = data_dir
