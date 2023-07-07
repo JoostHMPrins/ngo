@@ -15,4 +15,4 @@ params = {}
 params['simparams'] = simparams
 params['trainingdataparams'] = trainingdataparams
 
-datasetgenerator(params, save=True, savedir='../../../trainingdata', label='test2')
+datasetgenerator(params, save=True, savedir='../../../trainingdata', label='testlarge')

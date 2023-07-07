@@ -112,12 +112,12 @@ def datasetgenerator(params, save, savedir, label):
         print("Simulation: "+str(i))
         
         #Generate random input data
-        c_theta = np.random.uniform(-0.1, 0.1, 10)
-        c_f = np.random.uniform(-0.1, 0.1, 10)
-        c_etab = np.random.uniform(-0.1, 0.1, 4)
-        c_etat = np.random.uniform(-0.1, 0.1, 4)
-        theta = randompoly2DO3(c_theta)
-        f = randompoly2DO3(c_f)
+        c_theta = np.random.uniform(-0.5, 0.5, 10)
+        c_f = np.random.uniform(-0.5, 0.5, 10)
+        c_etab = np.random.uniform(-0.5, 0.5, 4)
+        c_etat = np.random.uniform(-0.5, 0.5, 4)
+        theta = randompoly2DO3sqr(c_theta)
+        f = randompoly2DO3sqr(c_f)
         etab = randompoly1DO3(c_etab)
         etat = randompoly1DO3(c_etat)
         gl = 0
