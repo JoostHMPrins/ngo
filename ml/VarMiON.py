@@ -6,15 +6,18 @@ import pytorch_lightning as pl
 class GaussianRBF(nn.Module):
     def __init__(self, input_dim, output_dim):
         super().__init__()
-        self.output_dim = output_dim
         #Definition and initialization of centers and scales
         self.mus = torch.nn.Parameter(torch.ones(output_dim, input_dim))
         self.log_sigmas = torch.nn.Parameter(torch.ones(output_dim))
+        self.reset_parameters()
+        
+    def reset_parameters(self):
         nn.init.uniform_(self.mus, 0, 1)
-        nn.init.constant_(self.log_sigmas, 0)
+        nn.init.constant_(self.log_sigmas, -1)
         
     def forward(self, x):
-        d_scaled = (x[:,:,None,:] - self.mus[None,None,:,:]/torch.exp(self.log_sigmas[None,None,:,None]))
+        d_scaled = ((x[:,:,None,:] - self.mus[None,None,:,:])/torch.exp(self.log_sigmas[None,None,:,None]))
+        output = torch.exp(-(torch.linalg.vector_norm(d_scaled, axis=-1, ord=2))**2/2)
         return torch.exp(-(torch.linalg.vector_norm(d_scaled, axis=-1, ord=2))**2/2)
     
     
@@ -61,6 +64,7 @@ class VarMiON(pl.LightningModule):
         self.NLBranch = NLBranchNet()
         self.LBranch = LBranchNet(144,72)
         self.Trunk = GaussianRBF(2,72)
+        # self.Trunk = RBF(2,72,gaussian)
         
     def forward(self, Theta, F, N, x):
         NLBranch = self.NLBranch.forward(Theta)
