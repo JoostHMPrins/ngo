@@ -1,9 +1,10 @@
 import numpy as np
-from scipy.interpolate import RBFInterpolator
+from scipy.interpolate import Rbf
 from numba import jit
+import typing
+from nutils import function, evaluable
 
-
-@jit
+# @jit
 def GRF2D(N_gridpoints, l, positive):
 
     #Compute covariance matrix of points on a grid
@@ -25,12 +26,37 @@ def GRF2D(N_gridpoints, l, positive):
 
     #Interpolate GRF data with RBF interpolator
     GRF = GRF.flatten()
-    GRFfunction = RBFInterpolator(x, GRF, kernel='gaussian', epsilon=1/(1/N_gridpoints - 1))
+    GRFfunction = Rbf(x[:,0], x[:,1], GRF, function='gaussian', epsilon=l)
     
     return GRFfunction
 
+class NutilsFunction(evaluable.Pointwise):
+    def __init__(self, function):
+        None
+    'Inverse tangent, element-wise.'
+    evalf = staticmethod(function)
+    complex_deriv = lambda x: None,
+    return_type = float
+    
 
-@jit
+IntoArray = typing.Union['Array', np.ndarray, bool, int, float, complex]
+
+def grf2d(N_gridpoints, l, positive, __arg: IntoArray) -> function.Array:
+    '''Return the trigonometric inverse tangent of the argument, elementwise.
+
+    Parameters
+    ----------
+    arg : :class:`Array` or something that can be :meth:`~Array.cast` into one
+
+    Returns
+    -------
+    :class:`Array`
+    '''
+
+    return function._Wrapper.broadcasted_arrays(NutilsFunction(GRF2D(N_gridpoints, l, positive)), __arg, min_dtype=float)
+
+
+# @jit
 def GRF1D(N_gridpoints, l):
 
     #Compute covariance matrix of points on a grid
@@ -50,6 +76,6 @@ def GRF1D(N_gridpoints, l):
 
     #Interpolate GRF data with RBF interpolator
     GRF = GRF.flatten()
-    GRFfunction = RBFInterpolator(x, GRF, kernel='gaussian', epsilon=1/(1/N_gridpoints - 1))
+    GRFfunction = Rbf(x, GRF, function='gaussian', epsilon=l)
     
     return GRFfunction
