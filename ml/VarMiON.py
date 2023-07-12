@@ -62,13 +62,14 @@ class VarMiON(pl.LightningModule):
         self.params = params
         self.hparams.update(params['hparams'])
         self.NLBranch = NLBranchNet()
-        self.LBranch = LBranchNet(144,72)
+        self.LBranchF = LBranchNet(144,72)
+        self.LBranchN = LBranchNet(144,72)
         self.Trunk = GaussianRBF(2,72)
         # self.Trunk = RBF(2,72,gaussian)
         
     def forward(self, Theta, F, N, x):
         NLBranch = self.NLBranch.forward(Theta)
-        LBranch = self.LBranch.forward(F) + self.LBranch.forward(N)
+        LBranch = self.LBranchF.forward(F) + self.LBranchN.forward(N)
         Branch = torch.einsum('nij,nj->ni', NLBranch, LBranch)
         Trunk = self.Trunk.forward(x)
         u_hat = torch.einsum('ni,nbi->nb', Branch, Trunk)
