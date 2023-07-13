@@ -1,6 +1,8 @@
 import torch
 from torch import nn
 import pytorch_lightning as pl
+import numpy as np
+from torch_rbf import RBF, gaussian
 
 
 class GaussianRBF(nn.Module):
@@ -17,8 +19,8 @@ class GaussianRBF(nn.Module):
         
     def forward(self, x):
         d_scaled = ((x[:,:,None,:] - self.mus[None,None,:,:])/torch.exp(self.log_sigmas[None,None,:,None]))
-        output = torch.exp(-(torch.linalg.vector_norm(d_scaled, axis=-1, ord=2))**2/2)
-        return torch.exp(-(torch.linalg.vector_norm(d_scaled, axis=-1, ord=2))**2/2)
+        output = torch.exp(-1/2*(torch.linalg.vector_norm(d_scaled, axis=-1, ord=2))**2)
+        return torch.exp(-1/2*(torch.linalg.vector_norm(d_scaled, axis=-1, ord=2))**2)
     
     
 class NLBranchNet(nn.Module):
@@ -45,10 +47,22 @@ class NLBranchNet(nn.Module):
 
     
 class LBranchNet(nn.Module):
-    def __init__(self, input_dim=100, output_dim=72):
+    def __init__(self, input_dim, output_dim):
         super().__init__()
         self.layers = nn.ModuleList()
         self.layers.append(nn.Linear(input_dim, output_dim))
+
+    def forward(self, x):
+        for layer in self.layers:
+            x = layer(x)
+        return x
+    
+
+class TrunkNet(nn.Module):
+    def __init__(self, input_dim, output_dim, basis_func):
+        super().__init__()
+        self.layers = nn.ModuleList()
+        self.layers.append(RBF(in_features=input_dim, out_features=output_dim, basis_func=basis_func))
 
     def forward(self, x):
         for layer in self.layers:
@@ -62,18 +76,34 @@ class VarMiON(pl.LightningModule):
         self.params = params
         self.hparams.update(params['hparams'])
         self.NLBranch = NLBranchNet()
-        self.LBranchF = LBranchNet(144,72)
-        self.LBranchN = LBranchNet(144,72)
-        self.Trunk = GaussianRBF(2,72)
+        self.LBranchF = LBranchNet(input_dim=144, output_dim=72)
+        self.LBranchN = LBranchNet(input_dim=144, output_dim=72)
+        # self.Trunk = TrunkNet(input_dim=2, output_dim=72, basis_func=gaussian)
         # self.Trunk = RBF(2,72,gaussian)
+        self.Trunk = GaussianRBF(2,72)
         
     def forward(self, Theta, F, N, x):
         NLBranch = self.NLBranch.forward(Theta)
         LBranch = self.LBranchF.forward(F) + self.LBranchN.forward(N)
         Branch = torch.einsum('nij,nj->ni', NLBranch, LBranch)
         Trunk = self.Trunk.forward(x)
-        u_hat = torch.einsum('ni,nbi->nb', Branch, Trunk)
+        u_hat = torch.einsum('ni,noi->no', Branch, Trunk)
         return u_hat
+    
+    def simforward(self, Theta, F, N, x):
+        Theta = torch.tensor(Theta, dtype=self.hparams['dtype'])
+        Theta = Theta.unsqueeze(0)
+        F = torch.tensor(F, dtype=self.hparams['dtype'])
+        F = F.unsqueeze(0)
+        N = torch.tensor(N, dtype=self.hparams['dtype'])
+        N = N.unsqueeze(0)
+        x = torch.tensor(x, dtype=self.hparams['dtype'])
+        x = x.unsqueeze(0)
+        u = self.forward(Theta, F, N, x)
+        u = torch.detach(u).cpu()
+        u = np.array(u)
+        u = u[0]
+        return u
 
     def configure_optimizers(self):
         optimizer = self.hparams['optimizer'](self.parameters(), lr=self.hparams['learning_rate'])
@@ -99,3 +129,8 @@ class VarMiON(pl.LightningModule):
         #     loss = loss + self.hparams['loss_coeffs'][i]*self.hparams['loss_terms'][i](self, u_hat, u)
         # loss = loss/sum(self.hparams['loss_coeffs'])
         self.log('val_loss', loss)
+        metric = self.hparams['metric'](u_hat, u)
+        self.log('metric', metric)
+        
+    def on_save_checkpoint(self, checkpoint):
+        checkpoint['params'] = self.params
