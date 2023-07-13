@@ -3,8 +3,8 @@ import matplotlib.pyplot as plt
 from nutils import mesh, function, solver
 from nutils.expression_v2 import Namespace
 
-from randompolynomials import randompoly1DO3, randompoly2DO3
-from gaussianrandomfields import GRF1D, GRF2D, grf2d
+from randompolynomials import randompoly1DO3, randompoly2DO3, randompoly2DO3sqr
+from gaussianrandomfields import GRF1D, GRF2D
 from datasaver import savedata
 from nutils.sparse import dtype, toarray
 
@@ -27,8 +27,8 @@ def main(params, inputs, save, savedir, label):
     gl = inputs['gl'] #Dirichlet BC left
     gr = inputs['gr'] #Dirichlet BC right
     
-    ns.theta = theta(ns.x)
-    ns.f = f(ns.x)
+    ns.theta = theta(ns.x[0],ns.x[1])
+    ns.f = f(ns.x[0],ns.x[1])
     ns.etat = etat(ns.x[0])
     ns.etab = etab(ns.x[0])
     ns.gl = gl
@@ -113,12 +113,13 @@ def datasetgenerator(params, save, savedir, label):
         print("Simulation: "+str(i))
         
         if params['inputdataparams']['type']=='polynomial':
-            c_theta = np.random.uniform(-0.5, 0.5, 10)
-            c_f = np.random.uniform(-0.5, 0.5, 10)
-            c_etab = np.random.uniform(-0.5, 0.5, 4)
-            c_etat = np.random.uniform(-0.5, 0.5, 4)
+            
+            c_theta = np.random.uniform(-1, 1, 10)
+            c_f = np.random.uniform(-1, 1, 10)
+            c_etab = np.random.uniform(-1, 1, 4)
+            c_etat = np.random.uniform(-1, 1, 4)
             theta = randompoly2DO3sqr(c_theta)
-            f = randompoly2DO3sqr(c_f)
+            f = randompoly2DO3(c_f)
             etab = randompoly1DO3(c_etab)
             etat = randompoly1DO3(c_etat)
             gl = 0

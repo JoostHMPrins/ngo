@@ -22,7 +22,6 @@ def train(model, hparams, loaddir, logdir, sublogdir, label):
     #Model
     MLmodel = model(params)
     MLmodel = MLmodel.to(hparams['dtype'])
-    MLmodel.params = params
     
     #Training
     start = time.time() 

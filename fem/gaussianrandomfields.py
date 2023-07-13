@@ -31,17 +31,19 @@ def GRF2D(N_gridpoints, l, positive):
     return GRFfunction
 
 class NutilsFunction(evaluable.Pointwise):
-    def __init__(self, function):
+    def __init__(self):
         None
     'Inverse tangent, element-wise.'
-    evalf = staticmethod(function)
+    evalf = staticmethod(GRF2D)
     complex_deriv = lambda x: None,
     return_type = float
     
 
 IntoArray = typing.Union['Array', np.ndarray, bool, int, float, complex]
 
-def grf2d(N_gridpoints, l, positive, __arg: IntoArray) -> function.Array:
+# def grf2d(__arg: IntoArray) -> function.Array:
+def grf2d(__arg):
+
     '''Return the trigonometric inverse tangent of the argument, elementwise.
 
     Parameters
@@ -53,7 +55,7 @@ def grf2d(N_gridpoints, l, positive, __arg: IntoArray) -> function.Array:
     :class:`Array`
     '''
 
-    return function._Wrapper.broadcasted_arrays(NutilsFunction(GRF2D(N_gridpoints, l, positive)), __arg, min_dtype=float)
+    return function._Wrapper.broadcasted_arrays(NutilsFunction(GRF2D), __arg, min_dtype=float)
 
 
 # @jit
