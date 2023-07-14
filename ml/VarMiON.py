@@ -42,7 +42,7 @@ class NLBranchNet(nn.Module):
         x = x.unsqueeze(1)
         for layer in self.layers:
             x = layer(x)
-        x = x.squeeze()
+        x = x[0]
         return x
 
     
@@ -112,6 +112,7 @@ class VarMiON(pl.LightningModule):
     def training_step(self, train_batch, batch_idx):
         Theta, F, N, x, u = train_batch
         u_hat = self.forward(Theta, F, N, x)
+        eps = 2**(-52)
         loss = nn.functional.mse_loss(u_hat, u)
         # loss = 0
         # for i in range(len(self.hparams['loss_coeffs'])):
@@ -123,6 +124,7 @@ class VarMiON(pl.LightningModule):
     def validation_step(self, val_batch, batch_idx):
         Theta, F, N, x, u = val_batch
         u_hat = self.forward(Theta, F, N, x)
+        eps = 2**(-52)
         loss = nn.functional.mse_loss(u_hat, u)
         # loss = 0
         # for i in range(len(self.hparams['loss_coeffs'])):
