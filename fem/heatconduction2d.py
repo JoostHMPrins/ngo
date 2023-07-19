@@ -6,7 +6,6 @@ from nutils.expression_v2 import Namespace
 from randompolynomials import randompoly1DO3, randompoly2DO3, randompoly2DO3sqr
 from gaussianrandomfields import GRF1D, GRF2D
 from datasaver import savedata
-from nutils.sparse import dtype, toarray
 
 def main(params, inputs, save, savedir, label):
     
@@ -27,10 +26,10 @@ def main(params, inputs, save, savedir, label):
     gl = inputs['gl'] #Dirichlet BC left
     gr = inputs['gr'] #Dirichlet BC right
     
-    ns.theta = theta(ns.x[0],ns.x[1])
-    ns.f = f(ns.x[0],ns.x[1])
-    ns.etat = etat(ns.x[0])
-    ns.etab = etab(ns.x[0])
+    ns.theta = theta(ns.x[0], ns.x[1])
+    ns.f = f(ns.x[0], ns.x[1])
+    ns.etat = 0#etat(ns.x[0])
+    ns.etab = 0#etab(ns.x[0])
     ns.gl = gl
     ns.gr = gr
 
@@ -76,16 +75,23 @@ def postprocessdata(params, inputs, outputs):
     sensornodes_Omega = np.vstack([x_sensor.ravel(), y_sensor.ravel()]).T
     theta_sensor = theta(sensornodes_Omega[:,0], sensornodes_Omega[:,1]).reshape(12,12)
     f_sensor  = f(sensornodes_Omega[:,0], sensornodes_Omega[:,1])
-
+    
     #Sensor nodes grid boundary, sampling of eta at sensor nodes
     sensornodes_Gamma = np.linspace(0,1,int(N_sensornodes/2))
-    etab_sensor = etab(sensornodes_Gamma)
-    etat_sensor = etat(sensornodes_Gamma)
+    if etab==0:
+        etab_sensor = np.zeros(int(N_sensornodes/2))
+    else:
+        etab_sensor = etab(sensornodes_Gamma)
+    if etat==0:
+        etat_sensor = np.zeros(int(N_sensornodes/2))
+    else:
+        etat_sensor = etat(sensornodes_Gamma)
     eta_sensor = np.concatenate((etab_sensor, etat_sensor))
     
     #Sampling of x and u at random output points
-    indices = np.linspace(0,x.shape[0]-1, x.shape[0], dtype=int)
-    indices_output = np.random.choice(indices, size=N_outputnodes, replace=False)
+    # indices = np.linspace(0,x.shape[0]-1, x.shape[0], dtype=int)
+    # indices_output = np.random.choice(indices, size=N_outputnodes, replace=False)
+    indices_output = np.load('/home/prins/st8/prins/phd/trainingdata/indices_output.npy')
     x_output = x[indices_output]
     u_output = u[indices_output]
     
@@ -114,14 +120,15 @@ def datasetgenerator(params, save, savedir, label):
         
         if params['inputdataparams']['type']=='polynomial':
             
-            c_theta = np.random.uniform(-1, 1, 10)
-            c_f = np.random.uniform(-1, 1, 10)
-            c_etab = np.random.uniform(-1, 1, 4)
-            c_etat = np.random.uniform(-1, 1, 4)
+            C = 0.2
+            c_theta = C*np.random.uniform(-1, 1, 10)
+            c_f = C*np.random.uniform(-1, 1, 10)
+            c_etab = C*np.random.uniform(-1, 1, 4)
+            c_etat = C*np.random.uniform(-1, 1, 4)
             theta = randompoly2DO3sqr(c_theta)
-            f = randompoly2DO3(c_f)
-            etab = randompoly1DO3(c_etab)
-            etat = randompoly1DO3(c_etat)
+            f = randompoly2DO3sqr(c_f)
+            etab = 0#randompoly1DO3(c_etab)
+            etat = 0#randompoly1DO3(c_etat)
             gl = 0
             gr = 0
             
