@@ -3,6 +3,8 @@ from scipy.interpolate import Rbf
 from numba import jit
 import typing
 from nutils import function, evaluable
+from nutils.sparse import dtype, toarray
+
 
 # @jit
 def GRF2D(N_gridpoints, l, positive):
@@ -28,11 +30,14 @@ def GRF2D(N_gridpoints, l, positive):
     GRF = GRF.flatten()
     GRFfunction = Rbf(x[:,0], x[:,1], GRF, function='gaussian', epsilon=l)
     
-    return GRFfunction
+    def func(x_0,x_1):
+        output = GRFfunction(x_0,x_1)
+        return output
+    
+    return func
+ 
 
-class NutilsFunction(evaluable.Pointwise):
-    def __init__(self):
-        None
+class ArcTan(evaluable.Pointwise):
     'Inverse tangent, element-wise.'
     evalf = staticmethod(GRF2D)
     complex_deriv = lambda x: None,
@@ -41,9 +46,7 @@ class NutilsFunction(evaluable.Pointwise):
 
 IntoArray = typing.Union['Array', np.ndarray, bool, int, float, complex]
 
-# def grf2d(__arg: IntoArray) -> function.Array:
-def grf2d(__arg):
-
+def grf2d(*__arg: IntoArray) -> function.Array:
     '''Return the trigonometric inverse tangent of the argument, elementwise.
 
     Parameters
@@ -55,7 +58,7 @@ def grf2d(__arg):
     :class:`Array`
     '''
 
-    return function._Wrapper.broadcasted_arrays(NutilsFunction(GRF2D), __arg, min_dtype=float)
+    return function._Wrapper.broadcasted_arrays(ArcTan, __arg, min_dtype=float)
 
 
 # @jit
