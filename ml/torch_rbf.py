@@ -1,4 +1,5 @@
 import torch
+import numpy
 import torch.nn as nn
 
 # RBF Layer
@@ -38,14 +39,14 @@ class RBF(nn.Module):
         self.reset_parameters()
 
     def reset_parameters(self):
-        nn.init.normal_(self.centres, 0, 1)
-        nn.init.constant_(self.log_sigmas, 0)
+        nn.init.uniform_(self.centres, 0, 1)
+        nn.init.constant_(self.log_sigmas, numpy.log(0.15))
 
     def forward(self, input):
-        size = (input.size(0), self.out_features, self.in_features)
-        x = input.unsqueeze(1).expand(size)
-        c = self.centres.unsqueeze(0).expand(size)
-        distances = (x - c).pow(2).sum(-1).pow(0.5) / torch.exp(self.log_sigmas).unsqueeze(0)
+        size = (input.size(0), input.size(1), self.out_features, self.in_features)
+        x = input.unsqueeze(2).expand(size)
+        c = self.centres.unsqueeze(0).unsqueeze(0).expand(size)
+        distances = (x - c).pow(2).sum(-1).pow(0.5) / torch.exp(self.log_sigmas).unsqueeze(0).unsqueeze(0)
         return self.basis_func(distances)
 
 
