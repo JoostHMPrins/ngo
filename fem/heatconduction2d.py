@@ -89,9 +89,9 @@ def postprocessdata(params, inputs, outputs):
     eta_sensor = np.concatenate((etab_sensor, etat_sensor))
     
     #Sampling of x and u at random output points
-    # indices = np.linspace(0,x.shape[0]-1, x.shape[0], dtype=int)
-    # indices_output = np.random.choice(indices, size=N_outputnodes, replace=False)
-    indices_output = np.load('/home/prins/st8/prins/phd/trainingdata/indices_output.npy')
+    indices = np.linspace(0,x.shape[0]-1, x.shape[0], dtype=int)
+    indices_output = np.random.choice(indices, size=N_outputnodes, replace=False)
+    # indices_output = np.load('/home/prins/st8/prins/phd/trainingdata/indices_output.npy')
     x_output = x[indices_output]
     u_output = u[indices_output]
     
@@ -126,7 +126,7 @@ def datasetgenerator(params, save, savedir, label):
             c_etab = C*np.random.uniform(-1, 1, 4)
             c_etat = C*np.random.uniform(-1, 1, 4)
             theta = randompoly2DO3sqr(c_theta)
-            f = randompoly2DO3sqr(c_f)
+            f = randompoly2DO3(c_f)
             etab = 0#randompoly1DO3(c_etab)
             etat = 0#randompoly1DO3(c_etat)
             gl = 0
