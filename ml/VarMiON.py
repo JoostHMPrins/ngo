@@ -61,6 +61,7 @@ class LBranchNet(nn.Module):
         self.layers.append(nn.Linear(input_dim, output_dim, bias=self.hparams.get('bias_LBranch',True)))
 
     def forward(self, x):
+        x = x.flatten(-2,-1)
         for layer in self.layers:
             x = layer(x)
             y = x
@@ -74,7 +75,7 @@ class VarMiON(pl.LightningModule):
         self.hparams.update(params['hparams'])
         self.NLBranch = NLBranchNet(params)
         self.LBranchF = LBranchNet(params, input_dim=144, output_dim=72)
-        #self.LBranchN = LBranchNet(input_dim=144, output_dim=72)
+        self.LBranchN = LBranchNet(params, input_dim=144, output_dim=72)
         # self.Trunk = TrunkNet(input_dim=2, output_dim=72, basis_func=gaussian)
         # self.Trunk = RBF(2,72,gaussian)
         self.Trunk = GaussianRBF(params, input_dim=2, output_dim=72)
@@ -82,7 +83,7 @@ class VarMiON(pl.LightningModule):
         
     def forward(self, Theta, F, N, x):
         NLBranch = self.NLBranch.forward(Theta)
-        LBranch = self.LBranchF.forward(F) #+ self.LBranchN.forward(N)
+        LBranch = self.LBranchF.forward(F) + self.LBranchN.forward(N)
         Branch = torch.einsum('nij,nj->ni', NLBranch, LBranch)
         Trunk = self.Trunk.forward(x)
         u_hat = torch.einsum('ni,noi->no', Branch, Trunk)
@@ -96,7 +97,7 @@ class VarMiON(pl.LightningModule):
         x = torch.tensor(x, dtype=self.hparams['dtype'])
         x = x.unsqueeze(1).unsqueeze(1)
         NLBranch = self.NLBranch.forward(Theta)
-        LBranch = self.LBranchF.forward(F) #+ self.LBranchN.forward(N)
+        LBranch = self.LBranchF.forward(F) + self.LBranchN.forward(N)
         Branch = torch.einsum('ij,j->i', NLBranch, LBranch)
         Trunk = self.Trunk.forward(x).squeeze()
         u = torch.einsum('i,oi->o', Branch, Trunk)
