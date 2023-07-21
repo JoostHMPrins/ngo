@@ -28,8 +28,8 @@ def main(params, inputs, save, savedir, label):
     
     ns.theta = theta(ns.x[0], ns.x[1])
     ns.f = f(ns.x[0], ns.x[1])
-    ns.etat = 0#etat(ns.x[0])
-    ns.etab = 0#etab(ns.x[0])
+    ns.etat = etat(ns.x[0])
+    ns.etab = etab(ns.x[0])
     ns.gl = gl
     ns.gr = gr
 
@@ -72,26 +72,41 @@ def postprocessdata(params, inputs, outputs):
 
     #Sensor nodes grid for domain, sampling of theta and f at sensor nodes
     x_sensor, y_sensor = np.mgrid[0:1:np.sqrt(N_sensornodes)*1j, 0:1:np.sqrt(N_sensornodes)*1j]
-    sensornodes_Omega = np.vstack([x_sensor.ravel(), y_sensor.ravel()]).T
-    theta_sensor = theta(sensornodes_Omega[:,0], sensornodes_Omega[:,1]).reshape(12,12)
-    f_sensor  = f(sensornodes_Omega[:,0], sensornodes_Omega[:,1])
+    sensornodes = np.vstack([x_sensor.ravel(), y_sensor.ravel()]).T
     
-    #Sensor nodes grid boundary, sampling of eta at sensor nodes
-    sensornodes_Gamma = np.linspace(0,1,int(N_sensornodes/2))
-    if etab==0:
-        etab_sensor = np.zeros(int(N_sensornodes/2))
-    else:
-        etab_sensor = etab(sensornodes_Gamma)
-    if etat==0:
-        etat_sensor = np.zeros(int(N_sensornodes/2))
-    else:
-        etat_sensor = etat(sensornodes_Gamma)
-    eta_sensor = np.concatenate((etab_sensor, etat_sensor))
+    #Sensor data
+    theta_sensor = theta(sensornodes[:,0], sensornodes[:,1]).reshape(12,12)
+    f_sensor  = f(sensornodes[:,0], sensornodes[:,1]).reshape(12,12)
+    etab_sensor = etab(sensornodes[:,0]).reshape(12,12)
+    etat_sensor = etat(sensornodes[:,0]).reshape(12,12)
+    #indicators of boundaries
+    Gamma_etab = np.zeros(etab_sensor.shape)
+    Gamma_etab[y_sensor==0] = 1
+    Gamma_etat = np.zeros(etat_sensor.shape)
+    Gamma_etat[y_sensor==1] = 1
+    #set eta zero on non-boundary sites
+    etab_sensor = Gamma_etab*etab_sensor
+    etat_sensor = Gamma_etat*etat_sensor
+    eta_sensor = etab_sensor + etat_sensor
+#     theta_sensor = theta(sensornodes[:,0], sensornodes[:,1]).reshape(12,12)
+#     f_sensor  = f(sensornodes[:,0], sensornodes[:,1])
     
-    #Sampling of x and u at random output points
+#     #Sensor nodes grid boundary, sampling of eta at sensor nodes
+#     sensornodes_Gamma = np.linspace(0,1,int(N_sensornodes/2))
+#     if etab==0:
+#         etab_sensor = np.zeros(int(N_sensornodes/2))
+#     else:
+#         etab_sensor = etab(sensornodes_Gamma)
+#     if etat==0:
+#         etat_sensor = np.zeros(int(N_sensornodes/2))
+#     else:
+#         etat_sensor = etat(sensornodes_Gamma)
+#     eta_sensor = np.concatenate((etab_sensor, etat_sensor))
+    
+    #Sampling of x and u at random output nodes
     indices = np.linspace(0,x.shape[0]-1, x.shape[0], dtype=int)
     indices_output = np.random.choice(indices, size=N_outputnodes, replace=False)
-    # indices_output = np.load('/home/prins/st8/prins/phd/trainingdata/indices_output.npy')
+    # indices_output = np.load('/home/prins/st8/prins/phd/trainingdata/indices_output.npy') #Fixed output nodes
     x_output = x[indices_output]
     u_output = u[indices_output]
     
@@ -126,9 +141,9 @@ def datasetgenerator(params, save, savedir, label):
             c_etab = C*np.random.uniform(-1, 1, 4)
             c_etat = C*np.random.uniform(-1, 1, 4)
             theta = randompoly2DO3sqr(c_theta)
-            f = randompoly2DO3(c_f)
-            etab = 0#randompoly1DO3(c_etab)
-            etat = 0#randompoly1DO3(c_etat)
+            f = randompoly2DO3sqr(c_f)
+            etab = randompoly1DO3(c_etab)
+            etat = randompoly1DO3(c_etat)
             gl = 0
             gr = 0
             
