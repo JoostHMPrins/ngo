@@ -35,7 +35,10 @@ class GRF():
         return f_hat
     
     def RBFinterpolation(self, x):
-        terms = self.f_hat*np.exp(-np.sum((x[:,None,:] - self.x_grid[None,:,:])**2, axis=-1)/(self.l**2))
+        if self.d==1:
+            terms = self.f_hat*np.exp(-np.sum((x[:,None,None] - self.x_grid[None,:,:])**2, axis=-1)/(self.l**2))
+        if self.d==2:
+            terms = self.f_hat*np.exp(-np.sum((x[:,None,:] - self.x_grid[None,:,:])**2, axis=-1)/(self.l**2))
         return np.sum(terms, axis=1)
 
     def RBFint_pointwise(self, x):
