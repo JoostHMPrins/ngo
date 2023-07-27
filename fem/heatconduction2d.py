@@ -26,10 +26,14 @@ def main(params, inputs, save, savedir, label):
     gl = inputs['gl'] #Dirichlet BC left
     gr = inputs['gr'] #Dirichlet BC right
     
-    ns.theta = theta(ns.x[0], ns.x[1])
-    ns.f = f(ns.x[0], ns.x[1])
-    ns.etat = etat(ns.x[0])
-    ns.etab = etab(ns.x[0])
+    # ns.theta = theta(ns.x[0], ns.x[1])
+    # ns.f = f(ns.x[0], ns.x[1])
+    # ns.etat = etat(ns.x[0])
+    # ns.etab = etab(ns.x[0])
+    ns.theta = theta(ns.x)
+    ns.f = f(ns.x)
+    ns.etat = etat(ns.x)
+    ns.etab = etab(ns.x)
     ns.gl = gl
     ns.gr = gr
 
@@ -52,9 +56,9 @@ def main(params, inputs, save, savedir, label):
     
     #Sampling of the input functions and solution
     bezier = domain.sample('bezier', params['simparams']['nfemsamples'])
-    x, u = bezier.eval(['x_i', 'u'] @ ns, lhs=lhs)
+    x, theta, f, etab, etat, u = bezier.eval(['x_i', 'theta', 'f', 'etab', 'etat', 'u'] @ ns, lhs=lhs)
         
-    outputs = {'x': x, 'u': u}
+    outputs = {'x':x, 'theta':theta, 'f':f, 'etab':etab, 'etat':etat, 'u':u}
     
     return outputs
 
@@ -88,20 +92,6 @@ def postprocessdata(params, inputs, outputs):
     etab_sensor = Gamma_etab*etab_sensor
     etat_sensor = Gamma_etat*etat_sensor
     eta_sensor = etab_sensor + etat_sensor
-#     theta_sensor = theta(sensornodes[:,0], sensornodes[:,1]).reshape(12,12)
-#     f_sensor  = f(sensornodes[:,0], sensornodes[:,1])
-    
-#     #Sensor nodes grid boundary, sampling of eta at sensor nodes
-#     sensornodes_Gamma = np.linspace(0,1,int(N_sensornodes/2))
-#     if etab==0:
-#         etab_sensor = np.zeros(int(N_sensornodes/2))
-#     else:
-#         etab_sensor = etab(sensornodes_Gamma)
-#     if etat==0:
-#         etat_sensor = np.zeros(int(N_sensornodes/2))
-#     else:
-#         etat_sensor = etat(sensornodes_Gamma)
-#     eta_sensor = np.concatenate((etab_sensor, etat_sensor))
     
     #Sampling of x and u at random output nodes
     indices = np.linspace(0,x.shape[0]-1, x.shape[0], dtype=int)
