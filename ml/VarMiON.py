@@ -2,13 +2,11 @@ import torch
 from torch import nn
 import pytorch_lightning as pl
 import numpy as np
-from torch_rbf import RBF, gaussian
 
 
 class GaussianRBF(nn.Module):
     def __init__(self, params, input_dim, output_dim):
         super().__init__()
-        #Definition and initialization of centers and scales
         self.hparams = params['hparams']
         self.mus = nn.Parameter(torch.Tensor(output_dim, input_dim))
         self.log_sigmas = nn.Parameter(torch.Tensor(output_dim))
@@ -44,12 +42,19 @@ class NLBranchNet(nn.Module):
             self.layers.append(nn.ReLU())
 
     def forward(self, x):
+        if self.hparams.get('scale_invariance',False)==True:
+            x_norm = torch.amax(torch.abs(x), dim=(-1,-2))
+            x = x/x_norm[:,None,None]
         x = x.unsqueeze(1)
         for layer in self.layers:
             x = layer(x)
         y = x.squeeze()
-        if self.hparams.get('symmetrize_D',False)==True:
-            y = 1/2*(y + y.transpose(-1,-2))
+        if self.hparams.get('Cholesky',False)==True:
+            L = y.tril()
+            D = torch.matmul(L, L.transpose(-1,-2))
+            y = D
+        if self.hparams.get('scale_invariance',False)==True:
+            y = y/x_norm[:,None,None]     
         return y
 
     
@@ -61,10 +66,15 @@ class LBranchNet(nn.Module):
         self.layers.append(nn.Linear(input_dim, output_dim, bias=self.hparams.get('bias_LBranch',True)))
 
     def forward(self, x):
+        if self.hparams.get('scale_invariance',False)==True:
+            x_norm = torch.amax(torch.abs(x), dim=(-1,-2))
+            x = x/x_norm[:,None,None]
         x = x.flatten(-2,-1)
         for layer in self.layers:
             x = layer(x)
             y = x
+        if self.hparams.get('scale_invariance',False)==True:
+            y = y*x_norm[:,None]
         return y
     
     
@@ -76,8 +86,6 @@ class VarMiON(pl.LightningModule):
         self.NLBranch = NLBranchNet(params)
         self.LBranchF = LBranchNet(params, input_dim=144, output_dim=72)
         self.LBranchN = LBranchNet(params, input_dim=144, output_dim=72)
-        # self.Trunk = TrunkNet(input_dim=2, output_dim=72, basis_func=gaussian)
-        # self.Trunk = RBF(2,72,gaussian)
         self.Trunk = GaussianRBF(params, input_dim=2, output_dim=72)
         self = self.to(self.hparams['dtype'])
         
@@ -87,17 +95,19 @@ class VarMiON(pl.LightningModule):
         Branch = torch.einsum('nij,nj->ni', NLBranch, LBranch)
         Trunk = self.Trunk.forward(x)
         u_hat = torch.einsum('ni,noi->no', Branch, Trunk)
-        return u_hat
+        return u_hat           
     
     def simforward(self, Theta, F, N, x):
         Theta = torch.tensor(Theta, dtype=self.hparams['dtype'])
-        Theta = Theta.unsqueeze(0)
         F = torch.tensor(F, dtype=self.hparams['dtype'])
         N = torch.tensor(N, dtype=self.hparams['dtype'])
         x = torch.tensor(x, dtype=self.hparams['dtype'])
+        Theta = Theta.unsqueeze(0)
+        F = F.unsqueeze(0)
+        N = N.unsqueeze(0)
         x = x.unsqueeze(1).unsqueeze(1)
-        NLBranch = self.NLBranch.forward(Theta)
-        LBranch = self.LBranchF.forward(F) + self.LBranchN.forward(N)
+        NLBranch = self.NLBranch.forward(Theta).squeeze()
+        LBranch = self.LBranchF.forward(F).squeeze() + self.LBranchN.forward(N).squeeze()
         Branch = torch.einsum('ij,j->i', NLBranch, LBranch)
         Trunk = self.Trunk.forward(x).squeeze()
         u = torch.einsum('i,oi->o', Branch, Trunk)
