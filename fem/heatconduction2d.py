@@ -4,10 +4,10 @@ from nutils import mesh, function, solver
 from nutils.expression_v2 import Namespace
 
 from randompolynomials import randompoly1DO3, randompoly2DO3, randompoly2DO3sqr
-from gaussianrandomfields import GRF1D, GRF2D
+from GRF import GRF 
 from datasaver import savedata
 
-def main(params, inputs, save, savedir, label):
+def main(params, inputs, sample, save, savedir, label):
     
     #Unit square geometry and mesh
     domain, geom = mesh.unitsquare(nelems=params['simparams']['nelems'], etype=params['simparams']['etype'])
@@ -19,12 +19,13 @@ def main(params, inputs, save, savedir, label):
     ns.basis = domain.basis(params['simparams']['btype'], degree=params['simparams']['basisdegree'])
     ns.u = function.dotarg('lhs', ns.basis) #Solution
     
-    theta = inputs['theta'] #Conductivity
-    f = inputs['f'] #Forcing
-    etat = inputs['etat'] #Neumann BC top
-    etab = inputs['etab'] #Neumann BC bottom
-    gl = inputs['gl'] #Dirichlet BC left
-    gr = inputs['gr'] #Dirichlet BC right
+    if params['trainingdataparams']['inputdata']=='grf':
+        theta = inputs['theta'].sample(inputs['theta'].RBFint_pointwise_scaled, sample) #Conductivity
+        f = inputs['f'].sample(inputs['f'].RBFint_pointwise_scaled, sample) #Forcing
+        etat = inputs['etat'].sample(inputs['etat'].RBFint_pointwise_scaled, sample) #Neumann BC top
+        etab = inputs['etab'].sample(inputs['etab'].RBFint_pointwise_scaled, sample) #Neumann BC bottom
+        gl = inputs['gl'] #Dirichlet BC left
+        gr = inputs['gr'] #Dirichlet BC right
     
     # ns.theta = theta(ns.x[0], ns.x[1])
     # ns.f = f(ns.x[0], ns.x[1])
@@ -63,7 +64,7 @@ def main(params, inputs, save, savedir, label):
     return outputs
 
 
-def postprocessdata(params, inputs, outputs):
+def postprocessdata(params, inputs, sample, outputs):
     
     N_sensornodes = params['trainingdataparams']['N_sensornodes']
     N_outputnodes = params['trainingdataparams']['N_outputnodes']
@@ -79,10 +80,10 @@ def postprocessdata(params, inputs, outputs):
     sensornodes = np.vstack([x_sensor.ravel(), y_sensor.ravel()]).T
     
     #Sensor data
-    theta_sensor = theta(sensornodes[:,0], sensornodes[:,1]).reshape(12,12)
-    f_sensor  = f(sensornodes[:,0], sensornodes[:,1]).reshape(12,12)
-    etab_sensor = etab(sensornodes[:,0]).reshape(12,12)
-    etat_sensor = etat(sensornodes[:,0]).reshape(12,12)
+    theta_sensor = theta.sample(theta.RBFint_scaled, sample)(sensornodes).reshape(12,12)
+    f_sensor = f.sample(f.RBFint_scaled, sample)(sensornodes).reshape(12,12)
+    etab_sensor = etab.sample(etab.RBFint_scaled, sample)(sensornodes).reshape(12,12)
+    etat_sensor = etat.sample(etat.RBFint_scaled, sample)(sensornodes).reshape(12,12)
     #indicators of boundaries
     Gamma_etab = np.zeros(etab_sensor.shape)
     Gamma_etab[y_sensor==0] = 1
@@ -96,7 +97,6 @@ def postprocessdata(params, inputs, outputs):
     #Sampling of x and u at random output nodes
     indices = np.linspace(0,x.shape[0]-1, x.shape[0], dtype=int)
     indices_output = np.random.choice(indices, size=N_outputnodes, replace=False)
-    # indices_output = np.load('/home/prins/st8/prins/phd/trainingdata/indices_output.npy') #Fixed output nodes
     x_output = x[indices_output]
     u_output = u[indices_output]
     
@@ -113,6 +113,9 @@ def postprocessdata(params, inputs, outputs):
 
 def datasetgenerator(params, save, savedir, label):
     
+    simparams = params['simparams']
+    trainingdataparams = params['trainingdataparams']
+    
     Theta_array = []
     F_array = []
     N_array = []
@@ -123,8 +126,7 @@ def datasetgenerator(params, save, savedir, label):
         
         print("Simulation: "+str(i))
         
-        if params['inputdataparams']['type']=='polynomial':
-            
+        if params['trainingdataparams']['inputdata']=='polynomial':
             C = 0.2
             c_theta = C*np.random.uniform(-1, 1, 10)
             c_f = C*np.random.uniform(-1, 1, 10)
@@ -137,21 +139,20 @@ def datasetgenerator(params, save, savedir, label):
             gl = 0
             gr = 0
             
-        if params['inputdataparams']['type']=='grf':
-            theta = GRF2D(params['inputdataparams']['N_grfpoints'], params['inputdataparams']['l_theta'], params['inputdataparams']['positive_theta'])
-            f = GRF2D(params['inputdataparams']['N_grfpoints'], params['inputdataparams']['l_f'], params['inputdataparams']['positive_f'])
-            etab = GRF1D(params['inputdataparams']['N_grfpoints'], params['inputdataparams']['l_eta'])
-            etat = GRF1D(params['inputdataparams']['N_grfpoints'], params['inputdataparams']['l_eta'])
+        if params['trainingdataparams']['inputdata']=='grf':
+            theta = GRF(**simparams, **trainingdataparams, **trainingdataparams['theta'])
+            f = GRF(**simparams, **trainingdataparams, **trainingdataparams['f'])
+            etab = GRF(**simparams, **trainingdataparams, **trainingdataparams['eta'])
+            etat = GRF(**simparams, **trainingdataparams, **trainingdataparams['eta'])
             gl = 0
             gr = 0
 
-
         #Perform simulations
         inputs = {'theta': theta, 'f': f, 'etab': etab, 'etat': etat, 'gl': gl, 'gr': gr}
-        outputs = main(params, inputs, save=False, savedir='.', label='.')
+        outputs = main(params, inputs, sample=i, save=False, savedir='.', label='.')
         
         #Postprocess data
-        data_postprocessed = postprocessdata(params, inputs, outputs)
+        data_postprocessed = postprocessdata(params=params, inputs=inputs, sample=i, outputs=outputs)
         
         #Collect data
         Theta_array.append(data_postprocessed['Theta'])
