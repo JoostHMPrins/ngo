@@ -20,24 +20,33 @@ def main(params, inputs, sample, save, savedir, label):
     ns.u = function.dotarg('lhs', ns.basis) #Solution
     
     if params['trainingdataparams']['inputdata']=='grf':
-        theta = inputs['theta'].sample(inputs['theta'].RBFint_pointwise_scaled, sample) #Conductivity
-        f = inputs['f'].sample(inputs['f'].RBFint_pointwise_scaled, sample) #Forcing
-        etat = inputs['etat'].sample(inputs['etat'].RBFint_pointwise_scaled, sample) #Neumann BC top
-        etab = inputs['etab'].sample(inputs['etab'].RBFint_pointwise_scaled, sample) #Neumann BC bottom
+        theta = inputs['theta'].RBFint_pointwise_scaled(sample) #Conductivity
+        f = inputs['f'].RBFint_pointwise_scaled(sample) #Forcing
+        etat = inputs['etat'].RBFint_pointwise_scaled(sample) #Neumann BC top
+        etab = inputs['etab'].RBFint_pointwise_scaled(sample) #Neumann BC bottom
         gl = inputs['gl'] #Dirichlet BC left
         gr = inputs['gr'] #Dirichlet BC right
-    
-    # ns.theta = theta(ns.x[0], ns.x[1])
-    # ns.f = f(ns.x[0], ns.x[1])
-    # ns.etat = etat(ns.x[0])
-    # ns.etab = etab(ns.x[0])
-    ns.theta = theta(ns.x)
-    ns.f = f(ns.x)
-    ns.etat = etat(ns.x)
-    ns.etab = etab(ns.x)
-    ns.gl = gl
-    ns.gr = gr
+        ns.theta = theta(ns.x)
+        ns.f = f(ns.x)
+        ns.etat = etat(ns.x)
+        ns.etab = etab(ns.x)
+        ns.gl = gl
+        ns.gr = gr
 
+    if params['trainingdataparams']['inputdata']=='polynomial':    
+        theta = inputs['theta'] #Conductivity
+        f = inputs['f'] #Forcing
+        etat = inputs['etat'] #Neumann BC top
+        etab = inputs['etab'] #Neumann BC bottom
+        gl = inputs['gl'] #Dirichlet BC left
+        gr = inputs['gr'] #Dirichlet BC right
+        ns.theta = theta(ns.x[0], ns.x[1])
+        ns.f = f(ns.x[0], ns.x[1])
+        ns.etat = etat(ns.x[0])
+        ns.etab = etab(ns.x[0])
+        ns.gl = gl
+        ns.gr = gr
+        
     #Residual
     res = domain.integral('∇_i(basis_n) theta ∇_i(u) dV' @ ns, degree=params['simparams']['intdegree']) #Stiffness
     res -= domain.integral('basis_n f dV' @ ns, degree=params['simparams']['intdegree']) #Forcing
@@ -49,10 +58,7 @@ def main(params, inputs, sample, save, savedir, label):
     sqr += domain.boundary['right'].integral('(u - gr)^2 dS' @ ns, degree=params['simparams']['intdegree'])
     cons = solver.optimize('lhs', sqr, droptol=1e-15)
 
-    # residual vector evaluates to zero in the corresponding entries. This step
-    # involves a linearization of ``res``, resulting in a jacobian matrix and
-    # right hand side vector that are subsequently assembled and solved. The
-    # resulting ``lhs`` array matches ``cons`` in the constrained entries.
+    #Solve system
     lhs = solver.solve_linear('lhs', res, constrain=cons)
     
     #Sampling of the input functions and solution
@@ -80,10 +86,16 @@ def postprocessdata(params, inputs, sample, outputs):
     sensornodes = np.vstack([x_sensor.ravel(), y_sensor.ravel()]).T
     
     #Sensor data
-    theta_sensor = theta.sample(theta.RBFint_scaled, sample)(sensornodes).reshape(12,12)
-    f_sensor = f.sample(f.RBFint_scaled, sample)(sensornodes).reshape(12,12)
-    etab_sensor = etab.sample(etab.RBFint_scaled, sample)(sensornodes).reshape(12,12)
-    etat_sensor = etat.sample(etat.RBFint_scaled, sample)(sensornodes).reshape(12,12)
+    if params['trainingdataparams']['inputdata']=='polynomial':
+        theta_sensor = theta(sensornodes[:,0], sensornodes[:,1]).reshape(12,12)
+        f_sensor  = f(sensornodes[:,0], sensornodes[:,1]).reshape(12,12)
+        etab_sensor = etab(sensornodes[:,0]).reshape(12,12)
+        etat_sensor = etat(sensornodes[:,0]).reshape(12,12)
+    if params['trainingdataparams']['inputdata']=='grf':
+        theta_sensor = theta.RBFint_scaled(sample)(sensornodes).reshape(12,12)
+        f_sensor = f.RBFint_scaled(sample)(sensornodes).reshape(12,12)
+        etab_sensor = etab.RBFint_scaled(sample)(sensornodes).reshape(12,12)
+        etat_sensor = etat.RBFint_scaled(sample)(sensornodes).reshape(12,12)
     #indicators of boundaries
     Gamma_etab = np.zeros(etab_sensor.shape)
     Gamma_etab[y_sensor==0] = 1
@@ -122,6 +134,14 @@ def datasetgenerator(params, save, savedir, label):
     x_array = []
     u_array = []
     
+    if params['trainingdataparams']['inputdata']=='grf':
+        theta = GRF(**simparams, **trainingdataparams, **trainingdataparams['theta'])
+        f = GRF(**simparams, **trainingdataparams, **trainingdataparams['f'])
+        etab = GRF(**simparams, **trainingdataparams, **trainingdataparams['eta'])
+        etat = GRF(**simparams, **trainingdataparams, **trainingdataparams['eta'])
+        gl = 0
+        gr = 0
+    
     for i in range(params['trainingdataparams']['N_samples']):
         
         print("Simulation: "+str(i))
@@ -136,14 +156,6 @@ def datasetgenerator(params, save, savedir, label):
             f = randompoly2DO3sqr(c_f)
             etab = randompoly1DO3(c_etab)
             etat = randompoly1DO3(c_etat)
-            gl = 0
-            gr = 0
-            
-        if params['trainingdataparams']['inputdata']=='grf':
-            theta = GRF(**simparams, **trainingdataparams, **trainingdataparams['theta'])
-            f = GRF(**simparams, **trainingdataparams, **trainingdataparams['f'])
-            etab = GRF(**simparams, **trainingdataparams, **trainingdataparams['eta'])
-            etat = GRF(**simparams, **trainingdataparams, **trainingdataparams['eta'])
             gl = 0
             gr = 0
 
