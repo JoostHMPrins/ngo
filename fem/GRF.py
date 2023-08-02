@@ -32,34 +32,39 @@ class GRF():
         cov_inv = np.linalg.inv(self.cov)
         self.f_hat = np.einsum('nij,nj->ni', np.tile(cov_inv, (self.f.shape[0],1,1)), self.f)
     
-    def RBFint(self, x):
-        terms = self.f_hat[:,:,None]*np.exp(-np.sum((x[None,None,:,:] - self.x_grid[None,:,None,:])**2, axis=-1)/(2*self.l**2))
-        output = np.sum(terms, axis=1)
-        return output
-
-    def RBFint_pointwise(self, x):
-        terms = self.f_hat*np.exp(-np.sum((x - self.x_grid)**2, axis=-1)/(2*self.l**2))
-        output = np.sum(terms, axis=1)
-        return output
-    
     def compute_minmax(self):
         if self.d==2:
             X, Y = np.mgrid[0:1:100*1j, 0:1:100*1j]
             x = np.vstack([X.ravel(), Y.ravel()]).T
-        self.f_min = np.amin(self.RBFint(x))
-        self.f_max = np.amax(self.RBFint(x))
+        terms = self.f_hat[:,:,None]*np.exp(-np.sum((x[None,None,:,:] - self.x_grid[None,:,None,:])**2, axis=-1)/(2*self.l**2))
+        f = np.sum(terms, axis=1)
+        self.f_min = np.amin(f)
+        self.f_max = np.amax(f)
             
-    def RBFint_scaled(self, x):
-        output_scaled = (self.RBFint(x) - self.f_min)/(self.f_max - self.f_min) #Scale to [0,1]
-        output_scaled = (self.upperbound - self.lowerbound)*output_scaled + self.lowerbound #Scale to [lowerbound,upperbound]
-        return output_scaled
-            
-    def RBFint_pointwise_scaled(self, x):
-        output_scaled = (self.RBFint_pointwise(x) - self.f_min)/(self.f_max - self.f_min) #Scale to [0,1]
-        output_scaled = (self.upperbound - self.lowerbound)*output_scaled + self.lowerbound #Scale to [lowerbound,upperbound]
-        return output_scaled
-    
-    def sample(self, f, i):
+    def RBFint(self, sample):
         def function(x):
-            return f(x)[i]
+            terms = self.f_hat[sample,:,None]*np.exp(-np.sum((x[None,None,:,:] - self.x_grid[None,:,None,:])**2, axis=-1)/(2*self.l**2))
+            output = np.sum(terms, axis=1)
+            return output
+        return function
+
+    def RBFint_pointwise(self, sample):
+        def function(x):
+            terms = self.f_hat[sample]*np.exp(-np.sum((x - self.x_grid)**2, axis=-1)/(2*self.l**2))
+            output = np.sum(terms)
+            return output
+        return function
+    
+    def RBFint_scaled(self, sample):
+        def function(x):
+            output_scaled = (self.RBFint(sample)(x) - self.f_min)/(self.f_max - self.f_min) #Scale to [0,1]
+            output_scaled = (self.upperbound - self.lowerbound)*output_scaled + self.lowerbound #Scale to [lowerbound,upperbound]
+            return output_scaled
+        return function
+            
+    def RBFint_pointwise_scaled(self, sample):
+        def function(x):
+            output_scaled = (self.RBFint_pointwise(sample)(x) - self.f_min)/(self.f_max - self.f_min) #Scale to [0,1]
+            output_scaled = (self.upperbound - self.lowerbound)*output_scaled + self.lowerbound #Scale to [lowerbound,upperbound]
+            return output_scaled
         return function
