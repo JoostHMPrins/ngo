@@ -2,27 +2,7 @@ import torch
 from torch import nn
 import pytorch_lightning as pl
 import numpy as np
-
-
-class GaussianRBF(nn.Module):
-    def __init__(self, params, input_dim, output_dim):
-        super().__init__()
-        self.hparams = params['hparams']
-        self.mus = nn.Parameter(torch.Tensor(output_dim, input_dim))
-        self.log_sigmas = nn.Parameter(torch.Tensor(output_dim))
-        self.reset_parameters()
-        
-    def reset_parameters(self):
-        nn.init.uniform_(self.mus, 0, 1)
-        nn.init.constant_(self.log_sigmas, np.log(0.15))
-        
-    def forward(self, x):
-        d_scaled = (x[:,:,None,:] - self.mus[None,None,:,:])/torch.exp(self.log_sigmas[None,None,:,None])
-        y = torch.exp(-torch.sum(d_scaled**2, axis=-1))
-        if self.hparams.get('norm_basis',False)==True:
-            y = y/torch.sum(y, axis=-1)[:,:,None]
-        return y
-    
+from customlayers import GaussianRBF, expand_D8
     
 class NLBranchNet(nn.Module):
     def __init__(self, params):
@@ -97,6 +77,18 @@ class VarMiON(pl.LightningModule):
         u_hat = torch.einsum('ni,noi->no', Branch, Trunk)
         return u_hat           
     
+    def symgroupavg_forward(self, Theta, F, N, x):
+        Theta_D8 = expand_D8(Theta)
+        F_D8 = expand_D8(F)
+        N_D8 = expand_D8(N)
+        u_hat = torch.zeros((x.shape[0], x.shape[1]), device=self.device)
+        for alpha in range(len(self.symgroup)):
+            self.Trunk.mus = torch.nn.Parameter(torch.einsum('ij,gj->gi', self.symgroup_inv[alpha], self.Trunk.mus - 1/2) + 1/2)
+            u_hat += self.forward(Theta_D8[alpha], F_D8[alpha], N_D8[alpha], x)
+            self.Trunk.mus = torch.nn.Parameter(torch.einsum('ij,gj->gi', self.symgroup[alpha], self.Trunk.mus - 1/2) + 1/2)
+        u_hat = u_hat/len(self.symgroup)
+        return u_hat
+    
     def simforward(self, Theta, F, N, x):
         Theta = torch.tensor(Theta, dtype=self.hparams['dtype'])
         F = torch.tensor(F, dtype=self.hparams['dtype'])
@@ -121,7 +113,10 @@ class VarMiON(pl.LightningModule):
 
     def training_step(self, train_batch, batch_idx):
         Theta, F, N, x, u = train_batch
-        u_hat = self.forward(Theta, F, N, x)
+        if self.hparams.get('symgroupavg',False)==True:    
+            u_hat = self.symgroupavg_forward(Theta, F, N, x)
+        else:
+            u_hat = self.forward(Theta, F, N, x)
         loss = 0
         for i in range(len(self.hparams['loss_coeffs'])):
             loss = loss + self.hparams['loss_coeffs'][i]*self.hparams['loss_terms'][i](u_hat, u)
@@ -131,7 +126,10 @@ class VarMiON(pl.LightningModule):
 
     def validation_step(self, val_batch, batch_idx):
         Theta, F, N, x, u = val_batch
-        u_hat = self.forward(Theta, F, N, x)
+        if self.hparams.get('symgroupavg',False)==True:    
+            u_hat = self.symgroupavg_forward(Theta, F, N, x)
+        else:
+            u_hat = self.forward(Theta, F, N, x)
         loss = 0
         for i in range(len(self.hparams['loss_coeffs'])):
             loss = loss + self.hparams['loss_coeffs'][i]*self.hparams['loss_terms'][i](u_hat, u)
@@ -140,5 +138,15 @@ class VarMiON(pl.LightningModule):
         metric = self.hparams['metric'](u_hat, u)
         self.log('metric', metric)
         
+    def compute_symgroup(self):
+        R = torch.tensor([[0,-1],[1,0]], dtype=self.hparams['dtype'], device=self.device)
+        M = torch.tensor([[1,0],[0,-1]], dtype=self.hparams['dtype'], device=self.device)
+        I = torch.tensor([[1,0],[0,1]], dtype=self.hparams['dtype'], device=self.device)
+        self.symgroup = [I, R, R@R, R@R@R, M, R@M, R@R@M, R@R@R@M]
+        self.symgroup_inv =[I, torch.linalg.inv(R), torch.linalg.inv(R@R), torch.linalg.inv(R@R@R), torch.linalg.inv(M), torch.linalg.inv(R@M), torch.linalg.inv(R@R@M), torch.linalg.inv(R@R@R@M)]
+        
     def on_save_checkpoint(self, checkpoint):
         checkpoint['params'] = self.params
+        
+    def on_fit_start(self):
+        self.compute_symgroup()
