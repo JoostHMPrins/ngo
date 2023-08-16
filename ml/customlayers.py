@@ -16,7 +16,11 @@ class GaussianRBF(nn.Module):
         nn.init.constant_(self.log_sigmas, np.log(0.15))
         
     def forward(self, x):
-        d_scaled = (x[:,:,None,:] - self.mus[None,None,:,:])/torch.exp(self.log_sigmas[None,None,:,None])
+        if self.hparams.get('symgroupavg',False)==True:
+            mus_temp = torch.einsum('ij,gj->gi', self.mapping, self.mus - 1/2) + 1/2
+            d_scaled = (x[:,:,None,:] - mus_temp[None,None,:,:])/torch.exp(self.log_sigmas[None,None,:,None])
+        else:
+            d_scaled = (x[:,:,None,:] - self.mus[None,None,:,:])/torch.exp(self.log_sigmas[None,None,:,None])
         y = torch.exp(-torch.sum(d_scaled**2, axis=-1))
         if self.hparams.get('norm_basis',False)==True:
             y = y/torch.sum(y, axis=-1)[:,:,None]
