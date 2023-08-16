@@ -18,10 +18,13 @@ class NLBranchNet(nn.Module):
         self.layers.append(nn.ConvTranspose2d(in_channels=32, out_channels=16, kernel_size=2, stride=2, bias=self.hparams.get('bias_NLBranch',True)))
         self.layers.append(nn.ReLU())
         self.layers.append(nn.ConvTranspose2d(in_channels=16, out_channels=1, kernel_size=2, stride=2, bias=self.hparams.get('bias_NLBranch',True)))
-        if self.hparams.get('NLB_outputReLU',False)==True:
-            self.layers.append(nn.ReLU())
+        
+        if self.hparams['NLB_outputactivation']!=None:
+            self.layers.append(self.hparams['NLB_outputactivation'])
 
     def forward(self, x):
+        if self.hparams.get('1/theta',False)==True:
+            x = 1/x
         if self.hparams.get('scale_invariance',False)==True:
             x_norm = torch.amax(torch.abs(x), dim=(-1,-2))
             x = x/x_norm[:,None,None]
@@ -34,7 +37,10 @@ class NLBranchNet(nn.Module):
             D = torch.matmul(L, L.transpose(-1,-2))
             y = D
         if self.hparams.get('scale_invariance',False)==True:
-            y = y/x_norm[:,None,None]     
+            if self.hparams.get('1/theta',False)==True:
+                y = y*x_norm[:,None,None]     
+            else:
+                y = y/x_norm[:,None,None]     
         return y
 
     
@@ -64,9 +70,10 @@ class VarMiON(pl.LightningModule):
         self.params = params
         self.hparams.update(params['hparams'])
         self.NLBranch = NLBranchNet(params)
-        self.LBranchF = LBranchNet(params, input_dim=144, output_dim=72)
-        self.LBranchN = LBranchNet(params, input_dim=144, output_dim=72)
-        self.Trunk = GaussianRBF(params, input_dim=2, output_dim=72)
+        self.LBranchF = LBranchNet(params, input_dim=144, output_dim=self.hparams.get('n_basisfunctions', 72))
+        self.LBranchN = LBranchNet(params, input_dim=144, output_dim=self.hparams.get('n_basisfunctions', 72))
+        self.Trunk = GaussianRBF(params, input_dim=params['simparams']['d'], output_dim=self.hparams.get('n_basisfunctions', 72))
+        self.compute_symgroup()
         self = self.to(self.hparams['dtype'])
         
     def forward(self, Theta, F, N, x):
@@ -83,9 +90,8 @@ class VarMiON(pl.LightningModule):
         N_D8 = expand_D8(N)
         u_hat = torch.zeros((x.shape[0], x.shape[1]), device=self.device)
         for alpha in range(len(self.symgroup)):
-            self.Trunk.mus = torch.nn.Parameter(torch.einsum('ij,gj->gi', self.symgroup_inv[alpha], self.Trunk.mus - 1/2) + 1/2)
+            self.Trunk.mapping = self.symgroup_inv[alpha].to(self.device)
             u_hat += self.forward(Theta_D8[alpha], F_D8[alpha], N_D8[alpha], x)
-            self.Trunk.mus = torch.nn.Parameter(torch.einsum('ij,gj->gi', self.symgroup[alpha], self.Trunk.mus - 1/2) + 1/2)
         u_hat = u_hat/len(self.symgroup)
         return u_hat
     
@@ -145,8 +151,11 @@ class VarMiON(pl.LightningModule):
         self.symgroup = [I, R, R@R, R@R@R, M, R@M, R@R@M, R@R@R@M]
         self.symgroup_inv =[I, torch.linalg.inv(R), torch.linalg.inv(R@R), torch.linalg.inv(R@R@R), torch.linalg.inv(M), torch.linalg.inv(R@M), torch.linalg.inv(R@R@M), torch.linalg.inv(R@R@R@M)]
         
+    def on_before_zero_grad(self, optimizer):
+        if self.hparams.get('bound_mus',False)==True:
+            for name, p in self.Trunk.named_parameters():
+                if name=='mus':
+                    p.data.clamp_(0, 1.0)
+            
     def on_save_checkpoint(self, checkpoint):
         checkpoint['params'] = self.params
-        
-    def on_fit_start(self):
-        self.compute_symgroup()
