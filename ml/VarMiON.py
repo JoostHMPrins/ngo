@@ -3,6 +3,7 @@ from torch import nn
 import pytorch_lightning as pl
 import numpy as np
 from customlayers import GaussianRBF, expand_D8
+from customlosses import *
     
 class NLBranchNet(nn.Module):
     def __init__(self, params):
@@ -18,7 +19,6 @@ class NLBranchNet(nn.Module):
         self.layers.append(nn.ConvTranspose2d(in_channels=32, out_channels=16, kernel_size=2, stride=2, bias=self.hparams.get('bias_NLBranch',True)))
         self.layers.append(nn.ReLU())
         self.layers.append(nn.ConvTranspose2d(in_channels=16, out_channels=1, kernel_size=2, stride=2, bias=self.hparams.get('bias_NLBranch',True)))
-        
         if self.hparams['NLB_outputactivation']!=None:
             self.layers.append(self.hparams['NLB_outputactivation'])
 
@@ -70,9 +70,9 @@ class VarMiON(pl.LightningModule):
         self.params = params
         self.hparams.update(params['hparams'])
         self.NLBranch = NLBranchNet(params)
-        self.LBranchF = LBranchNet(params, input_dim=144, output_dim=self.hparams.get('n_basisfunctions', 72))
-        self.LBranchN = LBranchNet(params, input_dim=144, output_dim=self.hparams.get('n_basisfunctions', 72))
-        self.Trunk = GaussianRBF(params, input_dim=params['simparams']['d'], output_dim=self.hparams.get('n_basisfunctions', 72))
+        self.LBranchF = LBranchNet(params, input_dim=144, output_dim=72)
+        self.LBranchN = LBranchNet(params, input_dim=144, output_dim=72)
+        self.Trunk = GaussianRBF(params, input_dim=params['simparams']['d'], output_dim=72)
         self.compute_symgroup()
         self = self.to(self.hparams['dtype'])
         
@@ -148,8 +148,10 @@ class VarMiON(pl.LightningModule):
         R = torch.tensor([[0,-1],[1,0]], dtype=self.hparams['dtype'], device=self.device)
         M = torch.tensor([[1,0],[0,-1]], dtype=self.hparams['dtype'], device=self.device)
         I = torch.tensor([[1,0],[0,1]], dtype=self.hparams['dtype'], device=self.device)
-        self.symgroup = [I, R, R@R, R@R@R, M, R@M, R@R@M, R@R@R@M]
-        self.symgroup_inv =[I, torch.linalg.inv(R), torch.linalg.inv(R@R), torch.linalg.inv(R@R@R), torch.linalg.inv(M), torch.linalg.inv(R@M), torch.linalg.inv(R@R@M), torch.linalg.inv(R@R@R@M)]
+        # self.symgroup = [I, R, R@R, R@R@R, M, R@M, R@R@M, R@R@R@M]
+        self.symgroup = [I, R@R, M, R@R@M]
+        # self.symgroup_inv =[I, torch.linalg.inv(R), torch.linalg.inv(R@R), torch.linalg.inv(R@R@R), torch.linalg.inv(M), torch.linalg.inv(R@M), torch.linalg.inv(R@R@M), torch.linalg.inv(R@R@R@M)]
+        self.symgroup_inv =[I, torch.linalg.inv(R@R), torch.linalg.inv(M), torch.linalg.inv(R@R@M)]
         
     def on_before_zero_grad(self, optimizer):
         if self.hparams.get('bound_mus',False)==True:

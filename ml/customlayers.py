@@ -18,7 +18,10 @@ class GaussianRBF(nn.Module):
     def forward(self, x):
         if self.hparams.get('symgroupavg',False)==True:
             mus_temp = torch.einsum('ij,gj->gi', self.mapping, self.mus - 1/2) + 1/2
+            # x_temp = torch.einsum('ij,noj->noi', self.mapping, x - 1/2) + 1/2
             d_scaled = (x[:,:,None,:] - mus_temp[None,None,:,:])/torch.exp(self.log_sigmas[None,None,:,None])
+            # d_scaled = (x_temp[:,:,None,:] - self.mus[None,None,:,:])/torch.exp(self.log_sigmas[None,None,:,None])
+            # d_scaled = (x[:,:,None,:] - self.mus[None,None,:,:])/torch.exp(self.log_sigmas[None,None,:,None])
         else:
             d_scaled = (x[:,:,None,:] - self.mus[None,None,:,:])/torch.exp(self.log_sigmas[None,None,:,None])
         y = torch.exp(-torch.sum(d_scaled**2, axis=-1))
@@ -27,14 +30,24 @@ class GaussianRBF(nn.Module):
         return y
     
 
+# def expand_D8(A):
+#     return [A, 
+#             A.rot90(dims=[-2,-1]), 
+#             A.rot90(dims=[-2,-1]).rot90(dims=[-2,-1]), 
+#             A.rot90(dims=[-2,-1]).rot90(dims=[-2,-1]).rot90(dims=[-2,-1]),
+#             A.flip(dims=[-1]),
+#             A.flip(dims=[-1]).rot90(dims=[-2,-1]),
+#             A.flip(dims=[-1]).rot90(dims=[-2,-1]).rot90(dims=[-2,-1]), 
+#             A.flip(dims=[-1]).rot90(dims=[-2,-1]).rot90(dims=[-2,-1]).rot90(dims=[-2,-1])]
+
 def expand_D8(A):
     return [A, 
-            A.rot90(dims=(-1,-2)), 
-            A.rot90(dims=(-1,-2)).rot90(dims=(-1,-2)), 
-            A.rot90(dims=(-1,-2)).rot90(dims=(-1,-2)).rot90(dims=(-1,-2)),
-            A.fliplr(),
-            A.fliplr().rot90(dims=(-1,-2)),
-            A.fliplr().rot90(dims=(-1,-2)).rot90(dims=(-1,-2)), 
-            A.fliplr().rot90(dims=(-1,-2)).rot90(dims=(-1,-2)).rot90(dims=(-1,-2))]
+            #A.rot90(dims=[-2,-1]), 
+            A.rot90(dims=[-2,-1]).rot90(dims=[-2,-1]), 
+            #A.rot90(dims=[-2,-1]).rot90(dims=[-2,-1]).rot90(dims=[-2,-1]),
+            A.flip(dims=[-1]),
+            #A.flip(dims=[-1]).rot90(dims=[-2,-1]),
+            A.flip(dims=[-1]).rot90(dims=[-2,-1]).rot90(dims=[-2,-1])]
+            #A.flip(dims=[-1]).rot90(dims=[-2,-1]).rot90(dims=[-2,-1]).rot90(dims=[-2,-1])]
     
     
