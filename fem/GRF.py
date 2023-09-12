@@ -6,16 +6,30 @@ class GRF():
     def __init__(self, **kwargs):
         super().__init__()
         self.d = kwargs['d']
-        self.l = kwargs['l']
+        #Fixed length scale
+        if kwargs['l_min']==kwargs['l_max']:
+            self.l = kwargs['l_min']
+            self.N_samples = kwargs['N_samples']
+        #Random length scale
+        if kwargs['l_min']!=kwargs['l_max']:
+            self.l = np.random.uniform(kwargs['l_min'], kwargs['l_max'])
+            self.N_samples = 2
         self.lowerbound = kwargs['lowerbound']
         self.upperbound = kwargs['upperbound']
         self.N_samples = kwargs['N_samples']
         self.N_gridpoints = int(1/self.l) + 1
+        print(0)
         self.compute_grid()
+        print(1)
         self.compute_cov()
+        print(2)
         self.compute_GRFpoints()
+        print(3)
         self.compute_RBFintcoeffs()
-        self.compute_minmax()
+        print(4)
+        if self.lowerbound!=None or self.upperbound!=None:
+            self.compute_minmax()
+        print(5)
         
     def compute_grid(self):
         if self.d==2:
@@ -57,14 +71,24 @@ class GRF():
     
     def RBFint_scaled(self, sample):
         def function(x):
-            output_scaled = (self.RBFint(sample)(x) - self.f_min)/(self.f_max - self.f_min) #Scale to [0,1]
-            output_scaled = (self.upperbound - self.lowerbound)*output_scaled + self.lowerbound #Scale to [lowerbound,upperbound]
+            if self.lowerbound==None and self.upperbound==None:
+                output_scaled = self.RBFint(sample)(x)
+            if self.lowerbound!=None and self.upperbound==None:
+                output_scaled = self.RBFint(sample)(x) - self.f_min + self.lowerbound
+            if self.lowerbound!=None and self.upperbound!=None:
+                output_scaled = (self.RBFint(sample)(x) - self.f_min)/(self.f_max - self.f_min) #Scale to [0,1]
+                output_scaled = (self.upperbound - self.lowerbound)*output_scaled + self.lowerbound #Scale to [lowerbound,upperbound]
             return output_scaled
         return function
             
     def RBFint_pointwise_scaled(self, sample):
         def function(x):
-            output_scaled = (self.RBFint_pointwise(sample)(x) - self.f_min)/(self.f_max - self.f_min) #Scale to [0,1]
-            output_scaled = (self.upperbound - self.lowerbound)*output_scaled + self.lowerbound #Scale to [lowerbound,upperbound]
+            if self.lowerbound==None and self.upperbound==None:
+                output_scaled = self.RBFint_pointwise(sample)(x)
+            if self.lowerbound!=None and self.upperbound==None:
+                output_scaled = self.RBFint_pointwise(sample)(x) - self.f_min + self.lowerbound
+            if self.lowerbound!=None and self.upperbound!=None:
+                output_scaled = (self.RBFint_pointwise(sample)(x) - self.f_min)/(self.f_max - self.f_min) #Scale to [0,1]
+                output_scaled = (self.upperbound - self.lowerbound)*output_scaled + self.lowerbound #Scale to [lowerbound,upperbound]
             return output_scaled
         return function
