@@ -13,7 +13,7 @@ class GaussianRBF(nn.Module):
         
     def reset_parameters(self):
         nn.init.uniform_(self.mus, 0, 1)
-        nn.init.constant_(self.log_sigmas, np.log(0.15))
+        nn.init.constant_(self.log_sigmas, np.log(0.5))
         
     def forward(self, x):
         if self.hparams.get('symgroupavg',False)==True:
