@@ -96,19 +96,15 @@ class VarMiON(pl.LightningModule):
         return u_hat
     
     def simforward(self, Theta, F, N, x):
-        Theta = torch.tensor(Theta, dtype=self.hparams['dtype'])
-        F = torch.tensor(F, dtype=self.hparams['dtype'])
-        N = torch.tensor(N, dtype=self.hparams['dtype'])
-        x = torch.tensor(x, dtype=self.hparams['dtype'])
-        Theta = Theta.unsqueeze(0)
-        F = F.unsqueeze(0)
-        N = N.unsqueeze(0)
-        x = x.unsqueeze(1).unsqueeze(1)
-        NLBranch = self.NLBranch.forward(Theta).squeeze()
-        LBranch = self.LBranchF.forward(F).squeeze() + self.LBranchN.forward(N).squeeze()
-        Branch = torch.einsum('ij,j->i', NLBranch, LBranch)
-        Trunk = self.Trunk.forward(x).squeeze()
-        u = torch.einsum('i,oi->o', Branch, Trunk)
+        Theta = torch.tensor(Theta, dtype=self.hparams['dtype']).tile((2,1,1))
+        F = torch.tensor(F, dtype=self.hparams['dtype']).tile((2,1,1))
+        N = torch.tensor(N, dtype=self.hparams['dtype']).tile((2,1,1))
+        x = torch.tensor(x, dtype=self.hparams['dtype']).tile((2,1,1))
+        if self.hparams.get('symgroupavg',False)==True:    
+            u = self.symgroupavg_forward(Theta, F, N, x)
+        else:
+            u = self.forward(Theta, F, N, x)
+        u = u[0]
         u = torch.detach(u).cpu()
         u = np.array(u)
         return u
