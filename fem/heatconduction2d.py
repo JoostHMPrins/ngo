@@ -9,6 +9,9 @@ from datasaver import savedata
 
 def main(params, inputs, sample, save, savedir, label):
     
+    simparams = params['simparams']
+    trainingdataparams = params['trainingdataparams']
+    
     #Unit square geometry and mesh
     domain, geom = mesh.unitsquare(nelems=params['simparams']['nelems'], etype=params['simparams']['etype'])
     
@@ -19,33 +22,64 @@ def main(params, inputs, sample, save, savedir, label):
     ns.basis = domain.basis(params['simparams']['btype'], degree=params['simparams']['basisdegree'])
     ns.u = function.dotarg('lhs', ns.basis) #Solution
     
-    if params['trainingdataparams']['inputdata']=='grf':
-        theta = inputs['theta'].RBFint_pointwise_scaled(sample) #Conductivity
-        f = inputs['f'].RBFint_pointwise_scaled(sample) #Forcing
-        etat = inputs['etat'].RBFint_pointwise_scaled(sample) #Neumann BC top
-        etab = inputs['etab'].RBFint_pointwise_scaled(sample) #Neumann BC bottom
-        gl = inputs['gl'] #Dirichlet BC left
-        gr = inputs['gr'] #Dirichlet BC right
-        ns.theta = theta(ns.x)
-        ns.f = f(ns.x)
-        ns.etat = etat(ns.x)
-        ns.etab = etab(ns.x)
-        ns.gl = gl
-        ns.gr = gr
+    theta = inputs['theta'] #Conductivity
+    f = inputs['f'] #Forcing
+    etat = inputs['etat'] #Neumann BC top
+    etab = inputs['etab'] #Neumann BC bottom
+    gl = inputs['gl'] #Dirichlet BC left
+    gr = inputs['gr'] #Dirichlet BC right
+    ns.theta = theta(ns.x)
+    ns.f = f(ns.x)
+    ns.etat = etat(ns.x)
+    ns.etab = etab(ns.x)
+    ns.gl = gl
+    ns.gr = gr
+    
+#     if params['trainingdataparams']['inputdata']=='grf' and params['trainingdataparams']['theta']['l_min']==params['trainingdataparams']['theta']['l_max']:
+#         theta = inputs['theta'].RBFint_pointwise_scaled(sample) #Conductivity
+#         f = inputs['f'].RBFint_pointwise_scaled(sample) #Forcing
+#         etat = inputs['etat'].RBFint_pointwise_scaled(sample) #Neumann BC top
+#         etab = inputs['etab'].RBFint_pointwise_scaled(sample) #Neumann BC bottom
+#         gl = inputs['gl'] #Dirichlet BC left
+#         gr = inputs['gr'] #Dirichlet BC right
+#         ns.theta = theta(ns.x)
+#         ns.f = f(ns.x)
+#         ns.etat = etat(ns.x)
+#         ns.etab = etab(ns.x)
+#         ns.gl = gl
+#         ns.gr = gr
+        
+#     if params['trainingdataparams']['inputdata']=='grf' and params['trainingdataparams']['theta']['l_min']!=params['trainingdataparams']['theta']['l_max']:
+#         theta = GRF(**simparams, **trainingdataparams, **trainingdataparams['theta'])
+#         f = GRF(**simparams, **trainingdataparams, **trainingdataparams['f'])
+#         etab = GRF(**simparams, **trainingdataparams, **trainingdataparams['eta'])
+#         etat = GRF(**simparams, **trainingdataparams, **trainingdataparams['eta'])
+#         theta = inputs['theta'].RBFint_pointwise_scaled(sample=0) #Conductivity
+#         f = inputs['f'].RBFint_pointwise_scaled(sample=0) #Forcing
+#         etat = inputs['etat'].RBFint_pointwise_scaled(sample=0) #Neumann BC top
+#         etab = inputs['etab'].RBFint_pointwise_scaled(sample=0) #Neumann BC bottom
+#         gl = inputs['gl'] #Dirichlet BC left
+#         gr = inputs['gr'] #Dirichlet BC right
+#         ns.theta = theta(ns.x)
+#         ns.f = f(ns.x)
+#         ns.etat = etat(ns.x)
+#         ns.etab = etab(ns.x)
+#         ns.gl = gl
+#         ns.gr = gr
 
-    if params['trainingdataparams']['inputdata']=='polynomial':    
-        theta = inputs['theta'] #Conductivity
-        f = inputs['f'] #Forcing
-        etat = inputs['etat'] #Neumann BC top
-        etab = inputs['etab'] #Neumann BC bottom
-        gl = inputs['gl'] #Dirichlet BC left
-        gr = inputs['gr'] #Dirichlet BC right
-        ns.theta = theta(ns.x[0], ns.x[1])
-        ns.f = f(ns.x[0], ns.x[1])
-        ns.etat = etat(ns.x[0])
-        ns.etab = etab(ns.x[0])
-        ns.gl = gl
-        ns.gr = gr
+#     if params['trainingdataparams']['inputdata']=='polynomial':    
+#         theta = inputs['theta'] #Conductivity
+#         f = inputs['f'] #Forcing
+#         etat = inputs['etat'] #Neumann BC top
+#         etab = inputs['etab'] #Neumann BC bottom
+#         gl = inputs['gl'] #Dirichlet BC left
+#         gr = inputs['gr'] #Dirichlet BC right
+#         ns.theta = theta(ns.x[0], ns.x[1])
+#         ns.f = f(ns.x[0], ns.x[1])
+#         ns.etat = etat(ns.x[0])
+#         ns.etab = etab(ns.x[0])
+#         ns.gl = gl
+#         ns.gr = gr
         
     #Residual
     res = domain.integral('∇_i(basis_n) theta ∇_i(u) dV' @ ns, degree=params['simparams']['intdegree']) #Stiffness
@@ -92,10 +126,10 @@ def postprocessdata(params, inputs, sample, outputs):
         etab_sensor = etab(sensornodes[:,0]).reshape(12,12)
         etat_sensor = etat(sensornodes[:,0]).reshape(12,12)
     if params['trainingdataparams']['inputdata']=='grf':
-        theta_sensor = theta.RBFint_scaled(sample)(sensornodes).reshape(12,12)
-        f_sensor = f.RBFint_scaled(sample)(sensornodes).reshape(12,12)
-        etab_sensor = etab.RBFint_scaled(sample)(sensornodes).reshape(12,12)
-        etat_sensor = etat.RBFint_scaled(sample)(sensornodes).reshape(12,12)
+        theta_sensor = theta(sensornodes).reshape(12,12)
+        f_sensor = f(sensornodes).reshape(12,12)
+        etab_sensor = etab(sensornodes).reshape(12,12)
+        etat_sensor = etat(sensornodes).reshape(12,12)
     #indicators of boundaries
     Gamma_etab = np.zeros(etab_sensor.shape)
     Gamma_etab[y_sensor==0] = 1
@@ -134,19 +168,20 @@ def datasetgenerator(params, save, savedir, label):
     x_array = []
     u_array = []
     
-    if params['trainingdataparams']['inputdata']=='grf':
-        theta = GRF(**simparams, **trainingdataparams, **trainingdataparams['theta'])
-        f = GRF(**simparams, **trainingdataparams, **trainingdataparams['f'])
-        etab = GRF(**simparams, **trainingdataparams, **trainingdataparams['eta'])
-        etat = GRF(**simparams, **trainingdataparams, **trainingdataparams['eta'])
-        gl = 0
-        gr = 0
+    if params['trainingdataparams']['inputdata']=='grf' and trainingdataparams['theta']['l_min']==trainingdataparams['theta']['l_max']:
+                
+        theta_set = GRF(**simparams, **trainingdataparams, **trainingdataparams['theta'])
+        f_set = GRF(**simparams, **trainingdataparams, **trainingdataparams['f'])
+        etab_set = GRF(**simparams, **trainingdataparams, **trainingdataparams['eta'])
+        etat_set = GRF(**simparams, **trainingdataparams, **trainingdataparams['eta'])
+        gl_set = 0
+        gr_set = 0
     
     for i in range(params['trainingdataparams']['N_samples']):
         
         print("Simulation: "+str(i))
         
-        if params['trainingdataparams']['inputdata']=='polynomial':
+        if trainingdataparams['inputdata']=='polynomial':
             C = 0.2
             c_theta = C*np.random.uniform(-1, 1, 10)
             c_f = C*np.random.uniform(-1, 1, 10)
@@ -158,9 +193,25 @@ def datasetgenerator(params, save, savedir, label):
             etat = randompoly1DO3(c_etat)
             gl = 0
             gr = 0
-
+            
+        if trainingdataparams['inputdata']=='grf' and trainingdataparams['theta']['l_min']==trainingdataparams['theta']['l_max']:
+            theta = theta_set.RBFint_pointwise_scaled(i)
+            f = f_set.RBFint_pointwise_scaled(i)
+            etab = etab_set.RBFint_pointwise_scaled(i)
+            etat = etat_set.RBFint_pointwise_scaled(i)
+            gl = 0 
+            gr = 0
+        
+        if trainingdataparams['inputdata']=='grf' and trainingdataparams['theta']['l_min']!=trainingdataparams['theta']['l_max']:      
+            theta = GRF(**simparams, **trainingdataparams, **trainingdataparams['theta']).RBFint_pointwise_scaled(0)
+            f = GRF(**simparams, **trainingdataparams, **trainingdataparams['f']).RBFint_pointwise_scaled(0)
+            etab = GRF(**simparams, **trainingdataparams, **trainingdataparams['eta']).RBFint_pointwise_scaled(0)
+            etat = GRF(**simparams, **trainingdataparams, **trainingdataparams['eta']).RBFint_pointwise_scaled(0)
+            gl = 0 
+            gr = 0
+            
         #Perform simulations
-        inputs = {'theta': theta, 'f': f, 'etab': etab, 'etat': etat, 'gl': gl, 'gr': gr}
+        inputs = {'theta': theta, 'f': f, 'etab':etab, 'etat': etat, 'gl': gl, 'gr': gr}
         outputs = main(params, inputs, sample=i, save=False, savedir='.', label='.')
         
         #Postprocess data
