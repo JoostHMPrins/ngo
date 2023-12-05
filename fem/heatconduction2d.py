@@ -22,10 +22,10 @@ def main(params, inputs, sample, save, savedir, label):
     ns.basis = domain.basis(params['simparams']['btype'], degree=params['simparams']['basisdegree'])
     ns.u = function.dotarg('lhs', ns.basis) #Solution
     
-    theta = inputs['theta'] #Conductivity
-    f = inputs['f'] #Forcing
-    etat = inputs['etat'] #Neumann BC top
-    etab = inputs['etab'] #Neumann BC bottom
+    theta = inputs['theta'].RBFint_pointwise_scaled(sample) #Conductivity
+    f = inputs['f'].RBFint_pointwise_scaled(sample) #Forcing
+    etat = inputs['etat'].RBFint_pointwise_scaled(sample) #Neumann BC top
+    etab = inputs['etab'].RBFint_pointwise_scaled(sample) #Neumann BC bottom
     gl = inputs['gl'] #Dirichlet BC left
     gr = inputs['gr'] #Dirichlet BC right
     ns.theta = theta(ns.x)
@@ -126,10 +126,10 @@ def postprocessdata(params, inputs, sample, outputs):
         etab_sensor = etab(sensornodes[:,0]).reshape(12,12)
         etat_sensor = etat(sensornodes[:,0]).reshape(12,12)
     if params['trainingdataparams']['inputdata']=='grf':
-        theta_sensor = theta(sensornodes).reshape(12,12)
-        f_sensor = f(sensornodes).reshape(12,12)
-        etab_sensor = etab(sensornodes).reshape(12,12)
-        etat_sensor = etat(sensornodes).reshape(12,12)
+        theta_sensor = theta.RBFint_scaled(sample)(sensornodes).reshape(12,12)
+        f_sensor = f.RBFint_scaled(sample)(sensornodes).reshape(12,12)
+        etab_sensor = etab.RBFint_scaled(sample)(sensornodes).reshape(12,12)
+        etat_sensor = etat.RBFint_scaled(sample)(sensornodes).reshape(12,12)
     #indicators of boundaries
     Gamma_etab = np.zeros(etab_sensor.shape)
     Gamma_etab[y_sensor==0] = 1

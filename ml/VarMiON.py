@@ -2,7 +2,7 @@ import torch
 from torch import nn
 import pytorch_lightning as pl
 import numpy as np
-from customlayers import GaussianRBF, expand_D8
+from customlayers import *
 from customlosses import *
     
 class NLBranchNet(nn.Module):
@@ -10,6 +10,8 @@ class NLBranchNet(nn.Module):
         super().__init__()
         self.hparams = params['hparams']
         self.layers = nn.ModuleList()
+        # self.layers.append(ResizeLayer2D(params, input_dim=self.hparams['input_dim'], output_dim=12))
+        # self.layers.append(UnsqueezeLayer(params))
         self.layers.append(nn.ConvTranspose2d(in_channels=1, out_channels=16, kernel_size=4, stride=1, bias=self.hparams.get('bias_NLBranch',True)))
         self.layers.append(nn.ReLU())
         self.layers.append(nn.BatchNorm2d(num_features=16))
@@ -19,6 +21,8 @@ class NLBranchNet(nn.Module):
         self.layers.append(nn.ConvTranspose2d(in_channels=32, out_channels=16, kernel_size=2, stride=2, bias=self.hparams.get('bias_NLBranch',True)))
         self.layers.append(nn.ReLU())
         self.layers.append(nn.ConvTranspose2d(in_channels=16, out_channels=1, kernel_size=2, stride=2, bias=self.hparams.get('bias_NLBranch',True)))
+        # self.layers.append(SqueezeLayer(params))
+        # self.layers.append(ResizeLayer2D(params, input_dim=72, output_dim=self.hparams['latent_dim']))
         if self.hparams['NLB_outputactivation']!=None:
             self.layers.append(self.hparams['NLB_outputactivation'])
 
@@ -64,6 +68,20 @@ class LBranchNet(nn.Module):
         return y
     
     
+class HyperNet(nn.Module):
+    def __init__(self, params, input_dim, output_dim):
+        super().__init__()
+        self.hparams = params['hparams']
+        self.layers = nn.ModuleList()
+        self.layers.append(nn.Linear(input_dim, output_dim, bias=self.hparams.get('bias_HyperNet', True)))
+
+    def forward(self, x):
+        for layer in self.layers:
+            x = layer(x)
+        y = x
+        return y
+    
+    
 class VarMiON(pl.LightningModule):
     def __init__(self, params):
         super().__init__()
@@ -72,16 +90,30 @@ class VarMiON(pl.LightningModule):
         self.NLBranch = NLBranchNet(params)
         self.LBranchF = LBranchNet(params, input_dim=144, output_dim=72)
         self.LBranchN = LBranchNet(params, input_dim=144, output_dim=72)
-        self.Trunk = GaussianRBF(params, input_dim=params['simparams']['d'], output_dim=72)
+        if self.hparams.get('NOMAD',False)==True:
+            self.HyperNet = HyperNet(params, input_dim=72, output_dim=3*72)
+            self.Trunk = GaussianRBF_NOMAD(params, input_dim=params['simparams']['d'], output_dim=72)
+        else:
+            self.Trunk = GaussianRBF(params, input_dim=params['simparams']['d'], output_dim=72)
         self.compute_symgroup()
         self = self.to(self.hparams['dtype'])
         
     def forward(self, Theta, F, N, x):
         NLBranch = self.NLBranch.forward(Theta)
         LBranch = self.LBranchF.forward(F) + self.LBranchN.forward(N)
-        Branch = torch.einsum('nij,nj->ni', NLBranch, LBranch)
-        Trunk = self.Trunk.forward(x)
-        u_hat = torch.einsum('ni,noi->no', Branch, Trunk)
+        latentvector = torch.einsum('nij,nj->ni', NLBranch, LBranch)
+        if self.hparams.get('NOMAD',False)==True:
+            mus_log_sigmas = self.HyperNet.forward(latentvector)
+            mus = mus_log_sigmas[:,:2*72].reshape((mus_log_sigmas.shape[0],72,2))
+            mus = torch.sigmoid(mus)
+            log_sigmas = mus_log_sigmas[:,2*72:]
+            Trunk = self.Trunk.forward(mus, log_sigmas, x)
+            self.mus = mus
+            self.log_sigmas = log_sigmas
+        else:
+            Trunk = self.Trunk.forward(x)
+        u_hat = torch.einsum('ni,noi->no', latentvector, Trunk)
+        # u_hat = torch.sum(Trunk, axis=-1)
         return u_hat           
     
     def symgroupavg_forward(self, Theta, F, N, x):
