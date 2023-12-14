@@ -12,13 +12,13 @@ import dill
 #     for key, value in data.items() :
 #         np.save(savedir+'/'+label+'/'+key+'.npy', value)
 
-def savedata(params, variable, data, savedir):
+def save_data(params, variable, data, savedir):
     if not os.path.isdir(savedir):
         os.makedirs(savedir)
     with open(savedir+'/params.json', 'w') as fp:
         json.dump(params, fp)
-    np.save(savedir+'/'+variable+'.npy', value)
-        
+    np.save(savedir+'/'+variable+'.npy', data)
+    
         
 def save_function_list(params, variable, function_list, savedir):
     if not os.path.isdir(savedir):
@@ -30,3 +30,10 @@ def save_function_list(params, variable, function_list, savedir):
     # Save the serialized functions to a file
     with open(savedir+'/'+variable+'.pkl', 'wb') as file:
         file.write(serialized_functions)
+        
+        
+def load_function_list(params, variable, loaddir):
+    with open(loaddir+'/'+variable+'.pkl', 'rb') as file:
+        serialized_functions = file.read()
+    deserialized_functions = dill.loads(serialized_functions)
+    return deserialized_functions
