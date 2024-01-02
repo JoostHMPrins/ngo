@@ -6,6 +6,7 @@ import numpy as np
 class GaussianRBF(nn.Module):
     def __init__(self, params, input_dim, output_dim):
         super().__init__()
+        self.params = params
         self.hparams = params['hparams']
         self.mus = nn.Parameter(torch.Tensor(output_dim, input_dim))
         self.log_sigmas = nn.Parameter(torch.Tensor(output_dim))
@@ -13,7 +14,7 @@ class GaussianRBF(nn.Module):
         
     def reset_parameters(self):
         nn.init.uniform_(self.mus, 0, 1)
-        nn.init.constant_(self.log_sigmas, np.log(0.5))
+        nn.init.constant_(self.log_sigmas, np.log((1/self.hparams['latent_dim'])**(1/self.params['simparams']['d'])))
         
     def forward(self, x):
         if self.hparams.get('symgroupavg',False)==True:
@@ -43,44 +44,6 @@ class GaussianRBF_NOMAD(nn.Module):
             y = y/torch.sum(y, axis=-1)[:,:,None]
         return y
     
-    
-class ResizeLayer2D(nn.Module):
-    def __init__(self, params, input_dim, output_dim):
-        super().__init__()
-        self.hparams = params['hparams']
-        self.input_dim = input_dim
-        self.output_dim = output_dim
-        self.layers = nn.ModuleList()
-        self.layers.append(nn.Linear(self.input_dim*self.input_dim, self.output_dim*self.output_dim, bias=False))
-
-    def forward(self, x):
-        x = x.flatten(-2,-1)
-        for layer in self.layers:
-            x = layer(x)
-        y = x.reshape((self.hparams['batch_size'], self.output_dim, self.output_dim))
-        return y
-    
-
-class UnsqueezeLayer(nn.Module):
-    def __init__(self, params):
-        super().__init__()
-        self.hparams = params['hparams']
-        # self.axis = axis
-        
-    def forward(self, x):
-        y = x.unsqueeze(1)
-        return y
-    
-
-class SqueezeLayer(nn.Module):
-    def __init__(self, params):
-        super().__init__()
-        self.hparams = params['hparams']
-        
-    def forward(self, x):
-        y = x.squeeze()
-        return y
-    
 
 def expand_D8(A):
     return [A, 
@@ -91,5 +54,3 @@ def expand_D8(A):
             #A.flip(dims=[-1]).rot90(dims=[-2,-1]),
             A.flip(dims=[-1]).rot90(dims=[-2,-1]).rot90(dims=[-2,-1])]
             #A.flip(dims=[-1]).rot90(dims=[-2,-1]).rot90(dims=[-2,-1]).rot90(dims=[-2,-1])]
-    
-    
