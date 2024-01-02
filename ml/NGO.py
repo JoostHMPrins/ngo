@@ -1,0 +1,194 @@
+import torch
+from torch import nn
+import pytorch_lightning as pl
+import numpy as np
+from customlayers import *
+from customlosses import *
+    
+class CNNBranch(nn.Module):
+    def __init__(self, params):
+        super().__init__()
+        self.hparams = params['hparams']
+        self.layers = nn.ModuleList()
+        self.layers.append(nn.Conv2d(in_channels=1, out_channels=16, kernel_size=3, stride=1, padding=1, bias=self.hparams.get('bias_NLBranch',True)))
+        self.layers.append(nn.ReLU())
+        # self.layers.append(nn.BatchNorm2d(num_features=16))
+        self.layers.append(nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, stride=1, padding=1, bias=self.hparams.get('bias_NLBranch',True)))
+        self.layers.append(nn.ReLU())
+        # self.layers.append(nn.BatchNorm2d(num_features=32))
+        self.layers.append(nn.Conv2d(in_channels=32, out_channels=16, kernel_size=3, stride=1, padding=1, bias=self.hparams.get('bias_NLBranch',True)))
+        self.layers.append(nn.ReLU())
+        self.layers.append(nn.Conv2d(in_channels=16, out_channels=1, kernel_size=3, stride=1, padding=1, bias=self.hparams.get('bias_NLBranch',True)))
+        if self.hparams['NLB_outputactivation']!=None:
+            self.layers.append(self.hparams['NLB_outputactivation'])
+        # self.init_weights()
+        
+    # def init_weights(self):
+    #     for layer in self.layers:
+    #         if isinstance(layer, nn.Conv2d):
+    #             torch.nn.init.normal_(layer.weight, mean=0.0, std=1.0)
+
+    def forward(self, x):
+        if self.hparams.get('1/theta',False)==True:
+            x = 1/x
+        if self.hparams.get('scale_invariance',False)==True:
+            x_norm = torch.amax(torch.abs(x), dim=(-1,-2))
+            x = x/x_norm[:,None,None]
+        x = x.unsqueeze(1)
+        for layer in self.layers:
+            x = layer(x)
+        y = x.squeeze()
+        if self.hparams.get('Cholesky',False)==True:
+            L = y.tril()
+            D = torch.matmul(L, L.transpose(-1,-2))
+            y = D
+        if self.hparams.get('scale_invariance',False)==True:
+            if self.hparams.get('1/theta',False)==True:
+                y = y*x_norm[:,None,None]     
+            else:
+                y = y/x_norm[:,None,None]     
+        return y
+
+    
+class LBranchNet(nn.Module):
+    def __init__(self, params, input_dim, output_dim):
+        super().__init__()
+        self.hparams = params['hparams']
+        self.layers = nn.ModuleList()
+        self.layers.append(nn.Linear(input_dim, output_dim, bias=self.hparams.get('bias_LBranch',True)))
+        # self.init_weights()
+        
+    # def init_weights(self):
+    #     for layer in self.layers:
+    #         if isinstance(layer, nn.Linear):
+    #             torch.nn.init.normal_(layer.weight, mean=0.0, std=1.0)
+
+    def forward(self, x):
+        if self.hparams.get('scale_invariance',False)==True:
+            x_norm = torch.amax(torch.abs(x), dim=(-1,-2))
+            x = x/x_norm[:,None,None]
+        x = x.flatten(-2,-1)
+        for layer in self.layers:
+            x = layer(x)
+            y = x
+        if self.hparams.get('scale_invariance',False)==True:
+            y = y*x_norm[:,None]
+        return y
+    
+    
+class VarMiON(pl.LightningModule):
+    def __init__(self, params):
+        super().__init__()
+        self.params = params
+        self.hparams.update(params['hparams'])
+        self.NLBranch = CNNBranch(params)
+        self.LBranch_f = LBranchNet(params, input_dim=self.hparams['Q']**2, output_dim=self.hparams['latent_dim'])
+        self.LBranch_eta = LBranchNet(params, input_dim=self.hparams['Q']**2, output_dim=self.hparams['latent_dim'])
+        self.Trunk = GaussianRBF(params, input_dim=params['simparams']['d'], output_dim=self.hparams['latent_dim'])
+        self.compute_symgroup()
+        self.geometry()
+        self = self.to(self.hparams['dtype'])
+        
+    def forward(self, theta, f, etab, etat, x):
+        NLBranch = self.NLBranch.forward(theta)
+        LBranch = self.LBranch_f.forward(f) + self.LBranch_eta.forward(etab*self.xi_Gamma_b + etat*self.xi_Gamma_t)
+        latentvector = torch.einsum('nij,nj->ni', NLBranch, LBranch)
+        Trunk = self.Trunk.forward(x)
+        u_hat = torch.einsum('ni,noi->no', latentvector, Trunk)
+        return u_hat           
+    
+    def symgroupavg_forward(self, theta, f, etab, etat, x):
+        Theta_D8 = expand_D8(Theta)
+        F_D8 = expand_D8(F)
+        N_D8 = expand_D8(N)
+        u_hat = torch.zeros((x.shape[0], x.shape[1]), device=self.device)
+        for alpha in range(len(self.symgroup)):
+            self.Trunk.mapping = self.symgroup_inv[alpha].to(self.device)
+            u_hat += self.forward(Theta_D8[alpha], F_D8[alpha], N_D8[alpha], x)
+        u_hat = u_hat/len(self.symgroup)
+        return u_hat
+    
+    def simforward(self, theta, f, etab, etat, x):
+        theta = torch.tensor(theta, dtype=self.hparams['dtype']).tile((2,1,1))
+        f = torch.tensor(f, dtype=self.hparams['dtype']).tile((2,1,1))
+        etab = torch.tensor(etab, dtype=self.hparams['dtype']).tile((2,1,1))
+        etat = torch.tensor(etat, dtype=self.hparams['dtype']).tile((2,1,1))
+        x = torch.tensor(x, dtype=self.hparams['dtype']).tile((2,1,1))
+        if self.hparams.get('symgroupavg',False)==True:    
+            u = self.symgroupavg_forward(theta, f, etab, etat, x)
+        else:
+            u = self.forward(theta, f, etab, etat, x)
+        u = u[0]
+        u = torch.detach(u).cpu()
+        u = np.array(u)
+        return u
+
+    def configure_optimizers(self):
+        optimizer = self.hparams['optimizer'](self.parameters(), lr=self.hparams['learning_rate'])
+        return optimizer
+
+    def training_step(self, train_batch, batch_idx):
+        theta, f, etab, etat, x, u = train_batch
+        if self.hparams.get('symgroupavg',False)==True:    
+            u_hat = self.symgroupavg_forward(theta, f, etab, etat, x)
+        else:
+            u_hat = self.forward(theta, f, etab, etat, x)
+        loss = 0
+        for i in range(len(self.hparams['loss_coeffs'])):
+            loss = loss + self.hparams['loss_coeffs'][i]*self.hparams['loss_terms'][i](u_hat, u)
+        loss = loss/sum(self.hparams['loss_coeffs'])
+        self.log('train_loss', loss)
+        return loss
+
+    def validation_step(self, val_batch, batch_idx):
+        theta, f, etab, etat, x, u = val_batch
+        if self.hparams.get('symgroupavg',False)==True:    
+            u_hat = self.symgroupavg_forward(theta, f, etab, etat, x)
+        else:
+            u_hat = self.forward(theta, f, etab, etat, x)
+        loss = 0
+        for i in range(len(self.hparams['loss_coeffs'])):
+            loss = loss + self.hparams['loss_coeffs'][i]*self.hparams['loss_terms'][i](u_hat, u)
+        loss = loss/sum(self.hparams['loss_coeffs'])
+        self.log('val_loss', loss)
+        metric = self.hparams['metric'](u_hat, u)
+        self.log('metric', metric)
+        
+    def geometry(self):
+        self.xi_Omega = torch.ones((self.hparams['Q'],self.hparams['Q']), dtype=self.hparams['dtype'], device=self.device)
+        self.xi_Gamma_b = torch.zeros((self.hparams['Q'],self.hparams['Q']), dtype=self.hparams['dtype'], device=self.device)
+        self.xi_Gamma_b[:,0] = 1
+        self.xi_Gamma_t = torch.zeros((self.hparams['Q'],self.hparams['Q']), dtype=self.hparams['dtype'], device=self.device)
+        self.xi_Gamma_t[:,-1] = 1
+        self.xi_Gamma_l = torch.zeros((self.hparams['Q'],self.hparams['Q']), dtype=self.hparams['dtype'], device=self.device)
+        self.xi_Gamma_l[0,:] = 1
+        self.xi_Gamma_r = torch.zeros((self.hparams['Q'],self.hparams['Q']), dtype=self.hparams['dtype'], device=self.device)
+        self.xi_Gamma_r[-1,:] = 1
+        self.xi_Gamma = self.xi_Gamma_b + self.xi_Gamma_t + self.xi_Gamma_l + self.xi_Gamma_r
+        self.xi_Gamma[self.xi_Gamma==2] = 1
+    
+    def compute_symgroup(self):
+        R = torch.tensor([[0,-1],[1,0]], dtype=self.hparams['dtype'], device=self.device)
+        M = torch.tensor([[1,0],[0,-1]], dtype=self.hparams['dtype'], device=self.device)
+        I = torch.tensor([[1,0],[0,1]], dtype=self.hparams['dtype'], device=self.device)
+        # self.symgroup = [I, R, R@R, R@R@R, M, R@M, R@R@M, R@R@R@M]
+        self.symgroup = [I, R@R, M, R@R@M]
+        # self.symgroup_inv =[I, torch.linalg.inv(R), torch.linalg.inv(R@R), torch.linalg.inv(R@R@R), torch.linalg.inv(M), torch.linalg.inv(R@M), torch.linalg.inv(R@R@M), torch.linalg.inv(R@R@R@M)]
+        self.symgroup_inv =[I, torch.linalg.inv(R@R), torch.linalg.inv(M), torch.linalg.inv(R@R@M)]
+    
+    def on_fit_start(self):
+        self.xi_Omega = self.xi_Omega.to(self.device)
+        self.xi_Gamma_b = self.xi_Gamma_b.to(self.device)
+        self.xi_Gamma_t = self.xi_Gamma_t.to(self.device)
+        self.xi_Gamma_l = self.xi_Gamma_l.to(self.device)
+        self.xi_Gamma_r = self.xi_Gamma_r.to(self.device)
+        self.xi_Gamma = self.xi_Gamma.to(self.device)
+
+    def on_before_zero_grad(self, optimizer):
+        if self.hparams.get('bound_mus',False)==True:
+            for name, p in self.Trunk.named_parameters():
+                if name=='mus':
+                    p.data.clamp_(0, 1.0)
+            
+    def on_save_checkpoint(self, checkpoint):
+        checkpoint['params'] = self.params
