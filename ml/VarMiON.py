@@ -10,8 +10,6 @@ class NLBranchNet(nn.Module):
         super().__init__()
         self.hparams = params['hparams']
         self.layers = nn.ModuleList()
-        # self.layers.append(ResizeLayer2D(params, input_dim=self.hparams['input_dim'], output_dim=12))
-        # self.layers.append(UnsqueezeLayer(params))
         self.layers.append(nn.ConvTranspose2d(in_channels=1, out_channels=16, kernel_size=4, stride=1, bias=self.hparams.get('bias_NLBranch',True)))
         self.layers.append(nn.ReLU())
         self.layers.append(nn.BatchNorm2d(num_features=16))
@@ -21,8 +19,6 @@ class NLBranchNet(nn.Module):
         self.layers.append(nn.ConvTranspose2d(in_channels=32, out_channels=16, kernel_size=2, stride=2, bias=self.hparams.get('bias_NLBranch',True)))
         self.layers.append(nn.ReLU())
         self.layers.append(nn.ConvTranspose2d(in_channels=16, out_channels=1, kernel_size=2, stride=2, bias=self.hparams.get('bias_NLBranch',True)))
-        # self.layers.append(SqueezeLayer(params))
-        # self.layers.append(ResizeLayer2D(params, input_dim=72, output_dim=self.hparams['latent_dim']))
         if self.hparams['NLB_outputactivation']!=None:
             self.layers.append(self.hparams['NLB_outputactivation'])
 

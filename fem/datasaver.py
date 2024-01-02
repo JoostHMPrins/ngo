@@ -32,7 +32,7 @@ def save_function_list(params, variable, function_list, savedir):
         file.write(serialized_functions)
         
         
-def load_function_list(params, variable, loaddir):
+def load_function_list(variable, loaddir):
     with open(loaddir+'/'+variable+'.pkl', 'rb') as file:
         serialized_functions = file.read()
     deserialized_functions = dill.loads(serialized_functions)
