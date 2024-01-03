@@ -22,10 +22,26 @@ class GaussianRBF(nn.Module):
             d_scaled = (x[:,:,None,:] - mus_temp[None,None,:,:])/torch.exp(self.log_sigmas[None,None,:,None])
         else:
             d_scaled = (x[:,:,None,:] - self.mus[None,None,:,:])/torch.exp(self.log_sigmas[None,None,:,None])
-        y = torch.exp(-torch.sum(d_scaled**2, axis=-1))
+        y = torch.exp(-torch.sum(d_scaled**2, axis=-1)/2)
         if self.hparams.get('norm_basis',False)==True:
             y = y/torch.sum(y, axis=-1)[:,:,None]
         return y
+    
+    def grad(self, x):
+        if self.hparams.get('symgroupavg',False)==True:
+            mus_temp = torch.einsum('ij,gj->gi', self.mapping, self.mus - 1/2) + 1/2
+            prefactor = -1/(torch.exp(self.log_sigmas[None,None,:,None]))**2*(x[:,:,None,:] - mus_temp[None,None,:,:])
+        else:
+            prefactor = -1/(torch.exp(self.log_sigmas[None,None,:,None]))**2*(x[:,:,None,:] - self.mus[None,None,:,:])
+        return prefactor*self.forward(x)[:,:,:,None]
+    
+    def laplacian(self, x):
+        d_scaled = (x[:,:,None,:] - self.mus[None,None,:,:])/torch.exp(self.log_sigmas[None,None,:,None])
+        prefactor = -2/(torch.exp(self.log_sigmas[None,None,:])**2 + torch.sum(d_scaled**2, axis=-1))/(torch.exp(self.log_sigmas[None,None,:]))**2
+        return prefactor*self.forward(x)
+
+        
+        
     
 
 class GaussianRBF_NOMAD(nn.Module):
