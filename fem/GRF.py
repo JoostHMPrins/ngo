@@ -69,6 +69,7 @@ class GRF():
                 output_scaled = (self.upperbound - self.lowerbound)*output_scaled + self.lowerbound #Scale to [lowerbound,upperbound]
             return output_scaled
         return function
+          
             
     def RBFint_pointwise_scaled(self):
         def function(x):
