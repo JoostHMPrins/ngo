@@ -4,14 +4,6 @@ import json
 import dill
 
 
-# def savedata(params, data, savedir, label):
-#     if not os.path.isdir(savedir+'/'+label):
-#         os.makedirs(savedir+'/'+label)
-#     with open(savedir+'/'+label+'/params.json', 'w') as fp:
-#         json.dump(params, fp)
-#     for key, value in data.items() :
-#         np.save(savedir+'/'+label+'/'+key+'.npy', value)
-
 def save_data(params, variable, data, savedir):
     if not os.path.isdir(savedir):
         os.makedirs(savedir)
