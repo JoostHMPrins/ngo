@@ -12,10 +12,10 @@ class CNNBranch(nn.Module):
         self.layers = nn.ModuleList()
         self.layers.append(nn.Conv2d(in_channels=1, out_channels=16, kernel_size=3, stride=1, padding=1, bias=self.hparams.get('bias_NLBranch',True)))
         self.layers.append(nn.ReLU())
-        # self.layers.append(nn.BatchNorm2d(num_features=16))
+        self.layers.append(nn.BatchNorm2d(num_features=16))
         self.layers.append(nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, stride=1, padding=1, bias=self.hparams.get('bias_NLBranch',True)))
         self.layers.append(nn.ReLU())
-        # self.layers.append(nn.BatchNorm2d(num_features=32))
+        self.layers.append(nn.BatchNorm2d(num_features=32))
         self.layers.append(nn.Conv2d(in_channels=32, out_channels=16, kernel_size=3, stride=1, padding=1, bias=self.hparams.get('bias_NLBranch',True)))
         self.layers.append(nn.ReLU())
         self.layers.append(nn.Conv2d(in_channels=16, out_channels=1, kernel_size=3, stride=1, padding=1, bias=self.hparams.get('bias_NLBranch',True)))
@@ -76,26 +76,39 @@ class LBranchNet(nn.Module):
         return y
     
     
-class VarMiON(pl.LightningModule):
+class NGO(pl.LightningModule):
     def __init__(self, params):
         super().__init__()
         self.params = params
         self.hparams.update(params['hparams'])
         self.NLBranch = CNNBranch(params)
-        self.LBranch_f = LBranchNet(params, input_dim=self.hparams['Q']**2, output_dim=self.hparams['latent_dim'])
-        self.LBranch_eta = LBranchNet(params, input_dim=self.hparams['Q']**2, output_dim=self.hparams['latent_dim'])
-        self.Trunk = GaussianRBF(params, input_dim=params['simparams']['d'], output_dim=self.hparams['latent_dim'])
+        if self.hparams.get('VarMiON',False)==True:
+            self.LBranch_f = LBranchNet(params, input_dim=self.hparams['Q']**2, output_dim=self.hparams['latent_dim'])
+            self.LBranch_eta = LBranchNet(params, input_dim=self.hparams['Q']**2, output_dim=self.hparams['latent_dim'])
+        self.Trunk_test = GaussianRBF(params, input_dim=params['simparams']['d'], output_dim=self.hparams['latent_dim'])
+        if self.hparams.get('Petrov-Galerkin',False)==True:
+            self.Trunk_trial = GaussianRBF(params, input_dim=params['simparams']['d'], output_dim=self.hparams['latent_dim'])
+        else:
+            self.Trunk_trial = self.Trunk_test
         self.compute_symgroup()
         self.geometry()
         self = self.to(self.hparams['dtype'])
         
-    def forward(self, theta, f, etab, etat, x):
+    def forward_NGO(self, theta, f, etab, etat, x):
+        K = 
+        LBranch = self.LBranch_f.forward(f) + self.LBranch_eta.forward(etab*self.xi_Gamma_b + etat*self.xi_Gamma_t)
+        latentvector = torch.einsum('nij,nj->ni', NLBranch, LBranch)
+        Trunk = self.Trunk.forward(x)
+        u_hat = torch.einsum('ni,noi->no', latentvector, Trunk)
+        return u_hat
+        
+    def forward_VarMiON(self, theta, f, etab, etat, x):
         NLBranch = self.NLBranch.forward(theta)
         LBranch = self.LBranch_f.forward(f) + self.LBranch_eta.forward(etab*self.xi_Gamma_b + etat*self.xi_Gamma_t)
         latentvector = torch.einsum('nij,nj->ni', NLBranch, LBranch)
         Trunk = self.Trunk.forward(x)
         u_hat = torch.einsum('ni,noi->no', latentvector, Trunk)
-        return u_hat           
+        return u_hat     
     
     def symgroupavg_forward(self, theta, f, etab, etat, x):
         Theta_D8 = expand_D8(Theta)
@@ -155,7 +168,9 @@ class VarMiON(pl.LightningModule):
         self.log('metric', metric)
         
     def geometry(self):
+        #Domain
         self.xi_Omega = torch.ones((self.hparams['Q'],self.hparams['Q']), dtype=self.hparams['dtype'], device=self.device)
+        #Boundaries
         self.xi_Gamma_b = torch.zeros((self.hparams['Q'],self.hparams['Q']), dtype=self.hparams['dtype'], device=self.device)
         self.xi_Gamma_b[:,0] = 1
         self.xi_Gamma_t = torch.zeros((self.hparams['Q'],self.hparams['Q']), dtype=self.hparams['dtype'], device=self.device)
@@ -166,6 +181,16 @@ class VarMiON(pl.LightningModule):
         self.xi_Gamma_r[-1,:] = 1
         self.xi_Gamma = self.xi_Gamma_b + self.xi_Gamma_t + self.xi_Gamma_l + self.xi_Gamma_r
         self.xi_Gamma[self.xi_Gamma==2] = 1
+        #Outward normal
+        self.n = torch.zeros((self.hparams['Q'],self.hparams['Q'],params['simparams']['d']), dtype=self.hparams['dtype'], device=self.device)
+        self.n[0,:,:] = torch.tensor([-1,0], dtype=self.hparams['dtype'], device=self.device)
+        self.n[-1,:,:] = torch.tensor([1,0], dtype=self.hparams['dtype'], device=self.device)
+        self.n[:,0,:] = torch.tensor([0,-1], dtype=self.hparams['dtype'], device=self.device)
+        self.n[:,-1,:] = torch.tensor([0,1], dtype=self.hparams['dtype'], device=self.device)
+        self.n[0,0,:] = torch.tensor([0,0], dtype=self.hparams['dtype'], device=self.device)
+        self.n[0,-1,:] = torch.tensor([0,0], dtype=self.hparams['dtype'], device=self.device)
+        self.n[-1,0,:] = torch.tensor([0,0], dtype=self.hparams['dtype'], device=self.device)
+        self.n[-1,-1,:] = torch.tensor([0,0], dtype=self.hparams['dtype'], device=self.device)
     
     def compute_symgroup(self):
         R = torch.tensor([[0,-1],[1,0]], dtype=self.hparams['dtype'], device=self.device)
