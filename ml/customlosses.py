@@ -6,5 +6,4 @@ def L2_scaled(u_hat, u):
     norm = torch.norm(u, p=2, dim=-1)
     return torch.mean(L2/norm)
 
-
     
