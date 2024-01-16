@@ -14,7 +14,7 @@ class GaussianRBF(nn.Module):
         
     def reset_parameters(self):
         nn.init.uniform_(self.mus, 0, 1)
-        nn.init.constant_(self.log_sigmas, np.log((1/self.hparams['latent_dim'])**(1/self.params['simparams']['d'])))
+        nn.init.constant_(self.log_sigmas, np.log((1/self.hparams['h'])**(1/self.params['simparams']['d'])))
         
     def forward(self, x):
         if self.hparams.get('symgroupavg',False)==True:
@@ -34,16 +34,8 @@ class GaussianRBF(nn.Module):
         else:
             prefactor = -1/(torch.exp(self.log_sigmas[None,None,:,None]))**2*(x[:,:,None,:] - self.mus[None,None,:,:])
         return prefactor*self.forward(x)[:,:,:,None]
-    
-    def laplacian(self, x):
-        d_scaled = (x[:,:,None,:] - self.mus[None,None,:,:])/torch.exp(self.log_sigmas[None,None,:,None])
-        prefactor = -2/(torch.exp(self.log_sigmas[None,None,:])**2 + torch.sum(d_scaled**2, axis=-1))/(torch.exp(self.log_sigmas[None,None,:]))**2
-        return prefactor*self.forward(x)
 
         
-        
-    
-
 class GaussianRBF_NOMAD(nn.Module):
     def __init__(self, params, input_dim, output_dim):
         super().__init__()
