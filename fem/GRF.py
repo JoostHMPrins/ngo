@@ -36,7 +36,7 @@ class GRF():
         # if self.d==2:
         #     X, Y = np.mgrid[0:1:100*1j, 0:1:100*1j]
         #     x = np.vstack([X.ravel(), Y.ravel()]).T
-        x = np.random.uniform(0,1,size=(int((3/self.l)**self.d), self.d))
+        x = np.random.uniform(0,1,size=(int((10/self.l)**self.d), self.d))
         terms = self.f_hat[:,None]*np.exp(-np.sum((x[None,:,:] - self.x_grid[:,None,:])**2, axis=-1)/(2*self.l**2))
         f = np.sum(terms, axis=0)
         if self.lowerbound!=None:
