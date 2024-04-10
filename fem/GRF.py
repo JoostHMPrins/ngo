@@ -1,19 +1,22 @@
 import numpy as np
 from scipy.spatial import distance_matrix
+from numba import jit
 
 
 class GRF():
     def __init__(self, **kwargs):
         super().__init__()
         self.d = kwargs['d']
-        self.l = kwargs['l']
+        self.l = kwargs['l_min'] if kwargs['l_min']==kwargs['l_max'] else np.random.uniform(kwargs['l_min'],kwargs['l_max'])
         self.lowerbound = kwargs['lowerbound']
         self.upperbound = kwargs['upperbound']
         self.compute_grid()
         self.compute_cov()
         self.compute_GRFpoints()
         self.compute_RBFintcoeffs()
-        if self.lowerbound!=None or self.upperbound!=None:
+        if self.lowerbound==None and self.upperbound==None:
+            None
+        else:    
             self.compute_minmax()
         
     def compute_grid(self):

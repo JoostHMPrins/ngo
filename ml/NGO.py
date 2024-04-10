@@ -112,8 +112,10 @@ class NGO(pl.LightningModule):
         super().__init__()
         self.params = params
         self.hparams.update(params['hparams'])
+        self.bs = self.hparams['batch_size']
         self.NLBranch = CNNBranch(params)
         if self.hparams.get('VarMiON',False)==True:
+            self.NLBranch = NLBranchNet(params)
             self.LBranch_f = LBranchNet(params, input_dim=self.hparams['Q']**2, output_dim=self.hparams['h'])
             self.LBranch_eta = LBranchNet(params, input_dim=self.hparams['Q']**2, output_dim=self.hparams['h'])
         self.Trunk_test = GaussianRBF(params, input_dim=params['simparams']['d'], output_dim=self.hparams['h'])
@@ -125,53 +127,42 @@ class NGO(pl.LightningModule):
         self.geometry()
         self = self.to(self.hparams['dtype'])
         
-    def compute_K(self, theta, x):
-        Trunk_test = self.Trunk_test.forward(self.x_Q).reshape((self.hparams['batch_size'],self.hparams['Q'],self.hparams['Q'],self.hparams['h']))
-        gradTrunk_test = self.Trunk_test.grad(self.x_Q).reshape((self.hparams['batch_size'],self.hparams['Q'],self.hparams['Q'],self.hparams['h'],self.params['simparams']['d']))
-        Trunk_trial = self.Trunk_trial.forward(self.x_Q).reshape((self.hparams['batch_size'],self.hparams['Q'],self.hparams['Q'],self.hparams['h']))
-        gradTrunk_trial = self.Trunk_trial.grad(self.x_Q).reshape((self.hparams['batch_size'],self.hparams['Q'],self.hparams['Q'],self.hparams['h'],self.params['simparams']['d']))
-        # K += -1/torch.sum(self.xi_Omega)*torch.einsum('Nij,ij,Nijmx,Nijnx->Nmn', theta, self.xi_Omega, gradTrunk_test, gradTrunk_trial)
-        # K += 1/torch.sum(self.xi_Gamma - self.xi_Gamma_eta)*torch.einsum('Nijm,ijx,ij,Nij,Nijnx->Nmn', Trunk_test, self.n, self.xi_Gamma - self.xi_Gamma_eta, theta, gradTrunk_trial)
-        # K += 1/torch.sum(self.xi_Gamma_g)*torch.einsum('Nijn,ijx,ij,Nij,Nijmx->Nmn', Trunk_trial, self.n, self.xi_Gamma_g, theta, gradTrunk_test)
-        #Volume term
-        # K = -1/torch.sum(self.xi_Omega)*torch.sum(theta[:,:,:,None,None,None]*self.xi_Omega[None,:,:,None,None,None]*gradTrunk_test[:,:,:,:,None,:]*gradTrunk_trial[:,:,:,None,:,:], axis=(1,2,5))
-        # #Boundary term 1
-        # K += 1/torch.sum(self.xi_Gamma - self.xi_Gamma_eta)*torch.sum(Trunk_test[:,:,:,:,None,None]*self.n[None,:,:,None,None,:]*(self.xi_Gamma - self.xi_Gamma_eta)[None,:,:,None,None,None]*theta[:,:,:,None,None,None]*gradTrunk_trial[:,:,:,None,:,:], axis=(1,2,5))
-        # #Boundary term 2
-        # K += 1/torch.sum(self.xi_Gamma_g)*torch.sum(Trunk_trial[:,:,:,None,:,None]*self.n[None,:,:,None,None,:]*self.xi_Gamma_g[None,:,:,None,None,None]*theta[:,:,:,None,None,None]*gradTrunk_test[:,:,:,:,None,:], axis=(1,2,5))
+    def compute_K(self, theta):
+        Trunk_test = self.Trunk_test.forward(self.x_Q).reshape((self.bs,self.hparams['Q'],self.hparams['Q'],self.hparams['h']))
+        gradTrunk_test = self.Trunk_test.grad(self.x_Q).reshape((self.bs,self.hparams['Q'],self.hparams['Q'],self.hparams['h'],self.params['simparams']['d']))
+        Trunk_trial = self.Trunk_trial.forward(self.x_Q).reshape((self.bs,self.hparams['Q'],self.hparams['Q'],self.hparams['h']))
+        gradTrunk_trial = self.Trunk_trial.grad(self.x_Q).reshape((self.bs,self.hparams['Q'],self.hparams['Q'],self.hparams['h'],self.params['simparams']['d']))
         T1 = torch.sum(theta[:,:,:,None,None]*self.xi_Omega[None,:,:,None,None]*gradTrunk_test, axis=(1,2,4))
         T2 = torch.sum(gradTrunk_trial, axis=(1,2,4))
         K = -1/torch.sum(self.xi_Omega)*T1[:,:,None]*T2[:,None,:]
-        # K += -1/torch.sum(self.xi_Omega)*torch.einsum('Nm,Nn->Nmn', torch.sum(theta[:,:,:,None,None]*self.xi_Omega[None,:,:,None,None]*gradTrunk_test, axis=(1,2,4)), torch.sum(gradTrunk_trial, axis=(1,2,4)))
         T1 = torch.sum(Trunk_test[:,:,:,:,None]*self.n[None,:,:,None,:]*(self.xi_Gamma - self.xi_Gamma_eta)[None,:,:,None,None]*theta[:,:,:,None,None], axis=(1,2,4))
         T2 = torch.sum(gradTrunk_trial, axis=(1,2,4))
         K += 1/torch.sum(self.xi_Gamma - self.xi_Gamma_eta)*T1[:,:,None]*T2[:,None,:]
-        # K += 1/torch.sum(self.xi_Gamma - self.xi_Gamma_eta)*torch.einsum('Nm,Nn->Nmn', torch.sum(Trunk_test[:,:,:,:,None]*self.n[None,:,:,None,:]*(self.xi_Gamma - self.xi_Gamma_eta)[None,:,:,None,None]*theta[:,:,:,None,None], axis=(1,2,4)), torch.sum(gradTrunk_trial, axis=(1,2,4)))
         T1 = torch.sum(Trunk_trial[:,:,:,:,None]*self.n[None,:,:,None,:]*self.xi_Gamma_g[None,:,:,None,None]*theta[:,:,:,None,None], axis=(1,2,4))
         T2 = torch.sum(gradTrunk_test, axis=(1,2,4))
-        K += 1/torch.sum(self.xi_Gamma_g)*T1[:,:,None]*T2[:,None,:]
-        # K += 1/torch.sum(self.xi_Gamma_g)*torch.einsum('Nn,Nm->Nmn', torch.sum(Trunk_trial[:,:,:,:,None]*self.n[None,:,:,None,:]*self.xi_Gamma_g[None,:,:,None,None]*theta[:,:,:,None,None], axis=(1,2,4)), torch.sum(gradTrunk_test, axis=(1,2,4)))       
+        K += 1/torch.sum(self.xi_Gamma_g)*T1[:,:,None]*T2[:,None,:]     
         return K
     
-    def compute_d(self, f, etab, etat, x):
-        Trunk_test = self.Trunk_test.forward(self.x_Q).reshape((self.hparams['batch_size'],self.hparams['Q'],self.hparams['Q'],self.hparams['h']))
-        # d = torch.zeros((self.hparams['batch_size'],self.hparams['h']), dtype=self.hparams['dtype'], device=self.device)
-        # d += 1/torch.sum(self.xi_Omega)*torch.einsum('Nijm,ij,Nij->Nm', Trunk_test, self.xi_Omega, f)
-        # d += -1/torch.sum(self.xi_Gamma_b)*torch.einsum('Nijm,ij,Nij->Nm', Trunk_test, self.xi_Gamma_b, etab)
-        # d += -1/torch.sum(self.xi_Gamma_t)*torch.einsum('Nijm,ij,Nij->Nm', Trunk_test, self.xi_Gamma_t, etat)
+    def compute_d(self, f, etab, etat):
+        Trunk_test = self.Trunk_test.forward(self.x_Q).reshape((self.bs,self.hparams['Q'],self.hparams['Q'],self.hparams['h']))
         d = 1/torch.sum(self.xi_Omega)*torch.sum(Trunk_test*self.xi_Omega[None,:,:,None]*f[:,:,:,None], axis=(1,2))
         d += -1/torch.sum(self.xi_Gamma_b)*torch.sum(Trunk_test*self.xi_Gamma_b[None,:,:,None]*etab[:,:,:,None], axis=(1,2))
         d += -1/torch.sum(self.xi_Gamma_t)*torch.sum(Trunk_test*self.xi_Gamma_t[None,:,:,None]*etat[:,:,:,None], axis=(1,2))  
-        # d = F + Hb + Ht
         return d
         
     def forward_NGO(self, theta, f, etab, etat, x):
-        K = self.compute_K(theta, x)
-        d = self.compute_d(f, etab, etat, x)
+        K = self.compute_K(theta)
+        d = self.compute_d(f, etab, etat)
         K_inv = self.NLBranch.forward(K)
-        # K_inv = torch.linalg.inv(K)
-        # u_coeff = torch.einsum('Nnm,Nm->Nn', K_inv, d)
-        # u_coeff = torch.matmul(K_inv, d)
+        u_coeff = torch.sum(K_inv[:,:,:]*d[:,None,:], axis=-1)
+        Trunk_trial = self.Trunk_trial.forward(x)
+        u_hat = torch.sum(u_coeff[:,None,:]*Trunk_trial, axis=-1)
+        return u_hat
+    
+    def forward_FEM(self, theta, f, etab, etat, x):
+        K = self.compute_K(theta)
+        d = self.compute_d(f, etab, etat)
+        K_inv = torch.linalg.inv(K)
         u_coeff = torch.sum(K_inv[:,:,:]*d[:,None,:], axis=-1)
         Trunk_trial = self.Trunk_trial.forward(x)
         u_hat = torch.sum(u_coeff[:,None,:]*Trunk_trial, axis=-1)
@@ -204,11 +195,15 @@ class NGO(pl.LightningModule):
         return u_hat
     
     def simforward(self, theta, f, etab, etat, x):
-        theta = torch.tensor(theta, dtype=self.hparams['dtype']).tile((2,1,1))
-        f = torch.tensor(f, dtype=self.hparams['dtype']).tile((2,1,1))
-        etab = torch.tensor(etab, dtype=self.hparams['dtype']).tile((2,1,1))
-        etat = torch.tensor(etat, dtype=self.hparams['dtype']).tile((2,1,1))
-        x = torch.tensor(x, dtype=self.hparams['dtype']).tile((2,1,1))
+        self.bs = 1
+        self.geometry()
+        x_0_Q, x_1_Q = np.mgrid[0:1:self.hparams['Q']*1j, 0:1:self.hparams['Q']*1j]
+        x_Q = np.vstack([x_0_Q.ravel(), x_1_Q.ravel()]).T
+        theta = torch.tensor(theta(x_Q), dtype=self.hparams['dtype']).reshape((self.hparams['Q'],self.hparams['Q'])).tile((2,1,1))
+        f = torch.tensor(f(x_Q), dtype=self.hparams['dtype']).reshape((self.hparams['Q'],self.hparams['Q'])).tile((2,1,1))
+        etab = torch.tensor(etab(x_Q), dtype=self.hparams['dtype']).reshape((self.hparams['Q'],self.hparams['Q'])).tile((2,1,1))
+        etat = torch.tensor(etat(x_Q), dtype=self.hparams['dtype']).reshape((self.hparams['Q'],self.hparams['Q'])).tile((2,1,1))
+        x = torch.tensor(x, dtype=self.hparams['dtype']).tile(1,1,1)
         if self.hparams.get('symgroupavg',False)==True:    
             u = self.symgroupavg_forward(theta, f, etab, etat, x)
         else:
@@ -217,6 +212,40 @@ class NGO(pl.LightningModule):
         u = torch.detach(u).cpu()
         u = np.array(u)
         return u
+    
+    def simforward_FEM(self, theta, f, etab, etat, x):
+        self.bs = 1
+        self.geometry()
+        x_0_Q, x_1_Q = np.mgrid[0:1:self.hparams['Q']*1j, 0:1:self.hparams['Q']*1j]
+        x_Q = np.vstack([x_0_Q.ravel(), x_1_Q.ravel()]).T
+        theta = torch.tensor(theta(x_Q), dtype=self.hparams['dtype']).reshape((self.hparams['Q'],self.hparams['Q'])).tile((2,1,1))
+        f = torch.tensor(f(x_Q), dtype=self.hparams['dtype']).reshape((self.hparams['Q'],self.hparams['Q'])).tile((2,1,1))
+        etab = torch.tensor(etab(x_Q), dtype=self.hparams['dtype']).reshape((self.hparams['Q'],self.hparams['Q'])).tile((2,1,1))
+        etat = torch.tensor(etat(x_Q), dtype=self.hparams['dtype']).reshape((self.hparams['Q'],self.hparams['Q'])).tile((2,1,1))
+        x = torch.tensor(x, dtype=self.hparams['dtype']).tile(1,1,1)
+        u = self.forward_FEM(theta, f, etab, etat, x)
+        u = u[0]
+        u = torch.detach(u).cpu()
+        u = np.array(u)
+        return u
+    
+    def G(self, theta, x, xp):
+        self.bs = 1
+        self.geometry()
+        x_0_Q, x_1_Q = np.mgrid[0:1:self.hparams['Q']*1j, 0:1:self.hparams['Q']*1j]
+        x_Q = np.vstack([x_0_Q.ravel(), x_1_Q.ravel()]).T
+        theta = torch.tensor(theta(x_Q), dtype=self.hparams['dtype']).reshape((self.hparams['Q'],self.hparams['Q'])).tile((2,1,1))
+        x = torch.tensor(x, dtype=self.hparams['dtype']).tile(1,1,1)
+        xp = torch.tensor(xp, dtype=self.hparams['dtype']).tile(1,1,1)
+        K = self.compute_K(theta)
+        K_inv = self.NLBranch.forward(K)
+        Trunk_test = self.Trunk_test.forward(xp)
+        Trunk_trial = self.Trunk_trial.forward(x)
+        print(K_inv.shape)
+        print(Trunk_test.shape)
+        print(Trunk_trial.shape)
+        G = torch.einsum('dNn,dmn,dNm->dN', Trunk_trial, K_inv, Trunk_test)[0]
+        return G
 
     def configure_optimizers(self):
         optimizer = self.hparams['optimizer'](self.parameters(), lr=self.hparams['learning_rate'])
@@ -254,7 +283,7 @@ class NGO(pl.LightningModule):
         self.xi_Omega = torch.ones((self.hparams['Q'],self.hparams['Q']), dtype=self.hparams['dtype'], device=self.device)
         x_0_Q, x_1_Q = np.mgrid[0:1:self.hparams['Q']*1j, 0:1:self.hparams['Q']*1j]
         x_Q = np.vstack([x_0_Q.ravel(), x_1_Q.ravel()]).T
-        x_Q = np.tile(x_Q,(self.hparams['batch_size'],1,1))
+        x_Q = np.tile(x_Q,(self.bs,1,1))
         self.x_Q = torch.tensor(x_Q, dtype=self.hparams['dtype'], device=self.device)
         #Boundaries
         self.xi_Gamma_b = torch.zeros((self.hparams['Q'],self.hparams['Q']), dtype=self.hparams['dtype'], device=self.device)

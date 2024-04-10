@@ -8,6 +8,8 @@ import pytorch_lightning as pl
 import sys
 sys.path.insert(0, '/home/prins/st8/prins/phd/gitlab/ngo-pde-gk/fem') 
 from datasaver import load_function_list
+
+from NGO import NGO
     
 
 class DataModule_hc2d(pl.LightningDataModule):
