@@ -3,9 +3,11 @@ import numpy as np
 from torch import nn
 import pytorch_lightning as pl
 import numpy as np
+from BSplines import *
 from customlayers import *
 from customlosses import *
-    
+  
+
 class CNNBranch(nn.Module):
     def __init__(self, params):
         super().__init__()
@@ -46,46 +48,206 @@ class CNNBranch(nn.Module):
             else:
                 y = y/x_norm[:,None,None]     
         return y
-    
 
-class NLBranchNet(nn.Module):
+# class CNNBranch(nn.Module):
+#     def __init__(self, params):
+#         super().__init__()
+#         self.hparams = params['hparams']
+#         self.rel_kernel_size = 1/4
+#         self.kernel_size = int(self.rel_kernel_size*self.hparams['h'])
+#         self.channels = 1
+#         self.layers = nn.ModuleList()
+#         self.layers.append(nn.Conv2d(in_channels=1, out_channels=self.channels, kernel_size=self.kernel_size, stride=1, padding=0, bias=self.hparams.get('bias_NLBranch',True)))
+#         self.layers.append(nn.ReLU())
+#         self.layers.append(nn.BatchNorm2d(num_features=self.channels))
+#         self.layers.append(nn.ConvTranspose2d(in_channels=self.channels, out_channels=self.channels, kernel_size=self.kernel_size, stride=1, padding=0, bias=self.hparams.get('bias_NLBranch',True)))
+#         self.layers.append(nn.ReLU())
+#         self.layers.append(nn.BatchNorm2d(num_features=self.channels))
+#         self.layers.append(nn.Conv2d(in_channels=self.channels, out_channels=self.channels, kernel_size=self.kernel_size, stride=1, padding=0, bias=self.hparams.get('bias_NLBranch',True)))
+#         self.layers.append(nn.ReLU())
+#         self.layers.append(nn.ConvTranspose2d(in_channels=self.channels, out_channels=1, kernel_size=self.kernel_size, stride=1, padding=0, bias=self.hparams.get('bias_NLBranch',True)))
+#         if self.hparams['NLB_outputactivation']!=None:
+#             self.layers.append(self.hparams['NLB_outputactivation'])
+
+#     def forward(self, x):
+#         if self.hparams.get('1/theta',False)==True:
+#             x = 1/x
+#         if self.hparams.get('scale_invariance',False)==True:
+#             x_norm = torch.amax(torch.abs(x), dim=(-1,-2))
+#             x = x/x_norm[:,None,None]
+#         x = x.unsqueeze(1)
+#         for layer in self.layers:
+#             x = layer(x)
+#         y = x.squeeze()
+#         if self.hparams.get('Cholesky',False)==True:
+#             L = y.tril()
+#             D = torch.matmul(L, L.transpose(-1,-2))
+#             y = D
+#         if self.hparams.get('scale_invariance',False)==True:
+#             if self.hparams.get('1/theta',False)==True:
+#                 y = y*x_norm[:,None,None]     
+#             else:
+#                 y = y/x_norm[:,None,None]     
+#         return y
+    
+    
+# class CNNBranch(nn.Module):
+#     def __init__(self, params):
+#         super().__init__()
+#         self.hparams = params['hparams']
+#         self.layers = nn.ModuleList()
+#         self.layers.append(nn.ConvTranspose2d(in_channels=1, out_channels=10, kernel_size=4, stride=1, padding=0, bias=self.hparams.get('bias_NLBranch',True)))
+#         for i in range(int(self.hparams['h']/8)-1):
+#             self.layers.append(nn.ReLU())
+#             self.layers.append(nn.BatchNorm2d(num_features=10))
+#             self.layers.append(nn.Conv2d(in_channels=10, out_channels=10, kernel_size=4, stride=1, padding=0, bias=self.hparams.get('bias_NLBranch',True)))
+#             self.layers.append(nn.ReLU())
+#             self.layers.append(nn.BatchNorm2d(num_features=10))
+#             self.layers.append(nn.ConvTranspose2d(in_channels=10, out_channels=10, kernel_size=4, stride=1, padding=0, bias=self.hparams.get('bias_NLBranch',True)))
+#             self.layers.append(nn.ReLU())
+#             self.layers.append(nn.BatchNorm2d(num_features=10))
+#         self.layers.append(nn.Conv2d(in_channels=10, out_channels=1, kernel_size=4, stride=1, padding=0, bias=self.hparams.get('bias_NLBranch',True)))
+#         if self.hparams['NLB_outputactivation']!=None:
+#             self.layers.append(self.hparams['NLB_outputactivation'])        
+
+#     def forward(self, x):
+#         if self.hparams.get('1/theta',False)==True:
+#             x = 1/x
+#         if self.hparams.get('scale_invariance',False)==True:
+#             x_norm = torch.amax(torch.abs(x), dim=(-1,-2))
+#             x = x/x_norm[:,None,None]
+#         x = x.unsqueeze(1)
+#         for layer in self.layers:
+#             x = layer(x)
+#         y = x.squeeze()
+#         if self.hparams.get('Cholesky',False)==True:
+#             L = y.tril()
+#             D = torch.matmul(L, L.transpose(-1,-2))
+#             y = D
+#         if self.hparams.get('scale_invariance',False)==True:
+#             if self.hparams.get('1/theta',False)==True:
+#                 y = y*x_norm[:,None,None]     
+#             else:
+#                 y = y/x_norm[:,None,None]     
+#         return y
+
+
+# class NLBranchNet(nn.Module):
+#     def __init__(self, params):
+#         super().__init__()
+#         self.hparams = params['hparams']
+#         self.layers = nn.ModuleList()
+#         self.layers.append(nn.ConvTranspose2d(in_channels=1, out_channels=16, kernel_size=3, stride=2, bias=self.hparams.get('bias_NLBranch',True)))
+#         self.layers.append(nn.ReLU())
+#         self.layers.append(nn.BatchNorm2d(num_features=16))
+#         self.layers.append(nn.ConvTranspose2d(in_channels=16, out_channels=32, kernel_size=3, stride=2, bias=self.hparams.get('bias_NLBranch',True)))
+#         self.layers.append(nn.ReLU())
+#         self.layers.append(nn.BatchNorm2d(num_features=32))
+#         self.layers.append(nn.ConvTranspose2d(in_channels=32, out_channels=16, kernel_size=3, stride=2, bias=self.hparams.get('bias_NLBranch',True)))
+#         self.layers.append(nn.ReLU())
+#         self.layers.append(nn.ConvTranspose2d(in_channels=16, out_channels=1, kernel_size=2, stride=2, bias=self.hparams.get('bias_NLBranch',True)))
+#         if self.hparams['NLB_outputactivation']!=None:
+#             self.layers.append(self.hparams['NLB_outputactivation'])
+
+#     def forward(self, x):
+#         if self.hparams.get('1/theta',False)==True:
+#             x = 1/x
+#         if self.hparams.get('scale_invariance',False)==True:
+#             x_norm = torch.amax(torch.abs(x), dim=(-1,-2))
+#             x = x/x_norm[:,None,None]
+#         x = x.unsqueeze(1)
+#         for layer in self.layers:
+#             x = layer(x)
+#         y = x.squeeze()
+#         if self.hparams.get('Cholesky',False)==True:
+#             L = y.tril()
+#             D = torch.matmul(L, L.transpose(-1,-2))
+#             y = D
+#         if self.hparams.get('scale_invariance',False)==True:
+#             if self.hparams.get('1/theta',False)==True:
+#                 y = y*x_norm[:,None,None]     
+#             else:
+#                 y = y/x_norm[:,None,None]     
+#         return y
+
+
+class NLBranch_NGO(nn.Module):
     def __init__(self, params):
         super().__init__()
         self.hparams = params['hparams']
         self.layers = nn.ModuleList()
-        self.layers.append(nn.ConvTranspose2d(in_channels=1, out_channels=16, kernel_size=4, stride=1, bias=self.hparams.get('bias_NLBranch',True)))
+        
+        # Adjusted convolutional layers
+        self.layers.append(ReshapeLayer((self.hparams['batch_size'],1,self.hparams['h'],self.hparams['h'])))
+        self.layers.append(nn.Conv2d(in_channels=1, out_channels=16, kernel_size=2, stride=2, bias=self.hparams.get('bias_NLBranch', True)))
         self.layers.append(nn.ReLU())
-        self.layers.append(nn.BatchNorm2d(num_features=16))
-        self.layers.append(nn.ConvTranspose2d(in_channels=16, out_channels=32, kernel_size=4, stride=1, bias=self.hparams.get('bias_NLBranch',True)))
+        self.layers.append(nn.BatchNorm2d(num_features=16, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True))
+        self.layers.append(nn.Conv2d(in_channels=16, out_channels=32, kernel_size=2, stride=2, bias=self.hparams.get('bias_NLBranch', True)))
         self.layers.append(nn.ReLU())
-        self.layers.append(nn.BatchNorm2d(num_features=32))
-        self.layers.append(nn.ConvTranspose2d(in_channels=32, out_channels=16, kernel_size=2, stride=2, bias=self.hparams.get('bias_NLBranch',True)))
+        self.layers.append(nn.BatchNorm2d(num_features=32, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True))
+        self.layers.append(nn.Conv2d(in_channels=32, out_channels=16, kernel_size=4, stride=1, bias=self.hparams.get('bias_NLBranch', True)))
         self.layers.append(nn.ReLU())
-        self.layers.append(nn.ConvTranspose2d(in_channels=16, out_channels=1, kernel_size=2, stride=2, bias=self.hparams.get('bias_NLBranch',True)))
-        if self.hparams['NLB_outputactivation']!=None:
+        self.layers.append(nn.Conv2d(in_channels=16, out_channels=1, kernel_size=4, stride=1, bias=self.hparams.get('bias_NLBranch', True)))
+        self.layers.append(ReshapeLayer((self.hparams['batch_size'],100)))
+        self.layers.append(nn.Linear(100,100))
+        self.layers.append(nn.ReLU())
+        self.layers.append(ReshapeLayer((self.hparams['batch_size'],1,10,10)))
+        self.layers.append(nn.ConvTranspose2d(1, 16, kernel_size=4, stride=1, bias=self.hparams.get('bias_NLBranch', True)))
+        self.layers.append(nn.ReLU())
+        self.layers.append(nn.BatchNorm2d(num_features=16, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True))
+        self.layers.append(nn.ConvTranspose2d(16, 32, kernel_size=4, stride=1, bias=self.hparams.get('bias_NLBranch', True)))
+        self.layers.append(nn.ReLU())
+        self.layers.append(nn.BatchNorm2d(num_features=32, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True))
+        self.layers.append(nn.ConvTranspose2d(32, 16, kernel_size=2, stride=2, bias=self.hparams.get('bias_NLBranch', True)))
+        self.layers.append(nn.ReLU())
+        self.layers.append(nn.ConvTranspose2d(16, 1, kernel_size=2, stride=2, bias=self.hparams.get('bias_NLBranch', True)))
+        self.layers.append(ReshapeLayer((self.hparams['batch_size'],64,64)))
+        if self.hparams['NLB_outputactivation'] is not None:
             self.layers.append(self.hparams['NLB_outputactivation'])
 
     def forward(self, x):
-        if self.hparams.get('1/theta',False)==True:
-            x = 1/x
-        if self.hparams.get('scale_invariance',False)==True:
-            x_norm = torch.amax(torch.abs(x), dim=(-1,-2))
-            x = x/x_norm[:,None,None]
-        x = x.unsqueeze(1)
         for layer in self.layers:
             x = layer(x)
-        y = x.squeeze()
-        if self.hparams.get('Cholesky',False)==True:
-            L = y.tril()
-            D = torch.matmul(L, L.transpose(-1,-2))
-            y = D
-        if self.hparams.get('scale_invariance',False)==True:
-            if self.hparams.get('1/theta',False)==True:
-                y = y*x_norm[:,None,None]     
-            else:
-                y = y/x_norm[:,None,None]     
+        y = x
         return y
 
+
+class NLBranch_VarMiON(nn.Module):
+    def __init__(self, params):
+        super().__init__()
+        self.hparams = params['hparams']
+        self.layers = nn.ModuleList()
+        
+        # Adjusted convolutional layers
+        self.layers.append(ReshapeLayer((self.hparams['batch_size'],1,12,12)))
+        self.layers.append(nn.Conv2d(in_channels=1, out_channels=4, kernel_size=2, stride=2, bias=self.hparams.get('bias_NLBranch', True)))
+        self.layers.append(nn.ReLU())
+        self.layers.append(nn.Conv2d(in_channels=4, out_channels=16, kernel_size=2, stride=2, bias=self.hparams.get('bias_NLBranch', True)))
+        self.layers.append(nn.ReLU())
+        self.layers.append(nn.Conv2d(in_channels=16, out_channels=32, kernel_size=2, stride=2, bias=self.hparams.get('bias_NLBranch', True)))
+        self.layers.append(ReshapeLayer((self.hparams['batch_size'],32)))
+        self.layers.append(nn.Linear(32,32))
+        self.layers.append(ReshapeLayer((self.hparams['batch_size'],32,1,1)))
+        self.layers.append(nn.ConvTranspose2d(32, 16, kernel_size=4, stride=4, bias=self.hparams.get('bias_NLBranch', True)))
+        self.layers.append(nn.ReLU())
+        self.layers.append(nn.BatchNorm2d(num_features=16, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True))
+        self.layers.append(nn.ConvTranspose2d(16, 8, kernel_size=4, stride=4, bias=self.hparams.get('bias_NLBranch', True)))
+        self.layers.append(nn.ReLU())
+        self.layers.append(nn.BatchNorm2d(num_features=8, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True))
+        self.layers.append(nn.ConvTranspose2d(8, 4, kernel_size=2, stride=2, bias=self.hparams.get('bias_NLBranch', True)))
+        self.layers.append(nn.ReLU())
+        self.layers.append(nn.BatchNorm2d(num_features=4, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True))
+        self.layers.append(nn.ConvTranspose2d(4, 1, kernel_size=2, stride=2, bias=self.hparams.get('bias_NLBranch', True)))
+        self.layers.append(ReshapeLayer((self.hparams['batch_size'],64,64)))
+        if self.hparams['NLB_outputactivation'] is not None:
+            self.layers.append(self.hparams['NLB_outputactivation'])
+
+    def forward(self, x):
+        for layer in self.layers:
+            x = layer(x)
+        y = x
+        return y
+    
     
 class LBranchNet(nn.Module):
     def __init__(self, params, input_dim, output_dim):
@@ -106,6 +268,22 @@ class LBranchNet(nn.Module):
             y = y*x_norm[:,None]
         return y
     
+
+class DeepONetBranch(nn.Module):
+    def __init__(self, params, input_dim, output_dim):
+        super().__init__()
+        self.hparams = params['hparams']
+        self.layers = nn.ModuleList()
+        self.layers.append(nn.Linear(input_dim,output_dim, bias=self.hparams.get('bias_NLBranch',True)))
+        if self.hparams['NLB_outputactivation']!=None:
+            self.layers.append(self.hparams['NLB_outputactivation'])
+
+    def forward(self, x):
+        for layer in self.layers:
+            x = layer(x)
+            y = x
+        return y
+    
     
 class NGO(pl.LightningModule):
     def __init__(self, params):
@@ -113,12 +291,20 @@ class NGO(pl.LightningModule):
         self.params = params
         self.hparams.update(params['hparams'])
         self.bs = self.hparams['batch_size']
-        self.NLBranch = CNNBranch(params)
+        #Branch
+        if self.hparams.get('DeepONet',False)==True:
+            self.NLBranch = DeepONetBranch(params, input_dim=3*self.hparams['Q']**params['simparams']['d'], output_dim=self.hparams['h'])
         if self.hparams.get('VarMiON',False)==True:
-            self.NLBranch = NLBranchNet(params)
-            self.LBranch_f = LBranchNet(params, input_dim=self.hparams['Q']**2, output_dim=self.hparams['h'])
-            self.LBranch_eta = LBranchNet(params, input_dim=self.hparams['Q']**2, output_dim=self.hparams['h'])
-        self.Trunk_test = GaussianRBF(params, input_dim=params['simparams']['d'], output_dim=self.hparams['h'])
+            self.NLBranch = NLBranch_VarMiON(params)
+            self.LBranch_f = LBranchNet(params, input_dim=self.hparams['Q']**params['simparams']['d'], output_dim=self.hparams['h'])
+            self.LBranch_eta = LBranchNet(params, input_dim=self.hparams['Q']**params['simparams']['d'], output_dim=self.hparams['h'])
+        if self.hparams.get('NGO',False)==True:
+            self.NLBranch = NLBranch_NGO(params)
+        # else:
+        #     self.NLBranch = CNNBranch(params)
+            #Trunk
+        # self.Trunk_test = GaussianRBF(params, input_dim=params['simparams']['d'], output_dim=self.hparams['h'])
+        self.Trunk_test = BSplineBasis2D(knots_x=torch.tensor([0,0,0,0,0.2,0.4,0.6,0.8,1,1,1,1]), knots_y=torch.tensor([0,0,0,0,0.2,0.4,0.6,0.8,1,1,1,1]), polynomial_order=3, **params)
         if self.hparams.get('Petrov-Galerkin',False)==True:
             self.Trunk_trial = GaussianRBF(params, input_dim=params['simparams']['d'], output_dim=self.hparams['h'])
         else:
@@ -128,70 +314,96 @@ class NGO(pl.LightningModule):
         self = self.to(self.hparams['dtype'])
         
     def compute_K(self, theta):
-        Trunk_test = self.Trunk_test.forward(self.x_Q).reshape((self.bs,self.hparams['Q'],self.hparams['Q'],self.hparams['h']))
-        gradTrunk_test = self.Trunk_test.grad(self.x_Q).reshape((self.bs,self.hparams['Q'],self.hparams['Q'],self.hparams['h'],self.params['simparams']['d']))
-        Trunk_trial = self.Trunk_trial.forward(self.x_Q).reshape((self.bs,self.hparams['Q'],self.hparams['Q'],self.hparams['h']))
-        gradTrunk_trial = self.Trunk_trial.grad(self.x_Q).reshape((self.bs,self.hparams['Q'],self.hparams['Q'],self.hparams['h'],self.params['simparams']['d']))
-        T1 = torch.sum(theta[:,:,:,None,None]*self.xi_Omega[None,:,:,None,None]*gradTrunk_test, axis=(1,2,4))
-        T2 = torch.sum(gradTrunk_trial, axis=(1,2,4))
-        K = -1/torch.sum(self.xi_Omega)*T1[:,:,None]*T2[:,None,:]
-        T1 = torch.sum(Trunk_test[:,:,:,:,None]*self.n[None,:,:,None,:]*(self.xi_Gamma - self.xi_Gamma_eta)[None,:,:,None,None]*theta[:,:,:,None,None], axis=(1,2,4))
-        T2 = torch.sum(gradTrunk_trial, axis=(1,2,4))
-        K += 1/torch.sum(self.xi_Gamma - self.xi_Gamma_eta)*T1[:,:,None]*T2[:,None,:]
-        T1 = torch.sum(Trunk_trial[:,:,:,:,None]*self.n[None,:,:,None,:]*self.xi_Gamma_g[None,:,:,None,None]*theta[:,:,:,None,None], axis=(1,2,4))
-        T2 = torch.sum(gradTrunk_test, axis=(1,2,4))
-        K += 1/torch.sum(self.xi_Gamma_g)*T1[:,:,None]*T2[:,None,:]     
+        # print('Assembling K')
+        Trunk_test = self.Trunk_test.forward(self.x_Q.reshape((self.bs*self.hparams['Q']*self.hparams['Q'],self.params['simparams']['d']))).reshape((self.bs,self.hparams['Q'],self.hparams['Q'],self.hparams['h'])).to(self.device)
+        gradTrunk_test = self.Trunk_test.grad(self.x_Q.reshape((self.bs*self.hparams['Q']*self.hparams['Q'],self.params['simparams']['d']))).reshape((self.bs,self.hparams['Q'],self.hparams['Q'],self.hparams['h'],self.params['simparams']['d'])).to(self.device)
+        Trunk_trial = self.Trunk_trial.forward(self.x_Q.reshape((self.bs*self.hparams['Q']*self.hparams['Q'],self.params['simparams']['d']))).reshape((self.bs,self.hparams['Q'],self.hparams['Q'],self.hparams['h'])).to(self.device)
+        gradTrunk_trial = self.Trunk_trial.grad(self.x_Q.reshape((self.bs*self.hparams['Q']*self.hparams['Q'],self.params['simparams']['d']))).reshape((self.bs,self.hparams['Q'],self.hparams['Q'],self.hparams['h'],self.params['simparams']['d'])).to(self.device)
+        K = 1/torch.sum(self.xi_Omega)*torch.einsum('Nij,ij,Nijmx,Nijnx->Nmn', theta, self.xi_Omega, gradTrunk_test, gradTrunk_trial)
+        K += -1/torch.sum(self.xi_Gamma_g)*torch.einsum('Nijm,ijx,ij,Nij,Nijnx->Nmn', Trunk_test, self.n, self.xi_Gamma_g, theta, gradTrunk_trial)
+        K += -1/torch.sum(self.xi_Gamma_g)*torch.einsum('Nijn,ijx,ij,Nij,Nijmx->Nmn', Trunk_trial, self.n, self.xi_Gamma_g, theta, gradTrunk_test)
         return K
     
+    # def compute_K(self, theta):
+    #     Trunk_test = self.Trunk_test.forward(self.x_Q).reshape((self.bs,self.hparams['Q'],self.hparams['Q'],self.hparams['h']))
+    #     gradTrunk_test = self.Trunk_test.grad(self.x_Q).reshape((self.bs,self.hparams['Q'],self.hparams['Q'],self.hparams['h'],self.params['simparams']['d']))
+    #     Trunk_trial = self.Trunk_trial.forward(self.x_Q).reshape((self.bs,self.hparams['Q'],self.hparams['Q'],self.hparams['h']))
+    #     gradTrunk_trial = self.Trunk_trial.grad(self.x_Q).reshape((self.bs,self.hparams['Q'],self.hparams['Q'],self.hparams['h'],self.params['simparams']['d']))
+    #     T1 = torch.sum(theta[:,:,:,None,None]*self.xi_Omega[None,:,:,None,None]*gradTrunk_test, axis=(1,2,4))
+    #     T2 = torch.sum(gradTrunk_trial, axis=(1,2,4))
+    #     K = -1/torch.sum(self.xi_Omega)*T1[:,:,None]*T2[:,None,:]
+    #     T1 = torch.sum(Trunk_test[:,:,:,:,None]*self.n[None,:,:,None,:]*(self.xi_Gamma - self.xi_Gamma_eta)[None,:,:,None,None]*theta[:,:,:,None,None], axis=(1,2,4))
+    #     T2 = torch.sum(gradTrunk_trial, axis=(1,2,4))
+    #     K += +1/torch.sum(self.xi_Gamma - self.xi_Gamma_eta)*T1[:,:,None]*T2[:,None,:]
+    #     T1 = torch.sum(Trunk_trial[:,:,:,:,None]*self.n[None,:,:,None,:]*self.xi_Gamma_g[None,:,:,None,None]*theta[:,:,:,None,None], axis=(1,2,4))
+    #     T2 = torch.sum(gradTrunk_test, axis=(1,2,4))
+    #     K += +1/torch.sum(self.xi_Gamma_g)*T1[:,:,None]*T2[:,None,:]     
+    #     return K
+
+    
     def compute_d(self, f, etab, etat):
-        Trunk_test = self.Trunk_test.forward(self.x_Q).reshape((self.bs,self.hparams['Q'],self.hparams['Q'],self.hparams['h']))
-        d = 1/torch.sum(self.xi_Omega)*torch.sum(Trunk_test*self.xi_Omega[None,:,:,None]*f[:,:,:,None], axis=(1,2))
-        d += -1/torch.sum(self.xi_Gamma_b)*torch.sum(Trunk_test*self.xi_Gamma_b[None,:,:,None]*etab[:,:,:,None], axis=(1,2))
-        d += -1/torch.sum(self.xi_Gamma_t)*torch.sum(Trunk_test*self.xi_Gamma_t[None,:,:,None]*etat[:,:,:,None], axis=(1,2))  
+        # print('Assembling d')
+        Trunk_test = self.Trunk_test.forward(self.x_Q.reshape((self.bs*self.hparams['Q']*self.hparams['Q'],self.params['simparams']['d']))).reshape((self.bs,self.hparams['Q'],self.hparams['Q'],self.hparams['h'])).to(self.device)
+        d = 1/torch.sum(self.xi_Omega)*torch.einsum('Nijm,ij,Nij->Nm', Trunk_test, self.xi_Omega, f)
+        d += 1/torch.sum(self.xi_Gamma_b)*torch.einsum('Nijm,ij,Nij->Nm', Trunk_test, self.xi_Gamma_b, etab)
+        d += 1/torch.sum(self.xi_Gamma_t)*torch.einsum('Nijm,ij,Nij->Nm', Trunk_test, self.xi_Gamma_t, etat)
         return d
         
-    def forward_NGO(self, theta, f, etab, etat, x):
-        K = self.compute_K(theta)
-        d = self.compute_d(f, etab, etat)
+    # def compute_d(self, f, etab, etat):
+    #     Trunk_test = self.Trunk_test.forward(self.x_Q).reshape((self.bs,self.hparams['Q'],self.hparams['Q'],self.hparams['h']))
+    #     d = 1/torch.sum(self.xi_Omega)*torch.sum(Trunk_test*self.xi_Omega[None,:,:,None]*f[:,:,:,None], axis=(1,2))
+    #     d += -1/torch.sum(self.xi_Gamma_b)*torch.sum(Trunk_test*self.xi_Gamma_b[None,:,:,None]*etab[:,:,:,None], axis=(1,2))
+    #     d += -1/torch.sum(self.xi_Gamma_t)*torch.sum(Trunk_test*self.xi_Gamma_t[None,:,:,None]*etat[:,:,:,None], axis=(1,2))  
+    #     return d
+
+    def forward_NGO(self, theta, f, etab, etat, K, d, x):
         K_inv = self.NLBranch.forward(K)
-        u_coeff = torch.sum(K_inv[:,:,:]*d[:,None,:], axis=-1)
-        Trunk_trial = self.Trunk_trial.forward(x)
-        u_hat = torch.sum(u_coeff[:,None,:]*Trunk_trial, axis=-1)
+        u_n = torch.einsum('nij,nj->ni', K_inv, d)
+        x_shape = x.shape
+        psi_n = self.Trunk_trial.forward(x.reshape((x_shape[0]*x_shape[1], x_shape[2]))).reshape((x_shape[0],x_shape[1],self.hparams['h'])).to(self.device)
+        u_hat = torch.einsum('ni,noi->no', u_n, psi_n)
+        return u_hat
+    
+    def forward_VarMiON(self, theta, f, etab, etat, K, d, x):
+        NLBranch = self.NLBranch.forward(theta)
+        LBranch = self.LBranch_f.forward(f) + self.LBranch_eta.forward(etab*self.xi_Gamma_b + etat*self.xi_Gamma_t)
+        u_n = torch.einsum('nij,nj->ni', NLBranch, LBranch)
+        x_shape = x.shape
+        psi_n = self.Trunk_trial.forward(x.reshape((x_shape[0]*x_shape[1], x_shape[2]))).reshape((x_shape[0],x_shape[1],self.hparams['h'])).to(self.device)
+        u_hat = torch.einsum('ni,noi->no', u_n, psi_n)
+        return u_hat
+    
+    def forward_DeepONet(self, theta, f, etab, etat, K, d, x):
+        eta = etab*self.xi_Gamma_b + etat*self.xi_Gamma_t
+        theta = theta.flatten(-2,-1)
+        f = f.flatten(-2,-1)
+        eta = eta.flatten(-2,-1)
+        inputfuncs = torch.cat((theta,f,eta),dim=1)
+        u_n = self.NLBranch.forward(inputfuncs)
+        x_shape = x.shape
+        psi_n = self.Trunk_trial.forward(x.reshape((x_shape[0]*x_shape[1], x_shape[2]))).reshape((x_shape[0],x_shape[1],self.hparams['h'])).to(self.device)
+        u_hat = torch.einsum('ni,noi->no', u_n, psi_n)
         return u_hat
     
     def forward_FEM(self, theta, f, etab, etat, x):
         K = self.compute_K(theta)
         d = self.compute_d(f, etab, etat)
         K_inv = torch.linalg.inv(K)
-        u_coeff = torch.sum(K_inv[:,:,:]*d[:,None,:], axis=-1)
-        Trunk_trial = self.Trunk_trial.forward(x)
-        u_hat = torch.sum(u_coeff[:,None,:]*Trunk_trial, axis=-1)
+        u_n = torch.einsum('nij,nj->ni', K_inv, d)
+        x_shape = x.shape
+        psi_n = self.Trunk_trial.forward(x.reshape((x_shape[0]*x_shape[1], x_shape[2]))).reshape((x_shape[0],x_shape[1],self.hparams['h'])).to(self.device)
+        u_hat = torch.einsum('ni,noi->no', u_n, psi_n)
         return u_hat
     
-    def forward_VarMiON(self, theta, f, etab, etat, x):
-        NLBranch = self.NLBranch.forward(theta)
-        LBranch = self.LBranch_f.forward(f) + self.LBranch_eta.forward(etab*self.xi_Gamma_b + etat*self.xi_Gamma_t)
-        latentvector = torch.einsum('nij,nj->ni', NLBranch, LBranch)
-        Trunk = self.Trunk_trial.forward(x)
-        u_hat = torch.einsum('ni,noi->no', latentvector, Trunk)
-        return u_hat
-    
-    def forward(self, theta, f, etab, etat, x):
+    def forward(self, theta, f, etab, etat, K, d, x):
+        if self.hparams.get('DeepONet',False)==True:
+            u_hat = self.forward_DeepONet(theta, f, etab, etat, K, d, x)
         if self.hparams.get('VarMiON',False)==True:
-            u_hat = self.forward_VarMiON(theta, f, etab, etat, x)
-        else:
-            u_hat = self.forward_NGO(theta, f, etab, etat, x)
-        return u_hat
-
-    def symgroupavg_forward(self, theta, f, etab, etat, x):
-        Theta_D8 = expand_D8(Theta)
-        F_D8 = expand_D8(F)
-        N_D8 = expand_D8(N)
-        u_hat = torch.zeros((x.shape[0], x.shape[1]), device=self.device)
-        for alpha in range(len(self.symgroup)):
-            self.Trunk_trial.mapping = self.symgroup_inv[alpha].to(self.device)
-            u_hat += self.forward(Theta_D8[alpha], F_D8[alpha], N_D8[alpha], x)
-        u_hat = u_hat/len(self.symgroup)
+            u_hat = self.forward_VarMiON(theta, f, etab, etat, K, d, x)
+        if self.hparams.get('NGO',False)==True:
+            u_hat = self.forward_NGO(theta, f, etab, etat, K, d, x)
+        # else:
+        #     u_hat = self.forward_NGO(theta, f, etab, etat, K, d, x)
         return u_hat
     
     def simforward(self, theta, f, etab, etat, x):
@@ -204,10 +416,9 @@ class NGO(pl.LightningModule):
         etab = torch.tensor(etab(x_Q), dtype=self.hparams['dtype']).reshape((self.hparams['Q'],self.hparams['Q'])).tile((2,1,1))
         etat = torch.tensor(etat(x_Q), dtype=self.hparams['dtype']).reshape((self.hparams['Q'],self.hparams['Q'])).tile((2,1,1))
         x = torch.tensor(x, dtype=self.hparams['dtype']).tile(1,1,1)
-        if self.hparams.get('symgroupavg',False)==True:    
-            u = self.symgroupavg_forward(theta, f, etab, etat, x)
-        else:
-            u = self.forward(theta, f, etab, etat, x)
+        K = self.compute_K(theta)
+        d = self.compute_d(f, etab, etat)
+        u = self.forward(theta, f, etab, etat, K, d, x)
         u = u[0]
         u = torch.detach(u).cpu()
         u = np.array(u)
@@ -222,41 +433,23 @@ class NGO(pl.LightningModule):
         f = torch.tensor(f(x_Q), dtype=self.hparams['dtype']).reshape((self.hparams['Q'],self.hparams['Q'])).tile((2,1,1))
         etab = torch.tensor(etab(x_Q), dtype=self.hparams['dtype']).reshape((self.hparams['Q'],self.hparams['Q'])).tile((2,1,1))
         etat = torch.tensor(etat(x_Q), dtype=self.hparams['dtype']).reshape((self.hparams['Q'],self.hparams['Q'])).tile((2,1,1))
-        x = torch.tensor(x, dtype=self.hparams['dtype']).tile(1,1,1)
+        x = torch.tensor(x, dtype=self.hparams['dtype']).tile(2,1,1)
         u = self.forward_FEM(theta, f, etab, etat, x)
         u = u[0]
         u = torch.detach(u).cpu()
         u = np.array(u)
         return u
-    
-    def G(self, theta, x, xp):
-        self.bs = 1
-        self.geometry()
-        x_0_Q, x_1_Q = np.mgrid[0:1:self.hparams['Q']*1j, 0:1:self.hparams['Q']*1j]
-        x_Q = np.vstack([x_0_Q.ravel(), x_1_Q.ravel()]).T
-        theta = torch.tensor(theta(x_Q), dtype=self.hparams['dtype']).reshape((self.hparams['Q'],self.hparams['Q'])).tile((2,1,1))
-        x = torch.tensor(x, dtype=self.hparams['dtype']).tile(1,1,1)
-        xp = torch.tensor(xp, dtype=self.hparams['dtype']).tile(1,1,1)
-        K = self.compute_K(theta)
-        K_inv = self.NLBranch.forward(K)
-        Trunk_test = self.Trunk_test.forward(xp)
-        Trunk_trial = self.Trunk_trial.forward(x)
-        print(K_inv.shape)
-        print(Trunk_test.shape)
-        print(Trunk_trial.shape)
-        G = torch.einsum('dNn,dmn,dNm->dN', Trunk_trial, K_inv, Trunk_test)[0]
-        return G
 
     def configure_optimizers(self):
         optimizer = self.hparams['optimizer'](self.parameters(), lr=self.hparams['learning_rate'])
         return optimizer
 
     def training_step(self, train_batch, batch_idx):
-        theta, f, etab, etat, x, u = train_batch
+        theta, f, etab, etat, K, d, x, u = train_batch
         if self.hparams.get('symgroupavg',False)==True:    
-            u_hat = self.symgroupavg_forward(theta, f, etab, etat, x)
+            u_hat = self.symgroupavg_forward(theta, f, etab, etat, K, d, x)
         else:
-            u_hat = self.forward(theta, f, etab, etat, x)
+            u_hat = self.forward(theta, f, etab, etat, K, d, x)
         loss = 0
         for i in range(len(self.hparams['loss_coeffs'])):
             loss = loss + self.hparams['loss_coeffs'][i]*self.hparams['loss_terms'][i](u_hat, u)
@@ -265,11 +458,11 @@ class NGO(pl.LightningModule):
         return loss
 
     def validation_step(self, val_batch, batch_idx):
-        theta, f, etab, etat, x, u = val_batch
+        theta, f, etab, etat, K, d, x, u = val_batch
         if self.hparams.get('symgroupavg',False)==True:    
-            u_hat = self.symgroupavg_forward(theta, f, etab, etat, x)
+            u_hat = self.symgroupavg_forward(theta, f, etab, etat, K, d, x)
         else:
-            u_hat = self.forward(theta, f, etab, etat, x)
+            u_hat = self.forward(theta, f, etab, etat, K, d, x)
         loss = 0
         for i in range(len(self.hparams['loss_coeffs'])):
             loss = loss + self.hparams['loss_coeffs'][i]*self.hparams['loss_terms'][i](u_hat, u)
@@ -303,6 +496,32 @@ class NGO(pl.LightningModule):
         self.n[-1,1:-1,:] = torch.tensor([1,0], dtype=self.hparams['dtype'], device=self.device)
         self.n[1:-1,0,:] = torch.tensor([0,-1], dtype=self.hparams['dtype'], device=self.device)
         self.n[1:-1,-1,:] = torch.tensor([0,1], dtype=self.hparams['dtype'], device=self.device)
+        
+    def geometry_NGO(self):
+        #Compute Gauss-Legendre quadrature points and weights
+        x, w = np.polynomial.legendre.leggauss(20)
+        gauss_pts = np.array(np.meshgrid(x,x,indexing='ij')).reshape(2,-1).T/2 + 0.5
+        weights = (w*w[:,None]).ravel()
+        x_Q = []
+        w = []
+        for i in range(5):
+            for j in range(5):
+                newpts = 0.2*gauss_pts
+                newpts[:,0] = newpts[:,0] + 0.2*i
+                newpts[:,1] = newpts[:,1] + 0.2*j
+                x_Q.append(newpts)
+                w.append(weights)
+        w = np.array(w).flatten()
+        x_Q = np.array(x_Q)
+        x_Q = pts.reshape(x_Q.shape[0]*x_Q.shape[1],x_Q.shape[2])
+        self.x_Q = torch.tensor(x_Q, dtype=self.hparams['dtype'], device=self.device)
+        self.Gamma_eta = torch.zeros(x_Q.shape[0])
+        self.Gamma_eta[self.x_Q[:,1]==torch.amin(self.x_Q)] = 1
+        self.Gamma_eta[self.x_Q[:,1]==torch.amax(self.x_Q)] = 1
+        self.Gamma_g = torch.zeros(x_Q.shape[0])
+        self.Gamma_g[self.x_Q[:,0]==torch.amin(self.x_Q)] = 1
+        self.Gamma_g[self.x_Q[:,0]==torch.amax(self.x_Q)] = 1
+
     
     def compute_symgroup(self):
         R = torch.tensor([[0,-1],[1,0]], dtype=self.hparams['dtype'], device=self.device)
@@ -324,6 +543,10 @@ class NGO(pl.LightningModule):
         self.xi_Gamma_eta = self.xi_Gamma_eta.to(self.device)
         self.xi_Gamma_g = self.xi_Gamma_g.to(self.device)
         self.n = self.n.to(self.device)
+        # self.Trunk_test.mus = self.Trunk_test.mus.to(self.device)
+        # self.Trunk_test.log_sigmas = self.Trunk_test.log_sigmas.to(self.device)
+        # self.Trunk_trial.mus = self.Trunk_trial.mus.to(self.device)
+        # self.Trunk_trial.log_sigmas = self.Trunk_trial.log_sigmas.to(self.device)
 
     def on_before_zero_grad(self, optimizer):
         if self.hparams.get('bound_mus',False)==True:
