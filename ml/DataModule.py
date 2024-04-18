@@ -4,6 +4,7 @@ import torch
 from torch.utils.data import DataLoader
 from torch.utils.data import random_split
 import pytorch_lightning as pl
+from numba import jit
 
 import sys
 sys.path.insert(0, '/home/prins/st8/prins/phd/gitlab/ngo-pde-gk/fem') 
@@ -19,7 +20,8 @@ class DataModule_hc2d(pl.LightningDataModule):
         
         self.data_dir = data_dir
         self.hyperparams = hparams
-
+    
+    @jit
     def setup(self, stage=None):
         #Load and discretize input and output functions
         print('Preprocessing data...')
@@ -41,6 +43,7 @@ class DataModule_hc2d(pl.LightningDataModule):
         self.u = []
         #Discretize input functions and sample output data
         for i in range(len(self.theta_raw)):
+            print(i)
             self.theta.append(self.theta_raw[i](x_Q))
             self.f.append(self.f_raw[i](x_Q))
             self.etab.append(self.etab_raw[i](x_Q))
@@ -50,28 +53,47 @@ class DataModule_hc2d(pl.LightningDataModule):
             self.x.append(self.x_raw[i,indices_output])
             self.u.append(self.u_raw[i,indices_output])
         #Convert to numpy arrays first (faster)   
-        self.theta = np.array(self.theta)
-        self.f = np.array(self.f)
-        self.etab = np.array(self.etab)
-        self.etat = np.array(self.etat)
+        self.theta = np.array(self.theta).reshape(len(self.theta_raw),self.hyperparams['Q'],self.hyperparams['Q'])
+        self.f = np.array(self.f).reshape(len(self.theta_raw),self.hyperparams['Q'],self.hyperparams['Q'])
+        self.etab = np.array(self.etab).reshape(len(self.theta_raw),self.hyperparams['Q'],self.hyperparams['Q'])
+        self.etat = np.array(self.etat).reshape(len(self.theta_raw),self.hyperparams['Q'],self.hyperparams['Q'])
         self.x = np.array(self.x)
         self.u = np.array(self.u)
         #Convert to torch tensors
-        self.theta = torch.tensor(self.theta, dtype=self.hyperparams['dtype']).reshape(len(self.theta_raw),self.hyperparams['Q'],self.hyperparams['Q'])
-        self.f = torch.tensor(self.f, dtype=self.hyperparams['dtype']).reshape(len(self.theta_raw),self.hyperparams['Q'],self.hyperparams['Q'])
-        self.etab = torch.tensor(self.etab, dtype=self.hyperparams['dtype']).reshape(len(self.theta_raw),self.hyperparams['Q'],self.hyperparams['Q'])
-        self.etat = torch.tensor(self.etat, dtype=self.hyperparams['dtype']).reshape(len(self.theta_raw),self.hyperparams['Q'],self.hyperparams['Q'])
+        self.theta = torch.tensor(self.theta, dtype=self.hyperparams['dtype'])
+        self.f = torch.tensor(self.f, dtype=self.hyperparams['dtype'])
+        self.etab = torch.tensor(self.etab, dtype=self.hyperparams['dtype'])
+        self.etat = torch.tensor(self.etat, dtype=self.hyperparams['dtype'])
         self.x = torch.tensor(self.x, dtype=self.hyperparams['dtype'])
         self.u = torch.tensor(self.u, dtype=self.hyperparams['dtype'])
-        
-        self.dataset = torch.utils.data.TensorDataset(self.theta, self.f, self.etab, self.etat, self.x, self.u)
+        #Compute K and d
+        params = {}
+        params['hparams'] = self.hyperparams
+        simparams = {}
+        params['simparams'] = simparams
+        params['simparams']['d'] = 2
+        dummyNGO = NGO(params)
+        # bs_pp = 1
+        bs_pp = self.theta.shape[0]
+        dummyNGO.bs = bs_pp
+        dummyNGO.geometry()
+        # self.K = torch.zeros((self.theta.shape[0],self.hyperparams['h'],self.hyperparams['h']))
+        # self.d = torch.zeros((self.theta.shape[0],self.hyperparams['h']))
+        # for i in range(int(len(self.theta_raw)/bs_pp)):
+        #     print(i)
+        #     self.K[i*bs_pp:(i+1)*bs_pp] = dummyNGO.compute_K(self.theta[i*bs_pp:(i+1)*bs_pp])
+        #     self.d[i*bs_pp:(i+1)*bs_pp] = dummyNGO.compute_d(self.f[i*bs_pp:(i+1)*bs_pp], self.etab[i*bs_pp:(i+1)*bs_pp], self.etat[i*bs_pp:(i+1)*bs_pp])
+        #     # print(self.K)
+        self.K = dummyNGO.compute_K(self.theta)
+        self.d = dummyNGO.compute_d(self.f, self.etab, self.etat)
+        self.dataset = torch.utils.data.TensorDataset(self.theta, self.f, self.etab, self.etat, self.K, self.d, self.x, self.u)
         self.trainingset, self.validationset = random_split(self.dataset, [int(0.9*self.u.shape[0]), int(0.1*self.u.shape[0])])
 
     def train_dataloader(self):
-        return DataLoader(self.trainingset, batch_size=self.hyperparams['batch_size'], num_workers=10, pin_memory=True)
+        return DataLoader(self.trainingset, batch_size=self.hyperparams['batch_size'])#, num_workers=10, pin_memory=True)
 
     def val_dataloader(self):
-        return DataLoader(self.validationset, batch_size=self.hyperparams['batch_size'], num_workers=10, pin_memory=True)
+        return DataLoader(self.validationset, batch_size=self.hyperparams['batch_size'])#, num_workers=10, pin_memory=True)
 
 
 class DataModule_hc2d_old(pl.LightningDataModule):
