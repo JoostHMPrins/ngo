@@ -11,8 +11,8 @@ class GaussianRBF(nn.Module):
         self.input_dim = input_dim
         self.output_dim = output_dim
         self.hparams = params['hparams']
-        self.reset_nontrainableparameters()
-        # self.reset_parameters()
+        # self.reset_nontrainableparameters()
+        self.reset_parameters()
         
     def reset_parameters(self):
         self.mus = nn.Parameter(torch.Tensor(self.output_dim, self.input_dim))
