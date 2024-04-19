@@ -261,7 +261,6 @@ class LBranchNet(nn.Module):
         if self.hparams.get('scale_invariance',False)==True:
             x_norm = torch.amax(torch.abs(x), dim=(-1,-2))
             x = x/x_norm[:,None,None]
-        x = x.flatten(-2,-1)
         for layer in self.layers:
             x = layer(x)
             y = x
@@ -293,63 +292,41 @@ class NGO(pl.LightningModule):
         self.hparams.update(params['hparams'])
         self.bs = self.hparams['batch_size']
         #Branch
-        if self.hparams.get('DeepONet',False)==True:
-            self.NLBranch = DeepONetBranch(params, input_dim=3*self.hparams['Q']**params['simparams']['d'], output_dim=self.hparams['h'])
-        if self.hparams.get('VarMiON',False)==True:
+        if self.hparams.get('modeltype',False)=='DeepONet':
+            self.NLBranch = DeepONetBranch(params, input_dim=2*self.hparams['Q']**params['simparams']['d']+2*self.hparams['Q'], output_dim=self.hparams['h'])
+        if self.hparams.get('modeltype',False)=='VarMiON':
             self.NLBranch = NLBranch_VarMiON(params)
             self.LBranch_f = LBranchNet(params, input_dim=self.hparams['Q']**params['simparams']['d'], output_dim=self.hparams['h'])
-            self.LBranch_eta = LBranchNet(params, input_dim=self.hparams['Q']**params['simparams']['d'], output_dim=self.hparams['h'])
-        if self.hparams.get('NGO',False)==True:
+            self.LBranch_eta = LBranchNet(params, input_dim=2*self.hparams['Q'], output_dim=self.hparams['h'])
+        if self.hparams.get('modeltype',False)=='NGO':
             self.NLBranch = NLBranch_NGO(params)
-        # else:
-        #     self.NLBranch = CNNBranch(params)
-            #Trunk
-        # self.Trunk_test = GaussianRBF(params, input_dim=params['simparams']['d'], output_dim=self.hparams['h'])
         self.Trunk_test = BSplineBasis2D(knots_x=torch.tensor([0,0,0,0,0.2,0.4,0.6,0.8,1,1,1,1]), knots_y=torch.tensor([0,0,0,0,0.2,0.4,0.6,0.8,1,1,1,1]), polynomial_order=3, **params)
-        if self.hparams.get('Petrov-Galerkin',False)==True:
-            self.Trunk_trial = GaussianRBF(params, input_dim=params['simparams']['d'], output_dim=self.hparams['h'])
-        else:
-            self.Trunk_trial = self.Trunk_test
+        self.Trunk_trial = BSplineBasis2D(knots_x=torch.tensor([0,0,0,0,0.2,0.4,0.6,0.8,1,1,1,1]), knots_y=torch.tensor([0,0,0,0,0.2,0.4,0.6,0.8,1,1,1,1]), polynomial_order=3, **params)
         # self.compute_symgroup()
         self.geometry()
         self = self.to(self.hparams['dtype'])
-        
-#     def compute_K(self, theta):
-#         # print('Assembling K')
-#         Trunk_test = self.Trunk_test.forward(self.x_Q.reshape((self.bs*self.hparams['Q']*self.hparams['Q'],self.params['simparams']['d']))).reshape((self.bs,self.hparams['Q'],self.hparams['Q'],self.hparams['h']))
-#         gradTrunk_test = self.Trunk_test.grad(self.x_Q.reshape((self.bs*self.hparams['Q']*self.hparams['Q'],self.params['simparams']['d']))).reshape((self.bs,self.hparams['Q'],self.hparams['Q'],self.hparams['h'],self.params['simparams']['d']))
-#         Trunk_trial = self.Trunk_trial.forward(self.x_Q.reshape((self.bs*self.hparams['Q']*self.hparams['Q'],self.params['simparams']['d']))).reshape((self.bs,self.hparams['Q'],self.hparams['Q'],self.hparams['h']))
-#         gradTrunk_trial = self.Trunk_trial.grad(self.x_Q.reshape((self.bs*self.hparams['Q']*self.hparams['Q'],self.params['simparams']['d']))).reshape((self.bs,self.hparams['Q'],self.hparams['Q'],self.hparams['h'],self.params['simparams']['d']))
-#         K = 1/torch.sum(self.xi_Omega)*opt_einsum.contract('Nij,ij,Nijmx,Nijnx->Nmn', theta, self.xi_Omega, gradTrunk_test, gradTrunk_trial)
-#         K += -1/torch.sum(self.xi_Gamma_g)*opt_einsum.contract('Nijm,ijx,ij,Nij,Nijnx->Nmn', Trunk_test, self.n, self.xi_Gamma_g, theta, gradTrunk_trial)
-#         K += -1/torch.sum(self.xi_Gamma_g)*opt_einsum.contract('Nijn,ijx,ij,Nij,Nijmx->Nmn', Trunk_trial, self.n, self.xi_Gamma_g, theta, gradTrunk_test)
-#         return K
-    
-#     def compute_d(self, f, etab, etat):
-#         # print('Assembling d')
-#         Trunk_test = self.Trunk_test.forward(self.x_Q.reshape((self.bs*self.hparams['Q']*self.hparams['Q'],self.params['simparams']['d']))).reshape((self.bs,self.hparams['Q'],self.hparams['Q'],self.hparams['h']))
-#         d = 1/torch.sum(self.xi_Omega)*opt_einsum.contract('Nijm,ij,Nij->Nm', Trunk_test, self.xi_Omega, f)
-#         d += 1/torch.sum(self.xi_Gamma_b)*opt_einsum.contract('Nijm,ij,Nij->Nm', Trunk_test, self.xi_Gamma_b, etab)
-#         d += 1/torch.sum(self.xi_Gamma_t)*opt_einsum.contract('Nijm,ij,Nij->Nm', Trunk_test, self.xi_Gamma_t, etat)
-#         return d
 
-    def compute_K(self, theta):
+    def compute_K(self, theta, theta_g):
         # print('Assembling K')
-        Trunk_test = self.Trunk_test.forward(self.xi_Omega)
         gradTrunk_test = self.Trunk_test.grad(self.xi_Omega)
-        Trunk_trial = self.Trunk_trial.forward(self.xi_Omega)
         gradTrunk_trial = self.Trunk_trial.grad(self.xi_Omega)
-        K = 1/torch.sum(self.xi_Omega)*opt_einsum.contract('Nij,ij,Nijmx,Nijnx->Nmn', theta, self.xi_Omega, gradTrunk_test, gradTrunk_trial)
-        K += -1/torch.sum(self.xi_Gamma_g)*opt_einsum.contract('Nijm,ijx,ij,Nij,Nijnx->Nmn', Trunk_test, self.n, self.xi_Gamma_g, theta, gradTrunk_trial)
-        K += -1/torch.sum(self.xi_Gamma_g)*opt_einsum.contract('Nijn,ijx,ij,Nij,Nijmx->Nmn', Trunk_trial, self.n, self.xi_Gamma_g, theta, gradTrunk_test)
+        Trunk_test_g = self.Trunk_test.forward(self.xi_Gamma_g)
+        gradTrunk_test_g = self.Trunk_test.grad(self.xi_Gamma_g)
+        Trunk_trial_g = self.Trunk_trial.forward(self.xi_Gamma_g)
+        gradTrunk_trial_g = self.Trunk_trial.grad(self.xi_Gamma_g)
+        K = opt_einsum.contract('q,Nq,qmx,qnx->Nmn', self.w_Omega, theta, gradTrunk_test, gradTrunk_trial)
+        K += -opt_einsum.contract('q,qm,qx,Nq,qnx->Nmn', self.w_Gamma_g, Trunk_test_g, self.n_Gamma_g, theta_g, gradTrunk_trial_g)
+        K += -opt_einsum.contract('q,qn,qx,Nq,qmx->Nmn', self.w_Gamma_g, Trunk_trial_g, self.n_Gamma_g, theta_g, gradTrunk_test_g)
         return K
     
     def compute_d(self, f, etab, etat):
         # print('Assembling d')
-        Trunk_test = self.Trunk_test.forward(self.x_Q.reshape((self.bs*self.hparams['Q']*self.hparams['Q'],self.params['simparams']['d']))).reshape((self.bs,self.hparams['Q'],self.hparams['Q'],self.hparams['h']))
-        d = 1/torch.sum(self.xi_Omega)*opt_einsum.contract('Nijm,ij,Nij->Nm', Trunk_test, self.xi_Omega, f)
-        d += 1/torch.sum(self.xi_Gamma_b)*opt_einsum.contract('Nijm,ij,Nij->Nm', Trunk_test, self.xi_Gamma_b, etab)
-        d += 1/torch.sum(self.xi_Gamma_t)*opt_einsum.contract('Nijm,ij,Nij->Nm', Trunk_test, self.xi_Gamma_t, etat)
+        Trunk_test = self.Trunk_test.forward(self.xi_Omega)
+        Trunk_test_b = self.Trunk_test.forward(self.xi_Gamma_b)
+        Trunk_test_t = self.Trunk_test.forward(self.xi_Gamma_t)
+        d = opt_einsum.contract('q,qm,Nq->Nm', self.w_Omega, Trunk_test, f)
+        d += opt_einsum.contract('q,qm,Nq->Nm', self.w_Gamma_b, Trunk_test_b, etab)
+        d += opt_einsum.contract('q,qm,Nq->Nm', self.w_Gamma_t, Trunk_test_t, etat)
         return d
 
     def forward_NGO(self, theta, f, etab, etat, K, d, psi, x):
@@ -360,23 +337,25 @@ class NGO(pl.LightningModule):
     
     def forward_VarMiON(self, theta, f, etab, etat, K, d, psi, x):
         NLBranch = self.NLBranch.forward(theta)
-        LBranch = self.LBranch_f.forward(f) + self.LBranch_eta.forward(etab*self.xi_Gamma_b + etat*self.xi_Gamma_t)
+        eta = torch.zeros((etab.shape[0],2*etab.shape[1]), dtype=self.hparams['dtype'], device=self.device)
+        eta[:,:etab.shape[1]] = etab
+        eta[:,etab.shape[1]:] = etat
+        LBranch = self.LBranch_f.forward(f) + self.LBranch_eta.forward(eta)
         u_n = torch.einsum('nij,nj->ni', NLBranch, LBranch)
         u_hat = torch.einsum('ni,noi->no', u_n, psi)
         return u_hat
     
     def forward_DeepONet(self, theta, f, etab, etat, K, d, psi, x):
-        eta = etab*self.xi_Gamma_b + etat*self.xi_Gamma_t
-        theta = theta.flatten(-2,-1)
-        f = f.flatten(-2,-1)
-        eta = eta.flatten(-2,-1)
+        eta = torch.zeros((etab.shape[0],2*etab.shape[1]), dtype=self.hparams['dtype'], device=self.device)
+        eta[:,:etab.shape[1]] = etab
+        eta[:,etab.shape[1]:] = etat
         inputfuncs = torch.cat((theta,f,eta),dim=1)
         u_n = self.NLBranch.forward(inputfuncs)
         u_hat = torch.einsum('ni,noi->no', u_n, psi)
         return u_hat
     
-    def forward_FEM(self, theta, f, etab, etat, x):
-        K = self.compute_K(theta)
+    def forward_FEM(self, theta, theta_g, f, etab, etat, x):
+        K = self.compute_K(theta, theta_g)
         d = self.compute_d(f, etab, etat)
         K_inv = torch.linalg.inv(K)
         u_n = torch.einsum('nij,nj->ni', K_inv, d)
@@ -386,31 +365,28 @@ class NGO(pl.LightningModule):
         return u_hat
     
     def forward(self, theta, f, etab, etat, K, d, psi, x):
-        if self.hparams.get('DeepONet',False)==True:
+        if self.hparams.get('modeltype',False)=='DeepONet':
             u_hat = self.forward_DeepONet(theta, f, etab, etat, K, d, psi, x)
-        if self.hparams.get('VarMiON',False)==True:
+        if self.hparams.get('modeltype',False)=='VarMiON':
             u_hat = self.forward_VarMiON(theta, f, etab, etat, K, d, psi, x)
-        if self.hparams.get('NGO',False)==True:
+        if self.hparams.get('modeltype',False)=='NGO':
             u_hat = self.forward_NGO(theta, f, etab, etat, K, d, psi, x)
-        # else:
-        #     u_hat = self.forward_NGO(theta, f, etab, etat, K, d, x)
         return u_hat
     
     def simforward(self, theta, f, etab, etat, x):
         self.bs = 1
         self.geometry()
-        x_0_Q, x_1_Q = np.mgrid[0:1:self.hparams['Q']*1j, 0:1:self.hparams['Q']*1j]
-        x_Q = np.vstack([x_0_Q.ravel(), x_1_Q.ravel()]).T
-        theta = torch.tensor(theta(x_Q), dtype=self.hparams['dtype']).reshape((self.hparams['Q'],self.hparams['Q'])).tile((self.hparams['batch_size'],1,1))
-        f = torch.tensor(f(x_Q), dtype=self.hparams['dtype']).reshape((self.hparams['Q'],self.hparams['Q'])).tile((self.hparams['batch_size'],1,1))
-        etab = torch.tensor(etab(x_Q), dtype=self.hparams['dtype']).reshape((self.hparams['Q'],self.hparams['Q'])).tile((self.hparams['batch_size'],1,1))
-        etat = torch.tensor(etat(x_Q), dtype=self.hparams['dtype']).reshape((self.hparams['Q'],self.hparams['Q'])).tile((self.hparams['batch_size'],1,1))
-        x = torch.tensor(x, dtype=self.hparams['dtype']).tile(self.hparams['batch_size'],1,1)
-        K = self.compute_K(theta)
-        d = self.compute_d(f, etab, etat)
-        x_shape = x.shape
-        psi = self.Trunk_trial.forward(x.reshape((x_shape[0]*x_shape[1], x_shape[2]))).reshape((x_shape[0],x_shape[1],self.hparams['h'])).to(self.device)
-        u = self.forward(theta, f, etab, etat, K, d, psi, x)
+        theta_in = torch.tensor(theta(np.array(self.xi_Omega)), dtype=self.hparams['dtype']).tile((self.hparams['batch_size'],1))
+        theta_g_in = torch.tensor(theta(np.array(self.xi_Gamma_g)), dtype=self.hparams['dtype']).tile((self.hparams['batch_size'],1))
+        f_in = torch.tensor(f(np.array(self.xi_Omega)), dtype=self.hparams['dtype']).tile((self.hparams['batch_size'],1))
+        etab_in = torch.tensor(etab(np.array(self.xi_Gamma_b)), dtype=self.hparams['dtype']).tile((self.hparams['batch_size'],1))
+        etat_in = torch.tensor(etat(np.array(self.xi_Gamma_t)), dtype=self.hparams['dtype']).tile((self.hparams['batch_size'],1))
+        x_in = torch.tensor(x, dtype=self.hparams['dtype']).tile(self.hparams['batch_size'],1,1)
+        K_in = self.compute_K(theta_in, theta_g_in)
+        d_in = self.compute_d(f_in, etab_in, etat_in)
+        x_shape = x_in.shape
+        psi_in = self.Trunk_trial.forward(x_in.reshape((x_shape[0]*x_shape[1], x_shape[2]))).reshape((x_shape[0],x_shape[1],self.hparams['h'])).to(self.device)
+        u = self.forward(theta_in, f_in, etab_in, etat_in, K_in, d_in, psi_in, x_in)
         u = u[0]
         u = torch.detach(u).cpu()
         u = np.array(u)
@@ -419,14 +395,13 @@ class NGO(pl.LightningModule):
     def simforward_FEM(self, theta, f, etab, etat, x):
         self.bs = 1
         self.geometry()
-        x_0_Q, x_1_Q = np.mgrid[0:1:self.hparams['Q']*1j, 0:1:self.hparams['Q']*1j]
-        x_Q = np.vstack([x_0_Q.ravel(), x_1_Q.ravel()]).T
-        theta = torch.tensor(theta(x_Q), dtype=self.hparams['dtype']).reshape((self.hparams['Q'],self.hparams['Q'])).tile((2,1,1))
-        f = torch.tensor(f(x_Q), dtype=self.hparams['dtype']).reshape((self.hparams['Q'],self.hparams['Q'])).tile((2,1,1))
-        etab = torch.tensor(etab(x_Q), dtype=self.hparams['dtype']).reshape((self.hparams['Q'],self.hparams['Q'])).tile((2,1,1))
-        etat = torch.tensor(etat(x_Q), dtype=self.hparams['dtype']).reshape((self.hparams['Q'],self.hparams['Q'])).tile((2,1,1))
-        x = torch.tensor(x, dtype=self.hparams['dtype']).tile(2,1,1)
-        u = self.forward_FEM(theta, f, etab, etat, x)
+        theta_in = torch.tensor(theta(np.array(self.xi_Omega)), dtype=self.hparams['dtype']).tile((self.hparams['batch_size'],1))
+        theta_g_in = torch.tensor(theta(np.array(self.xi_Gamma_g)), dtype=self.hparams['dtype']).tile((self.hparams['batch_size'],1))
+        f_in = torch.tensor(f(np.array(self.xi_Omega)), dtype=self.hparams['dtype']).tile((self.hparams['batch_size'],1))
+        etab_in = torch.tensor(etab(np.array(self.xi_Gamma_b)), dtype=self.hparams['dtype']).tile((self.hparams['batch_size'],1))
+        etat_in = torch.tensor(etat(np.array(self.xi_Gamma_t)), dtype=self.hparams['dtype']).tile((self.hparams['batch_size'],1))
+        x_in = torch.tensor(x, dtype=self.hparams['dtype']).tile(self.hparams['batch_size'],1,1)
+        u = self.forward_FEM(theta_in, theta_g_in, f_in, etab_in, etat_in, x_in)
         u = u[0]
         u = torch.detach(u).cpu()
         u = np.array(u)
@@ -462,54 +437,92 @@ class NGO(pl.LightningModule):
         self.log('val_loss', loss)
         metric = self.hparams['metric'](u_hat, u)
         self.log('metric', metric)
-        
-    # def geometry(self):
-    #     #Domain
-    #     self.xi_Omega = torch.ones((self.hparams['Q'],self.hparams['Q']), dtype=self.hparams['dtype'], device=self.device)
-    #     x_0_Q, x_1_Q = np.mgrid[0:1:self.hparams['Q']*1j, 0:1:self.hparams['Q']*1j]
-    #     x_Q = np.vstack([x_0_Q.ravel(), x_1_Q.ravel()]).T
-    #     x_Q = np.tile(x_Q,(self.bs,1,1))
-    #     self.x_Q = torch.tensor(x_Q, dtype=self.hparams['dtype'], device=self.device)
-    #     #Boundaries
-    #     self.xi_Gamma_b = torch.zeros((self.hparams['Q'],self.hparams['Q']), dtype=self.hparams['dtype'], device=self.device)
-    #     self.xi_Gamma_b[1:-1,0] = 1
-    #     self.xi_Gamma_t = torch.zeros((self.hparams['Q'],self.hparams['Q']), dtype=self.hparams['dtype'], device=self.device)
-    #     self.xi_Gamma_t[1:-1,-1] = 1
-    #     self.xi_Gamma_l = torch.zeros((self.hparams['Q'],self.hparams['Q']), dtype=self.hparams['dtype'], device=self.device)
-    #     self.xi_Gamma_l[0,1:-1] = 1
-    #     self.xi_Gamma_r = torch.zeros((self.hparams['Q'],self.hparams['Q']), dtype=self.hparams['dtype'], device=self.device)
-    #     self.xi_Gamma_r[-1,1:-1] = 1
-    #     self.xi_Gamma = self.xi_Gamma_b + self.xi_Gamma_t + self.xi_Gamma_l + self.xi_Gamma_r
-    #     self.xi_Gamma_eta = self.xi_Gamma_b + self.xi_Gamma_t
-    #     self.xi_Gamma_g = self.xi_Gamma_l + self.xi_Gamma_r
-    #     #Outward normal
-    #     self.n = torch.zeros((self.hparams['Q'],self.hparams['Q'],self.params['simparams']['d']), dtype=self.hparams['dtype'], device=self.device)
-    #     self.n[0,1:-1,:] = torch.tensor([-1,0], dtype=self.hparams['dtype'], device=self.device)
-    #     self.n[-1,1:-1,:] = torch.tensor([1,0], dtype=self.hparams['dtype'], device=self.device)
-    #     self.n[1:-1,0,:] = torch.tensor([0,-1], dtype=self.hparams['dtype'], device=self.device)
-    #     self.n[1:-1,-1,:] = torch.tensor([0,1], dtype=self.hparams['dtype'], device=self.device)
-    
 
     def geometry(self):
-        #Domain
-        x_0_Q, x_1_Q = np.mgrid[0:1:self.hparams['Q']*1j, 0:1:self.hparams['Q']*1j]
-        x_Q = np.vstack([x_0_Q.ravel(), x_1_Q.ravel()]).T
-        self.xi_Omega = torch.tensor(x_Q, dtype=self.hparams['dtype'], device=self.device)
-        self.w_Omega = 1/(self.hparams['Q']**self.params['simparams']['d'])*torch.ones((self.hparams['Q']**self.params['simparams']['d']), device=self.device)
-        #Boundaries
-        xi_Gamma = torch.linspace(0, 1, self.hparams['Q'], device=self.device)
-        self.xi_Gamma_b = torch.zeros((self.hparams['Q'],self.params['simparams']['d']), dtype=self.hparams['dtype'], device=self.device)
-        self.xi_Gamma_b[:,0] = xi_Gamma
-        self.xi_Gamma_t = torch.ones((self.hparams['Q'],self.params['simparams']['d']), dtype=self.hparams['dtype'], device=self.device)
-        self.xi_Gamma_t[:,0] = xi_Gamma
-        self.xi_Gamma_l = torch.zeros((self.hparams['Q'],self.params['simparams']['d']), dtype=self.hparams['dtype'], device=self.device)
-        self.xi_Gamma_l[:,1] = xi_Gamma
-        self.xi_Gamma_r = torch.ones((self.hparams['Q'],self.params['simparams']['d']), dtype=self.hparams['dtype'], device=self.device)
-        self.xi_Gamma_r[:,1] = xi_Gamma
-        self.xi_Gamma_eta = torch.tensor([self.xi_Gamma_b, self.xi_Gamma_t]).reshape((2*self.hparams['Q'],self.params['simparams']['d']))
-        self.xi_Gamma_g = torch.tensor([self.xi_Gamma_l, self.xi_Gamma_r]).reshape((2*self.hparams['Q'],self.params['simparams']['d']))
-        self.w_Gamma_eta = 1/(2*self.hparams['Q'])*torch.ones((2*self.hparams['Q']), device=self.device)
-        self.w_Gamma_g = 1/(2*self.hparams['Q'])*torch.ones((2*self.hparams['Q']), device=self.device)    
+        if self.hparams['quadrature']=='uniform':
+            #Interior
+            x_0_Q, x_1_Q = np.mgrid[0:1:self.hparams['Q']*1j, 0:1:self.hparams['Q']*1j]
+            x_Q = np.vstack([x_0_Q.ravel(), x_1_Q.ravel()]).T
+            self.xi_Omega = torch.tensor(x_Q, dtype=self.hparams['dtype'], device=self.device)
+            self.w_Omega = 1/(self.hparams['Q']**self.params['simparams']['d'])*torch.ones((self.hparams['Q']**self.params['simparams']['d']), device=self.device)
+            #Boundaries
+            xi_Gamma = torch.linspace(0, 1, self.hparams['Q'], device=self.device)
+            self.xi_Gamma_b = torch.zeros((self.hparams['Q'],self.params['simparams']['d']), dtype=self.hparams['dtype'], device=self.device)
+            self.xi_Gamma_b[:,0] = xi_Gamma
+            self.xi_Gamma_t = torch.ones((self.hparams['Q'],self.params['simparams']['d']), dtype=self.hparams['dtype'], device=self.device)
+            self.xi_Gamma_t[:,0] = xi_Gamma
+            self.xi_Gamma_l = torch.zeros((self.hparams['Q'],self.params['simparams']['d']), dtype=self.hparams['dtype'], device=self.device)
+            self.xi_Gamma_l[:,1] = xi_Gamma
+            self.xi_Gamma_r = torch.ones((self.hparams['Q'],self.params['simparams']['d']), dtype=self.hparams['dtype'], device=self.device)
+            self.xi_Gamma_r[:,1] = xi_Gamma
+            self.xi_Gamma_eta = torch.zeros((2*self.hparams['Q'],self.params['simparams']['d']), dtype=self.hparams['dtype'], device=self.device)
+            self.xi_Gamma_eta[:self.hparams['Q']] = self.xi_Gamma_b
+            self.xi_Gamma_eta[self.hparams['Q']:] = self.xi_Gamma_t        
+            self.xi_Gamma_g = torch.zeros((2*self.hparams['Q'],self.params['simparams']['d']), dtype=self.hparams['dtype'], device=self.device)
+            self.xi_Gamma_g[:self.hparams['Q']] = self.xi_Gamma_l
+            self.xi_Gamma_g[self.hparams['Q']:] = self.xi_Gamma_r        
+            self.w_Gamma_b = 1/(self.hparams['Q'])*torch.ones((self.hparams['Q']), device=self.device)
+            self.w_Gamma_t = 1/(self.hparams['Q'])*torch.ones((self.hparams['Q']), device=self.device)
+            self.w_Gamma_eta = 1/(2*self.hparams['Q'])*torch.ones((2*self.hparams['Q']), device=self.device)
+            self.w_Gamma_g = 1/(2*self.hparams['Q'])*torch.ones((2*self.hparams['Q']), device=self.device)   
+        if self.hparams['quadrature']=='Gauss-Legendre':
+            #Interior
+            x, w = np.polynomial.legendre.leggauss(int(self.hparams['Q']/5))
+            x = np.array(np.meshgrid(x,x,indexing='ij')).reshape(2,-1).T/2 + 0.5
+            w = w/2*0.2
+            w = (w*w[:,None]).ravel()
+            xi_Omega = []
+            w_Omega = []
+            for i in range(5):
+                for j in range(5):
+                    newpts = 0.2*x
+                    newpts[:,0] = newpts[:,0] + 0.2*i
+                    newpts[:,1] = newpts[:,1] + 0.2*j
+                    xi_Omega.append(newpts)
+                    w_Omega.append(w)
+            w_Omega = np.array(w_Omega).flatten()
+            self.w_Omega = torch.tensor(w_Omega, dtype=self.hparams['dtype'], device=self.device)
+            xi_Omega = np.array(xi_Omega)
+            xi_Omega = xi_Omega.reshape(xi_Omega.shape[0]*xi_Omega.shape[1],xi_Omega.shape[2])
+            self.xi_Omega = torch.tensor(xi_Omega, dtype=self.hparams['dtype'], device=self.device)
+            #Boundaries
+            x, w = np.polynomial.legendre.leggauss(int(self.hparams['Q']/5))
+            x = x/2 + 0.5
+            w = w/2*0.2
+            xi_Gamma_i = []
+            w_Gamma_i = []
+            for i in range(5):
+                xi_Gamma_i.append(0.2*x + 0.2*i)
+                w_Gamma_i.append(w)
+            xi_Gamma_i = np.array(xi_Gamma_i)
+            xi_Gamma_i = xi_Gamma_i.flatten()
+            xi_Gamma_i = torch.tensor(xi_Gamma_i, dtype=self.hparams['dtype'], device=self.device)
+            w_Gamma_i = np.array(w_Gamma_i).flatten()
+            w_Gamma_i = torch.tensor(w_Gamma_i, dtype=self.hparams['dtype'], device=self.device)
+            self.xi_Gamma_b = torch.zeros((self.hparams['Q'],self.params['simparams']['d']), dtype=self.hparams['dtype'], device=self.device)
+            self.xi_Gamma_b[:,0] = xi_Gamma_i
+            self.xi_Gamma_t = torch.ones((self.hparams['Q'],self.params['simparams']['d']), dtype=self.hparams['dtype'], device=self.device)
+            self.xi_Gamma_t[:,0] = xi_Gamma_i
+            self.xi_Gamma_l = torch.zeros((self.hparams['Q'],self.params['simparams']['d']), dtype=self.hparams['dtype'], device=self.device)
+            self.xi_Gamma_l[:,1] = xi_Gamma_i
+            self.xi_Gamma_r = torch.ones((self.hparams['Q'],self.params['simparams']['d']), dtype=self.hparams['dtype'], device=self.device)
+            self.xi_Gamma_r[:,1] = xi_Gamma_i
+            self.xi_Gamma_eta = torch.zeros((2*self.hparams['Q'],self.params['simparams']['d']), dtype=self.hparams['dtype'], device=self.device)
+            self.xi_Gamma_eta[:self.hparams['Q']] = self.xi_Gamma_b
+            self.xi_Gamma_eta[self.hparams['Q']:] = self.xi_Gamma_t        
+            self.xi_Gamma_g = torch.zeros((2*self.hparams['Q'],self.params['simparams']['d']), dtype=self.hparams['dtype'], device=self.device)
+            self.xi_Gamma_g[:self.hparams['Q']] = self.xi_Gamma_l
+            self.xi_Gamma_g[self.hparams['Q']:] = self.xi_Gamma_r 
+            self.w_Gamma_b = w_Gamma_i
+            self.w_Gamma_t = w_Gamma_i
+            self.w_Gamma_l = w_Gamma_i
+            self.w_Gamma_r = w_Gamma_i
+            self.w_Gamma_eta = torch.zeros((2*len(w_Gamma_i)), device=self.device)
+            self.w_Gamma_eta[:len(w_Gamma_i)] = self.w_Gamma_b
+            self.w_Gamma_eta[len(w_Gamma_i):] = self.w_Gamma_t
+            self.w_Gamma_g = torch.zeros((2*len(w_Gamma_i)), device=self.device)
+            self.w_Gamma_g[:len(w_Gamma_i)] = self.w_Gamma_l
+            self.w_Gamma_g[len(w_Gamma_i):] = self.w_Gamma_r
         #Outward normal
         n_b = torch.tensor([0,-1], dtype=self.hparams['dtype'], device=self.device)
         self.n_b = torch.tile(n_b,(self.hparams['Q'],1))
@@ -519,39 +532,12 @@ class NGO(pl.LightningModule):
         self.n_l = torch.tile(n_l,(self.hparams['Q'],1))
         n_r = torch.tensor([1,0], dtype=self.hparams['dtype'], device=self.device)
         self.n_r = torch.tile(n_r,(self.hparams['Q'],1))
-        self.n_eta = torch.tensor([self.n_b,self.n_t]).reshape((2*self.hparams['Q'],self.params['simparams']['d']))
-        self.n_g = torch.tensor([self.n_l,self.n_r]).reshape((2*self.hparams['Q'],self.params['simparams']['d']))
-        
-    def geometry_NGO(self):
-        #Compute Gauss-Legendre quadrature points and weights
-        x, w = np.polynomial.legendre.leggauss(20)
-        gauss_pts = np.array(np.meshgrid(x,x,indexing='ij')).reshape(2,-1).T/2 + 0.5
-        weights = (w*w[:,None]).ravel()
-        x_Q = []
-        w = []
-        for i in range(5):
-            for j in range(5):
-                newpts = 0.2*gauss_pts
-                newpts[:,0] = newpts[:,0] + 0.2*i
-                newpts[:,1] = newpts[:,1] + 0.2*j
-                x_Q.append(newpts)
-                w.append(weights)
-        w = np.array(w).flatten()
-        x_Q = np.array(x_Q)
-        x_Q = pts.reshape(x_Q.shape[0]*x_Q.shape[1],x_Q.shape[2])
-        self.x_Q = torch.tensor(x_Q, dtype=self.hparams['dtype'], device=self.device)
-        self.w = torch.tensor(w, dtype=self.hparams['dtype'], device=self.device)
-        self.Gamma_eta = torch.zeros(self.x_Q.shape[0], dtype=self.hparams['dtype'], device=self.device)
-        self.Gamma_eta[self.x_Q[:,1]==torch.amin(self.x_Q)] = 1
-        self.Gamma_eta[self.x_Q[:,1]==torch.amax(self.x_Q)] = 1
-        self.Gamma_g = torch.zeros(x_Q.shape[0], dtype=self.hparams['dtype'], device=self.device)
-        self.Gamma_g[self.x_Q[:,0]==torch.amin(self.x_Q)] = 1
-        self.Gamma_g[self.x_Q[:,0]==torch.amax(self.x_Q)] = 1
-        self.n = torch.zeros((self.x_Q.shape[0],self.params['simparams']['d']), dtype=self.hparams['dtype'], device=self.device)
-        self.n[self.x_Q[:,0]==torch.amin(self.x_Q)] = torch.tensor([-1.0,0.0], dtype=self.hparams['dtype'], device=self.device)
-        self.n[self.x_Q[:,0]==torch.amax(self.x_Q)] = torch.tensor([1.0,0.0], dtype=self.hparams['dtype'], device=self.device)
-        self.n[self.x_Q[:,1]==torch.amin(self.x_Q)] = torch.tensor([0.0,-1.0], dtype=self.hparams['dtype'], device=self.device)
-        self.n[self.x_Q[:,1]==torch.amax(self.x_Q)] = torch.tensor([0.0,1.0], dtype=self.hparams['dtype'], device=self.device)
+        self.n_Gamma_eta = torch.zeros((2*self.hparams['Q'],self.params['simparams']['d']), dtype=self.hparams['dtype'], device=self.device)
+        self.n_Gamma_eta[:self.hparams['Q']] = self.n_b
+        self.n_Gamma_eta[self.hparams['Q']:] = self.n_t
+        self.n_Gamma_g = torch.zeros((2*self.hparams['Q'],self.params['simparams']['d']), dtype=self.hparams['dtype'], device=self.device)
+        self.n_Gamma_g[:self.hparams['Q']] = self.n_l
+        self.n_Gamma_g[self.hparams['Q']:] = self.n_r
     
     def compute_symgroup(self):
         R = torch.tensor([[0,-1],[1,0]], dtype=self.hparams['dtype'], device=self.device)
@@ -561,22 +547,6 @@ class NGO(pl.LightningModule):
         self.symgroup = [I, R@R, M, R@R@M]
         # self.symgroup_inv =[I, torch.linalg.inv(R), torch.linalg.inv(R@R), torch.linalg.inv(R@R@R), torch.linalg.inv(M), torch.linalg.inv(R@M), torch.linalg.inv(R@R@M), torch.linalg.inv(R@R@R@M)]
         self.symgroup_inv = [I, torch.linalg.inv(R@R), torch.linalg.inv(M), torch.linalg.inv(R@R@M)]
-    
-    def on_fit_start(self):
-        self.xi_Omega = self.xi_Omega.to(self.device)
-        self.x_Q = self.x_Q.to(self.device)
-        self.xi_Gamma_b = self.xi_Gamma_b.to(self.device)
-        self.xi_Gamma_t = self.xi_Gamma_t.to(self.device)
-        self.xi_Gamma_l = self.xi_Gamma_l.to(self.device)
-        self.xi_Gamma_r = self.xi_Gamma_r.to(self.device)
-        self.xi_Gamma = self.xi_Gamma.to(self.device)
-        self.xi_Gamma_eta = self.xi_Gamma_eta.to(self.device)
-        self.xi_Gamma_g = self.xi_Gamma_g.to(self.device)
-        self.n = self.n.to(self.device)
-        # self.Trunk_test.mus = self.Trunk_test.mus.to(self.device)
-        # self.Trunk_test.log_sigmas = self.Trunk_test.log_sigmas.to(self.device)
-        # self.Trunk_trial.mus = self.Trunk_trial.mus.to(self.device)
-        # self.Trunk_trial.log_sigmas = self.Trunk_trial.log_sigmas.to(self.device)
 
     def on_before_zero_grad(self, optimizer):
         if self.hparams.get('bound_mus',False)==True:
