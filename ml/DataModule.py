@@ -5,6 +5,7 @@ from torch.utils.data import DataLoader
 from torch.utils.data import random_split
 import pytorch_lightning as pl
 from numba import jit
+import opt_einsum
 
 import sys
 sys.path.insert(0, '/home/prins/st8/prins/phd/gitlab/ngo-pde-gk/fem') 
@@ -23,42 +24,53 @@ class DataModule_hc2d(pl.LightningDataModule):
     
     @jit
     def setup(self, stage=None):
+        #Define dummy NGO for preprocessing
+        params = {}
+        params['hparams'] = self.hyperparams
+        simparams = {}
+        params['simparams'] = simparams
+        params['simparams']['d'] = 2
+        dummyNGO = NGO(params)
+        bs_pp = 100
+        dummyNGO.bs = bs_pp
+        dummyNGO.geometry()
         #Load and discretize input and output functions
         print('Preprocessing data...')
-        self.theta_raw = load_function_list(variable='theta', loaddir=self.data_dir)
-        self.f_raw = load_function_list(variable='f', loaddir=self.data_dir)
-        self.etat_raw = load_function_list(variable='etat', loaddir=self.data_dir)
-        self.etab_raw = load_function_list(variable='etab', loaddir=self.data_dir)
-        self.x_raw = np.load(self.data_dir + '/x.npy')
-        self.u_raw = np.load(self.data_dir + '/u.npy')
+        theta_raw = load_function_list(variable='theta', loaddir=self.data_dir)
+        f_raw = load_function_list(variable='f', loaddir=self.data_dir)
+        etat_raw = load_function_list(variable='etat', loaddir=self.data_dir)
+        etab_raw = load_function_list(variable='etab', loaddir=self.data_dir)
+        x_raw = np.load(self.data_dir + '/x.npy')
+        u_raw = np.load(self.data_dir + '/u.npy')
         #Define quadrature grid
         x_0, x_1 = np.mgrid[0:1:self.hyperparams['Q']*1j, 0:1:self.hyperparams['Q']*1j]
         x_Q = np.vstack([x_0.ravel(), x_1.ravel()]).T
         #Define empty lists for data
-        self.theta = []
-        self.f = []
-        self.etab = []
-        self.etat = []
-        self.x = []
-        self.u = []
+        theta = []
+        f = []
+        etab = []
+        etat = []
+        x = []
+        u = []
         #Discretize input functions and sample output data
-        for i in range(len(self.theta_raw)):
+        for i in range(len(theta_raw)):
             print(i)
-            self.theta.append(self.theta_raw[i](x_Q))
-            self.f.append(self.f_raw[i](x_Q))
-            self.etab.append(self.etab_raw[i](x_Q))
-            self.etat.append(self.etat_raw[i](x_Q))
-            indices = np.linspace(0,self.x_raw.shape[1]-1, self.x_raw.shape[1], dtype=int)
+            theta.append(theta_raw[i](x_Q))
+            f.append(f_raw[i](x_Q))
+            etab.append(etab_raw[i](x_Q))
+            etat.append(etat_raw[i](x_Q))
+            indices = np.linspace(0,x_raw.shape[1]-1, x_raw.shape[1], dtype=int)
             indices_output = np.random.choice(indices, size=self.hyperparams['Q_L'], replace=False)
-            self.x.append(self.x_raw[i,indices_output])
-            self.u.append(self.u_raw[i,indices_output])
-        #Convert to numpy arrays first (faster)   
-        self.theta = np.array(self.theta).reshape(len(self.theta_raw),self.hyperparams['Q'],self.hyperparams['Q'])
-        self.f = np.array(self.f).reshape(len(self.theta_raw),self.hyperparams['Q'],self.hyperparams['Q'])
-        self.etab = np.array(self.etab).reshape(len(self.theta_raw),self.hyperparams['Q'],self.hyperparams['Q'])
-        self.etat = np.array(self.etat).reshape(len(self.theta_raw),self.hyperparams['Q'],self.hyperparams['Q'])
-        self.x = np.array(self.x)
-        self.u = np.array(self.u)
+            x.append(x_raw[i,indices_output])
+            u.append(u_raw[i,indices_output])
+        #Convert to numpy arrays first (faster)
+        self.theta = np.array(theta)
+        self.theta = np.array(theta).reshape((len(theta_raw),self.hyperparams['Q'],self.hyperparams['Q']))
+        self.f = np.array(f).reshape((len(theta_raw),self.hyperparams['Q'],self.hyperparams['Q']))
+        self.etab = np.array(etab).reshape((len(theta_raw),self.hyperparams['Q'],self.hyperparams['Q']))
+        self.etat = np.array(etat).reshape((len(theta_raw),self.hyperparams['Q'],self.hyperparams['Q']))
+        self.x = np.array(x)
+        self.u = np.array(u)
         #Convert to torch tensors
         self.theta = torch.tensor(self.theta, dtype=self.hyperparams['dtype'])
         self.f = torch.tensor(self.f, dtype=self.hyperparams['dtype'])
@@ -66,27 +78,20 @@ class DataModule_hc2d(pl.LightningDataModule):
         self.etat = torch.tensor(self.etat, dtype=self.hyperparams['dtype'])
         self.x = torch.tensor(self.x, dtype=self.hyperparams['dtype'])
         self.u = torch.tensor(self.u, dtype=self.hyperparams['dtype'])
-        #Compute K and d
-        params = {}
-        params['hparams'] = self.hyperparams
-        simparams = {}
-        params['simparams'] = simparams
-        params['simparams']['d'] = 2
-        dummyNGO = NGO(params)
-        # bs_pp = 1
-        bs_pp = self.theta.shape[0]
-        dummyNGO.bs = bs_pp
-        dummyNGO.geometry()
-        # self.K = torch.zeros((self.theta.shape[0],self.hyperparams['h'],self.hyperparams['h']))
-        # self.d = torch.zeros((self.theta.shape[0],self.hyperparams['h']))
-        # for i in range(int(len(self.theta_raw)/bs_pp)):
-        #     print(i)
-        #     self.K[i*bs_pp:(i+1)*bs_pp] = dummyNGO.compute_K(self.theta[i*bs_pp:(i+1)*bs_pp])
-        #     self.d[i*bs_pp:(i+1)*bs_pp] = dummyNGO.compute_d(self.f[i*bs_pp:(i+1)*bs_pp], self.etab[i*bs_pp:(i+1)*bs_pp], self.etat[i*bs_pp:(i+1)*bs_pp])
-        #     # print(self.K)
-        self.K = dummyNGO.compute_K(self.theta)
-        self.d = dummyNGO.compute_d(self.f, self.etab, self.etat)
-        self.dataset = torch.utils.data.TensorDataset(self.theta, self.f, self.etab, self.etat, self.K, self.d, self.x, self.u)
+        #Compute K, d and psi
+        self.K = torch.zeros((self.theta.shape[0],self.hyperparams['h'],self.hyperparams['h']))
+        self.d = torch.zeros((self.theta.shape[0],self.hyperparams['h']))
+        # self.psi = torch.zeros((self.theta.shape[0],268,self.hyperparams['h']))
+        for i in range(int(len(theta_raw)/bs_pp)):
+            print(i)
+            self.K[i*bs_pp:(i+1)*bs_pp] = dummyNGO.compute_K(self.theta[i*bs_pp:(i+1)*bs_pp])
+            self.d[i*bs_pp:(i+1)*bs_pp] = dummyNGO.compute_d(self.f[i*bs_pp:(i+1)*bs_pp], self.etab[i*bs_pp:(i+1)*bs_pp], self.etat[i*bs_pp:(i+1)*bs_pp])
+        self.psi = dummyNGO.Trunk_trial.forward(self.x.reshape((self.x.shape[0]*self.x.shape[1],self.x.shape[2]))).reshape((self.x.shape[0],self.x.shape[1],self.hyperparams['h']))
+        self.K = torch.tensor(self.K, dtype=self.hyperparams['dtype'])
+        self.d = torch.tensor(self.d, dtype=self.hyperparams['dtype'])
+        self.psi = torch.tensor(self.psi, dtype=self.hyperparams['dtype'])
+        #Define dataset
+        self.dataset = torch.utils.data.TensorDataset(self.theta, self.f, self.etab, self.etat, self.K, self.d, self.psi, self.x, self.u)
         self.trainingset, self.validationset = random_split(self.dataset, [int(0.9*self.u.shape[0]), int(0.1*self.u.shape[0])])
 
     def train_dataloader(self):
