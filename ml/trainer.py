@@ -12,12 +12,14 @@ def train(model, datamodule, hparams, loaddir, logdir, sublogdir, label):
     #Initialize logger and checkpointer
     logger, checkpoint_callback = initialize_logger(logdir, sublogdir, label)
     
-    #Load data and params
-    data = datamodule(loaddir, hparams)
+    #Load params
     with open(loaddir + '/params.json', 'r') as fp:
         params = json.load(fp)
     params['hparams'] = hparams
     params['label'] = label
+    
+    #Load data
+    data = datamodule(loaddir, params)
 
     #Model
     MLmodel = model(params)
