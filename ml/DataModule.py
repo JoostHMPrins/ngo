@@ -16,24 +16,18 @@ from NGO import NGO
 
 class DataModule_hc2d(pl.LightningDataModule):
 
-    def __init__(self, data_dir, hparams):
+    def __init__(self, data_dir, params):
         super().__init__()
         
+        self.params = params
         self.data_dir = data_dir
-        self.hyperparams = hparams
+        self.hyperparams = params['hparams']
     
     @jit
     def setup(self, stage=None):
-        #Define dummy NGO for preprocessing
-        params = {}
-        params['hparams'] = self.hyperparams
-        simparams = {}
-        params['simparams'] = simparams
-        params['simparams']['d'] = 2
-        dummyNGO = NGO(params)
+        dummyNGO = NGO(self.params)
         bs_pp = 100
-        dummyNGO.bs = bs_pp
-        dummyNGO.geometry()
+        # dummyNGO.bs = bs_pp
         #Load and discretize input and output functions
         print('Preprocessing data...')
         theta_raw = load_function_list(variable='theta', loaddir=self.data_dir)
@@ -42,11 +36,9 @@ class DataModule_hc2d(pl.LightningDataModule):
         etab_raw = load_function_list(variable='etab', loaddir=self.data_dir)
         x_raw = np.load(self.data_dir + '/x.npy')
         u_raw = np.load(self.data_dir + '/u.npy')
-        #Define quadrature grid
-        x_0, x_1 = np.mgrid[0:1:self.hyperparams['Q']*1j, 0:1:self.hyperparams['Q']*1j]
-        x_Q = np.vstack([x_0.ravel(), x_1.ravel()]).T
         #Define empty lists for data
         theta = []
+        theta_g = []
         f = []
         etab = []
         etat = []
@@ -55,24 +47,26 @@ class DataModule_hc2d(pl.LightningDataModule):
         #Discretize input functions and sample output data
         for i in range(len(theta_raw)):
             print(i)
-            theta.append(theta_raw[i](x_Q))
-            f.append(f_raw[i](x_Q))
-            etab.append(etab_raw[i](x_Q))
-            etat.append(etat_raw[i](x_Q))
+            theta.append(theta_raw[i](np.array(dummyNGO.xi_Omega)))
+            theta_g.append(theta_raw[i](np.array(dummyNGO.xi_Gamma_g)))
+            f.append(f_raw[i](np.array(dummyNGO.xi_Omega)))
+            etab.append(etab_raw[i](np.array(dummyNGO.xi_Gamma_b)))
+            etat.append(etat_raw[i](np.array(dummyNGO.xi_Gamma_t)))
             indices = np.linspace(0,x_raw.shape[1]-1, x_raw.shape[1], dtype=int)
             indices_output = np.random.choice(indices, size=self.hyperparams['Q_L'], replace=False)
             x.append(x_raw[i,indices_output])
             u.append(u_raw[i,indices_output])
         #Convert to numpy arrays first (faster)
         self.theta = np.array(theta)
-        self.theta = np.array(theta).reshape((len(theta_raw),self.hyperparams['Q'],self.hyperparams['Q']))
-        self.f = np.array(f).reshape((len(theta_raw),self.hyperparams['Q'],self.hyperparams['Q']))
-        self.etab = np.array(etab).reshape((len(theta_raw),self.hyperparams['Q'],self.hyperparams['Q']))
-        self.etat = np.array(etat).reshape((len(theta_raw),self.hyperparams['Q'],self.hyperparams['Q']))
+        self.theta_g = np.array(theta_g)
+        self.f = np.array(f)
+        self.etab = np.array(etab)
+        self.etat = np.array(etat)
         self.x = np.array(x)
         self.u = np.array(u)
         #Convert to torch tensors
         self.theta = torch.tensor(self.theta, dtype=self.hyperparams['dtype'])
+        self.theta_g = torch.tensor(self.theta_g, dtype=self.hyperparams['dtype'])
         self.f = torch.tensor(self.f, dtype=self.hyperparams['dtype'])
         self.etab = torch.tensor(self.etab, dtype=self.hyperparams['dtype'])
         self.etat = torch.tensor(self.etat, dtype=self.hyperparams['dtype'])
@@ -81,10 +75,9 @@ class DataModule_hc2d(pl.LightningDataModule):
         #Compute K, d and psi
         self.K = torch.zeros((self.theta.shape[0],self.hyperparams['h'],self.hyperparams['h']))
         self.d = torch.zeros((self.theta.shape[0],self.hyperparams['h']))
-        # self.psi = torch.zeros((self.theta.shape[0],268,self.hyperparams['h']))
         for i in range(int(len(theta_raw)/bs_pp)):
             print(i)
-            self.K[i*bs_pp:(i+1)*bs_pp] = dummyNGO.compute_K(self.theta[i*bs_pp:(i+1)*bs_pp])
+            self.K[i*bs_pp:(i+1)*bs_pp] = dummyNGO.compute_K(self.theta[i*bs_pp:(i+1)*bs_pp],self.theta_g[i*bs_pp:(i+1)*bs_pp])
             self.d[i*bs_pp:(i+1)*bs_pp] = dummyNGO.compute_d(self.f[i*bs_pp:(i+1)*bs_pp], self.etab[i*bs_pp:(i+1)*bs_pp], self.etat[i*bs_pp:(i+1)*bs_pp])
         self.psi = dummyNGO.Trunk_trial.forward(self.x.reshape((self.x.shape[0]*self.x.shape[1],self.x.shape[2]))).reshape((self.x.shape[0],self.x.shape[1],self.hyperparams['h']))
         self.K = torch.tensor(self.K, dtype=self.hyperparams['dtype'])
