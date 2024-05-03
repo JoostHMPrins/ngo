@@ -69,7 +69,25 @@ class ReshapeLayer(nn.Module):
         self.output_shape = output_shape
     
     def forward(self, x):
-        y = x.reshape(self.output_shape)
+        new_shape = (x.shape[0],) + self.output_shape
+        y = x.reshape(new_shape)
+        return y
+    
+    
+class PConv(nn.Module):
+    def __init__(self, hidden_channels, kernel_size, stride, bias):
+        super().__init__()
+        self.layers = nn.ModuleList()
+        self.layers.append(nn.Conv2d(in_channels=1, out_channels=hidden_channels, kernel_size=kernel_size, stride=stride, bias=bias))
+        self.layers.append(nn.BatchNorm2d(num_features=hidden_channels, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True))
+        self.layers.append(nn.ConvTranspose2d(in_channels=hidden_channels, out_channels=1, kernel_size=kernel_size, stride=stride, bias=bias))
+    
+    def forward(self, x):
+        P = x
+        for layer in self.layers:
+            P = layer(P)
+        P = P/torch.norm(P)
+        y = x + torch.matmul(P,x)
         return y
 
     
@@ -81,8 +99,6 @@ class UpsampleModel(nn.Module):
     def forward(self, x):
         x = F.interpolate(x, size=self.size, mode='nearest')
         return x
-    
-
     
 
 def expand_D8(A):
