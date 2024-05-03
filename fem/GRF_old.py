@@ -45,6 +45,7 @@ class GRF():
         def function(x):
             terms = self.f_hat[sample,:,None]*np.exp(-np.sum((x[None,None,:,:] - self.x_grid[None,:,None,:])**2, axis=-1)/(2*self.l**2))
             output = np.sum(terms, axis=1)
+            output = output[0]
             return output
         return function
 
