@@ -23,12 +23,9 @@ class DataModule_hc2d(pl.LightningDataModule):
         self.data_dir = data_dir
         self.hyperparams = params['hparams']
     
-    @jit
     def setup(self, stage=None):
         dummyNGO = NGO(self.params)
-        bs_pp = 100
-        # dummyNGO.bs = bs_pp
-        #Load and discretize input and output functions
+        # Load input and output functions
         print('Preprocessing data...')
         theta_raw = load_function_list(variable='theta', loaddir=self.data_dir)
         f_raw = load_function_list(variable='f', loaddir=self.data_dir)
@@ -36,53 +33,24 @@ class DataModule_hc2d(pl.LightningDataModule):
         etab_raw = load_function_list(variable='etab', loaddir=self.data_dir)
         x_raw = np.load(self.data_dir + '/x.npy')
         u_raw = np.load(self.data_dir + '/u.npy')
-        #Define empty lists for data
-        theta = []
-        theta_g = []
-        f = []
-        etab = []
-        etat = []
-        x = []
-        u = []
-        #Discretize input functions and sample output data
+        #Discretize input functions
+        self.theta, self.theta_g, self.f, self.etab, self.etat = dummyNGO.discretize_input_functions(theta_raw, f_raw, etab_raw, etat_raw)
+        self.K = torch.tensor(dummyNGO.compute_K(self.theta, self.theta_g), dtype=self.hyperparams['dtype'])
+        self.d = torch.tensor(dummyNGO.compute_d(self.f, self.etab, self.etat), dtype=self.hyperparams['dtype'])
+        psi = dummyNGO.Trunk_trial.forward(x_raw.reshape((x_raw.shape[0]*x_raw.shape[1],x_raw.shape[2]))).reshape((x_raw.shape[0],x_raw.shape[1],self.hyperparams['h']))
+        #Sample x, psi and u
+        self.x = []
+        self.psi = []
+        self.u = []
         for i in range(len(theta_raw)):
-            print(i)
-            theta.append(theta_raw[i](np.array(dummyNGO.xi_Omega)))
-            theta_g.append(theta_raw[i](np.array(dummyNGO.xi_Gamma_g)))
-            f.append(f_raw[i](np.array(dummyNGO.xi_Omega)))
-            etab.append(etab_raw[i](np.array(dummyNGO.xi_Gamma_b)))
-            etat.append(etat_raw[i](np.array(dummyNGO.xi_Gamma_t)))
             indices = np.linspace(0,x_raw.shape[1]-1, x_raw.shape[1], dtype=int)
             indices_output = np.random.choice(indices, size=self.hyperparams['Q_L'], replace=False)
-            x.append(x_raw[i,indices_output])
-            u.append(u_raw[i,indices_output])
-        #Convert to numpy arrays first (faster)
-        self.theta = np.array(theta)
-        self.theta_g = np.array(theta_g)
-        self.f = np.array(f)
-        self.etab = np.array(etab)
-        self.etat = np.array(etat)
-        self.x = np.array(x)
-        self.u = np.array(u)
-        #Convert to torch tensors
-        self.theta = torch.tensor(self.theta, dtype=self.hyperparams['dtype'])
-        self.theta_g = torch.tensor(self.theta_g, dtype=self.hyperparams['dtype'])
-        self.f = torch.tensor(self.f, dtype=self.hyperparams['dtype'])
-        self.etab = torch.tensor(self.etab, dtype=self.hyperparams['dtype'])
-        self.etat = torch.tensor(self.etat, dtype=self.hyperparams['dtype'])
-        self.x = torch.tensor(self.x, dtype=self.hyperparams['dtype'])
-        self.u = torch.tensor(self.u, dtype=self.hyperparams['dtype'])
-        #Compute K, d and psi
-        self.K = torch.zeros((self.theta.shape[0],self.hyperparams['h'],self.hyperparams['h']))
-        self.d = torch.zeros((self.theta.shape[0],self.hyperparams['h']))
-        for i in range(int(len(theta_raw)/bs_pp)):
-            print(i)
-            self.K[i*bs_pp:(i+1)*bs_pp] = dummyNGO.compute_K(self.theta[i*bs_pp:(i+1)*bs_pp],self.theta_g[i*bs_pp:(i+1)*bs_pp])
-            self.d[i*bs_pp:(i+1)*bs_pp] = dummyNGO.compute_d(self.f[i*bs_pp:(i+1)*bs_pp], self.etab[i*bs_pp:(i+1)*bs_pp], self.etat[i*bs_pp:(i+1)*bs_pp])
-        self.psi = dummyNGO.Trunk_trial.forward(self.x.reshape((self.x.shape[0]*self.x.shape[1],self.x.shape[2]))).reshape((self.x.shape[0],self.x.shape[1],self.hyperparams['h']))
-        self.K = torch.tensor(self.K, dtype=self.hyperparams['dtype'])
-        self.d = torch.tensor(self.d, dtype=self.hyperparams['dtype'])
-        self.psi = torch.tensor(self.psi, dtype=self.hyperparams['dtype'])
+            self.x.append(x_raw[i,indices_output])
+            self.psi.append(psi[i,indices_output])
+            self.u.append(u_raw[i,indices_output])
+        self.x = torch.tensor(np.array(self.x), dtype=self.hyperparams['dtype'])
+        self.psi = torch.tensor(np.array(self.psi), dtype=self.hyperparams['dtype'])
+        self.u = torch.tensor(np.array(self.u), dtype=self.hyperparams['dtype'])
         #Define dataset
         self.dataset = torch.utils.data.TensorDataset(self.theta, self.f, self.etab, self.etat, self.K, self.d, self.psi, self.x, self.u)
         self.trainingset, self.validationset = random_split(self.dataset, [int(0.9*self.u.shape[0]), int(0.1*self.u.shape[0])])
