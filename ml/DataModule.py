@@ -10,8 +10,86 @@ import opt_einsum
 import sys
 sys.path.insert(0, '/home/prins/st8/prins/phd/gitlab/ngo-pde-gk/fem') 
 from datasaver import load_function_list
+from ManufacturedSolutionsDarcy import *
+from Quadrature import *
 
-from NGO import NGO
+from NGO_D import NGO
+
+class MultiEpochsDataLoader(torch.utils.data.DataLoader):
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._DataLoader__initialized = False
+        self.batch_sampler = _RepeatSampler(self.batch_sampler)
+        self._DataLoader__initialized = True
+        self.iterator = super().__iter__()
+
+    def __len__(self):
+        return len(self.batch_sampler.sampler)
+
+    def __iter__(self):
+        for i in range(len(self)):
+            yield next(self.iterator)
+
+
+class _RepeatSampler(object):
+    """ Sampler that repeats forever.
+
+    Args:
+        sampler (Sampler)
+    """
+
+    def __init__(self, sampler):
+        self.sampler = sampler
+
+    def __iter__(self):
+        while True:
+            yield from iter(self.sampler)
+
+class DataModule_Darcy_MS(pl.LightningDataModule):
+
+    def __init__(self, data_dir, params):
+        super().__init__()
+        
+        self.params = params
+        self.data_dir = data_dir
+        self.hyperparams = params['hparams']
+        
+    def setup(self, stage=None):
+        dummyNGO = NGO(self.params)
+        # Generate input and output functions
+        print('Generating data...')
+        N_samples = 10000
+        dataset = MFSetDarcy(N_samples=N_samples, d=2, l_theta_min=0.5, l_theta_max=1, l_u_min=0.25, l_u_max=0.5)
+        #Discretize input functions
+        print('Preprocessing data...')
+        self.theta, self.theta_g, self.f, self.etab, self.etat, self.gl, self.gr = dummyNGO.discretize_input_functions(dataset.theta, dataset.f, dataset.etab, dataset.etat, dataset.gl, dataset.gr)
+        self.K = torch.tensor(dummyNGO.compute_K(self.theta, self.theta_g), dtype=self.hyperparams['dtype'])
+        self.d = torch.tensor(dummyNGO.compute_d(self.f, self.etab, self.etat, self.gl, self.gr), dtype=self.hyperparams['dtype'])
+        #Sample x, psi and u
+        # self.x = np.random.uniform(0, 1, size=(N_samples,self.hyperparams['Q_L']**self.params['simparams']['d'],self.params['simparams']['d']))
+        quadrature_L = GaussLegendreQuadrature2D(Q=self.hyperparams['Q_L'], n_elements = dummyNGO.basis_test.num_basis_1d - dummyNGO.basis_test.p)
+        self.u = []
+        for i in range(len(dataset.u)):
+            u = dataset.u[i](quadrature_L.xi_Omega)
+            self.u.append(u)
+        self.u = torch.tensor(np.array(self.u), dtype=self.hyperparams['dtype'])
+        #Define dataset
+        if dummyNGO.hparams['modeltype']=='DeepONet':
+            self.dataset = torch.utils.data.TensorDataset(self.theta, self.f, self.etab, self.etat, self.gl, self.gr, self.u)
+            self.trainingset, self.validationset = random_split(self.dataset, [int(0.9*self.u.shape[0]), int(0.1*self.u.shape[0])])
+        if dummyNGO.hparams['modeltype']=='VarMiON':
+            self.dataset = torch.utils.data.TensorDataset(self.theta, self.f, self.etab, self.etat, self.gl, self.gr, self.u)
+            self.trainingset, self.validationset = random_split(self.dataset, [int(0.9*self.u.shape[0]), int(0.1*self.u.shape[0])])
+        if dummyNGO.hparams['modeltype']=='NGO':
+            self.dataset = torch.utils.data.TensorDataset(self.K, self.d, self.u)
+            self.trainingset, self.validationset = random_split(self.dataset, [int(0.9*self.u.shape[0]), int(0.1*self.u.shape[0])])
+
+    def train_dataloader(self):
+        return DataLoader(self.trainingset, batch_size=self.hyperparams['batch_size'], shuffle=False, num_workers=2, pin_memory=False)#, persistent_workers=False)#, prefetch_factor=2)
+
+    def val_dataloader(self):
+        return DataLoader(self.validationset, batch_size=self.hyperparams['batch_size'], shuffle=False, num_workers=2, pin_memory=False)#, persistent_workers=False)#, prefetch_factor=2)
     
 
 class DataModule_hc2d(pl.LightningDataModule):
@@ -35,9 +113,9 @@ class DataModule_hc2d(pl.LightningDataModule):
         u_raw = np.load(self.data_dir + '/u.npy')
         #Discretize input functions
         self.theta, self.theta_g, self.f, self.etab, self.etat = dummyNGO.discretize_input_functions(theta_raw, f_raw, etab_raw, etat_raw)
-        self.K = torch.tensor(dummyNGO.compute_K(self.theta, self.theta_g), dtype=self.hyperparams['dtype'])
+        self.K = torch.tensor(dummyNGO.compute_K_db(self.theta), dtype=self.hyperparams['dtype']) if self.hyperparams['data_based']==True else torch.tensor(dummyNGO.compute_K(self.theta, self.theta_g), dtype=self.hyperparams['dtype'])
         self.d = torch.tensor(dummyNGO.compute_d(self.f, self.etab, self.etat), dtype=self.hyperparams['dtype'])
-        psi = dummyNGO.Trunk_trial.forward(x_raw.reshape((x_raw.shape[0]*x_raw.shape[1],x_raw.shape[2]))).reshape((x_raw.shape[0],x_raw.shape[1],self.hyperparams['h']))
+        psi = dummyNGO.basis_trial.forward(x_raw.reshape((x_raw.shape[0]*x_raw.shape[1],x_raw.shape[2]))).reshape((x_raw.shape[0],x_raw.shape[1],self.hyperparams['h']))
         #Sample x, psi and u
         self.x = []
         self.psi = []
@@ -56,10 +134,10 @@ class DataModule_hc2d(pl.LightningDataModule):
         self.trainingset, self.validationset = random_split(self.dataset, [int(0.9*self.u.shape[0]), int(0.1*self.u.shape[0])])
 
     def train_dataloader(self):
-        return DataLoader(self.trainingset, batch_size=self.hyperparams['batch_size'])#, num_workers=10, pin_memory=True)
+        return DataLoader(self.trainingset, batch_size=self.hyperparams['batch_size'], num_workers=0, pin_memory=True)
 
     def val_dataloader(self):
-        return DataLoader(self.validationset, batch_size=self.hyperparams['batch_size'])#, num_workers=10, pin_memory=True)
+        return DataLoader(self.validationset, batch_size=self.hyperparams['batch_size'], num_workers=0, pin_memory=True)
 
 
 class DataModule_hc2d_old(pl.LightningDataModule):
