@@ -4,9 +4,12 @@ from BSplines import *
 class BSplineInterpolatedPOD2D:
     def __init__(self, x_data, u_data, h, knots_x, knots_y, polynomial_order):
         self.basis_2d = BSplineBasis2D(knots_x, knots_y, polynomial_order)
-        self.PODbasis = self.compute_PODbasis(u_data, h)
-        self.PODcoeffs = self.compute_PODcoeffs(x_data, u_data, h, knots_x, knots_y, polynomial_order)
-        self.errors = self.compute_projection_errors(x_data)
+        self.num_basis_1d = self.basis_2d.basis_1d_x.num_basis
+        self.p = self.basis_2d.p
+        # self.PODbasis = self.compute_PODbasis(u_data, h)
+        # self.PODcoeffs = self.compute_PODcoeffs(x_data, u_data, h, knots_x, knots_y, polynomial_order)
+        self.PODcoeffs = np.load('../../../trainingdata/PODcoeffs.npy')
+        # self.errors = self.compute_projection_errors(x_data)
         
     def compute_PODbasis(self, u_data, h):
         U, self.singularvalues, Vstar = np.linalg.svd(u_data.T, full_matrices=False)
@@ -21,6 +24,7 @@ class BSplineInterpolatedPOD2D:
             interpolator = BSplineInterpolator2D(x_data, PODbasis[i], knots_x, knots_y, polynomial_order)
             PODcoeffs.append(interpolator.compute_coeffs(x_data, PODbasis[i]))
         PODcoeffs = np.array(PODcoeffs)
+        np.save('../../../PODcoeffs.npy', PODcoeffs)
         return PODcoeffs
         
     def forward(self, x):

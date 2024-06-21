@@ -1,109 +1,100 @@
 import numpy as np
 from scipy.spatial import distance_matrix
 from numba import jit
+import opt_einsum
+from numba import jit
+import scipy
 
 
-class GRF():
-    def __init__(self, **kwargs):
+class GRF:
+    def __init__(self, d, l):
         super().__init__()
-        self.d = kwargs['d']
-        self.l = kwargs['l_min'] if kwargs['l_min']==kwargs['l_max'] else np.random.uniform(kwargs['l_min'],kwargs['l_max'])
-        self.lowerbound = kwargs['lowerbound']
-        self.upperbound = kwargs['upperbound']
-        self.compute_grid()
-        self.compute_cov()
-        self.compute_GRFpoints()
-        self.compute_RBFintcoeffs()
-        if self.lowerbound==None and self.upperbound==None:
-            None
-        else:    
-            self.compute_minmax()
+        self.d = d
+        self.l = l
+        self.mus = self.compute_mus()
+        self.f_hat = self.compute_RBFintcoeffs()
         
-    def compute_grid(self):
-        # if self.d==2:
-        #     X, Y = np.mgrid[0:1:self.N_gridpoints*1j, 0:1:self.N_gridpoints*1j]
-        #     self.x_grid = np.vstack([X.ravel(), Y.ravel()]).T
-        self.x_grid = np.random.uniform(0,1,size=(int(1/self.l**self.d), self.d))
+    def compute_mus(self):
+        mus = np.random.uniform(0,1,size=(int(np.ceil(1/self.l**self.d)), self.d))
+        return mus
 
     def compute_cov(self):
-        self.cov = np.exp(-distance_matrix(self.x_grid, self.x_grid, p=2)**2/(2*self.l**2))
+        cov = np.exp(-distance_matrix(self.mus, self.mus, p=2)**2/(2*self.l**2))
+        return cov
     
-    def compute_GRFpoints(self):
-        self.f = np.random.multivariate_normal(np.zeros(int(1/self.l**self.d)), cov=self.cov)
+    def compute_GRFpoints(self, cov):
+        f = np.random.multivariate_normal(np.zeros(int(np.ceil(1/self.l**self.d))), cov=cov)
+        return f
     
     def compute_RBFintcoeffs(self):
-        cov_inv = np.linalg.inv(self.cov)
-        self.f_hat = np.einsum('ij,j->i', cov_inv, self.f)
+        cov = self.compute_cov()
+        f = self.compute_GRFpoints(cov)
+        f_hat = scipy.linalg.lstsq(cov, f, lapack_driver='gelsy', check_finite=False)[0]
+        return f_hat
     
-    def compute_minmax(self):
-        # if self.d==2:
-        #     X, Y = np.mgrid[0:1:100*1j, 0:1:100*1j]
-        #     x = np.vstack([X.ravel(), Y.ravel()]).T
-        x = np.random.uniform(0,1,size=(int((10/self.l)**self.d), self.d))
-        terms = self.f_hat[:,None]*np.exp(-np.sum((x[None,:,:] - self.x_grid[:,None,:])**2, axis=-1)/(2*self.l**2))
-        f = np.sum(terms, axis=0)
-        if self.lowerbound!=None:
-            self.f_min = np.amin(f)
-        if self.upperbound!=None:
-            self.f_max = np.amax(f)
-            
-    def RBFint(self):
-        def function(x):
-            terms = self.f_hat[:,None]*np.exp(-np.sum((x[None,:,:] - self.x_grid[:,None,:])**2, axis=-1)/(2*self.l**2))
-            output = np.sum(terms, axis=0)
-            return output
-        return function
+    def phi_n(self, x):
+        phi_n = self.f_hat[None,:]*np.exp(-np.sum((x[:,None,:] - self.mus[None,:,:])**2, axis=-1)/(2*self.l**2))
+        return phi_n
+    
+    def forward(self, x):
+        phi_n = self.phi_n(x)
+        return np.sum(phi_n, axis=1)
+    
+    def grad(self,x):
+        phi_n = self.phi_n(x)
+        prefactor = -1/(self.l**2)*(x[:,None,:] - self.mus[None,:,:])
+        return np.sum(prefactor*phi_n[:,:,None], axis=1)
+    
+    def laplacian(self, x):
+        phi_n = self.phi_n(x)
+        prefactor = (1/self.l**2)*(np.sum((x[:,None,:] - self.mus[None,:,:])**2, axis=-1)/self.l**2 - self.d)
+        return np.sum(prefactor*phi_n, axis=1)
 
-    def RBFint_pointwise(self):
-        def function(x):
-            terms = self.f_hat*np.exp(-np.sum((x - self.x_grid)**2, axis=-1)/(2*self.l**2))
-            output = np.sum(terms)
-            return output
-        return function
     
-    def RBFint_scaled(self):
-        def function(x):
-            if self.lowerbound==None and self.upperbound==None:
-                output_scaled = self.RBFint()(x)
-            if self.lowerbound!=None and self.upperbound==None:
-                output_scaled = self.RBFint()(x) - self.f_min + self.lowerbound
-            if self.lowerbound!=None and self.upperbound!=None:
-                output_scaled = (self.RBFint()(x) - self.f_min)/(self.f_max - self.f_min) #Scale to [0,1]
-                output_scaled = (self.upperbound - self.lowerbound)*output_scaled + self.lowerbound #Scale to [lowerbound,upperbound]
-            return output_scaled
-        return function
-          
-            
-    def RBFint_pointwise_scaled(self):
-        def function(x):
-            if self.lowerbound==None and self.upperbound==None:
-                output_scaled = self.RBFint_pointwise()(x)
-            if self.lowerbound!=None and self.upperbound==None:
-                output_scaled = self.RBFint_pointwise()(x) - self.f_min + self.lowerbound
-            if self.lowerbound!=None and self.upperbound!=None:
-                output_scaled = (self.RBFint_pointwise()(x) - self.f_min)/(self.f_max - self.f_min) #Scale to [0,1]
-                output_scaled = (self.upperbound - self.lowerbound)*output_scaled + self.lowerbound #Scale to [lowerbound,upperbound]
-            return output_scaled
-        return function
-    
-    
-class GRFset():
-    def __init__(self, **kwargs):
+class SquaredGRF:
+    def __init__(self, d, l):
         super().__init__()
-        self.kwargs = kwargs
-        self.generate_grfset()
+        self.grf = GRF(d, l)   
         
-    def generate_grfset(self):
+    def forward(self, x):
+        return 1/2*(self.grf.forward(x))**2
+    
+    def grad(self, x):
+        return self.grf.forward(x)[:,None]*self.grf.grad(x)
+    
+    def laplacian(self, x):
+        return self.grf.forward(x)*self.grf.laplacian(x) + np.sum(self.grf.grad(x)**2, axis=-1)
         
-        grfs_ngo = []
-        grfs_nutils = []
+
+class ScaledGRF:
+    def __init__(self, d, l, c, b):
+        super().__init__()
+        self.grf = GRF(d, l)
+        self.c = c
+        self.b = b
         
-        for i in range(self.kwargs['N_samples']):
-            grf = GRF(**self.kwargs)
-            grf_ngo = grf.RBFint_scaled()
-            grf_nutils = grf.RBFint_pointwise_scaled()
-            grfs_ngo.append(grf_ngo)
-            grfs_nutils.append(grf_nutils)
-            
-        self.grfs_ngo = grfs_ngo
-        self.grfs_nutils = grfs_nutils
+    def forward(self, x):
+        return self.c*self.grf.forward(x) + self.b
+    
+    def grad(self, x):
+        return self.c*self.grf.grad(x)
+    
+    def laplacian(self, x):
+        return self.c*self.grf.laplacian(x)
+    
+    
+class ScaledSquaredGRF:
+    def __init__(self, d, l, c, b):
+        super().__init__()
+        self.squaredgrf = SquaredGRF(d, l)
+        self.c = c
+        self.b = b
+        
+    def forward(self, x):
+        return self.c*self.squaredgrf.forward(x) + self.b
+    
+    def grad(self, x):
+        return self.c*self.squaredgrf.grad(x)
+    
+    def laplacian(self, x):
+        return self.c*self.squaredgrf.laplacian(x)

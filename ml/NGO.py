@@ -8,6 +8,7 @@ from BSplines import *
 from PODBasis import *
 from customlayers import *
 from customlosses import *
+from Quadrature import *
 import opt_einsum
 
 class NGO(pl.LightningModule):
@@ -25,9 +26,10 @@ class NGO(pl.LightningModule):
             self.LBranch_f = LBranchNet(params, input_dim=self.hparams['Q']**params['simparams']['d'], output_dim=self.hparams['h'])
             self.LBranch_eta = LBranchNet(params, input_dim=2*self.hparams['Q'], output_dim=self.hparams['h'])
         if self.hparams.get('modeltype',False)=='NGO':
-            self.NLBranch = NLBranch_NGO(params)
+            self.NLBranch = UNet(params)
+            # self.NLBranch = NLBranch_NGO(params)
         #Trunk
-        knots_BS = np.array([0,0,0,0,0.2,0.4,0.6,0.8,1,1,1,1])
+        knots_BS = self.hparams['knots_1d']
         knots_POD = np.array([0,0,0,0,0.05,0.1,0.15,0.2,0.25,0.3,0.35,0.4,0.45,0.5,0.55,0.6,0.65,0.7,0.75,0.8,0.85,0.9,0.95,1,1,1,1])
         data_dir = '../../../trainingdata/VarMiONpaperdata/test'
         x_raw = np.load(data_dir + '/x.npy')
@@ -166,100 +168,33 @@ class NGO(pl.LightningModule):
         self.log('metric', metric)
         
     def geometry(self):
+        #Quadrature
         if self.hparams['quadrature']=='uniform':
-            #Interior
-            x_0_Q, x_1_Q = np.mgrid[0:1:self.hparams['Q']*1j, 0:1:self.hparams['Q']*1j]
-            self.xi_Omega = np.vstack([x_0_Q.ravel(), x_1_Q.ravel()]).T
-            self.w_Omega = 1/(self.hparams['Q']**self.params['simparams']['d'])*np.ones((self.hparams['Q']**self.params['simparams']['d']))
-            #Boundaries
-            xi_Gamma = np.linspace(0, 1, self.hparams['Q'])
-            self.xi_Gamma_b = np.zeros((self.hparams['Q'],self.params['simparams']['d']))
-            self.xi_Gamma_b[:,0] = xi_Gamma
-            self.xi_Gamma_t = np.ones((self.hparams['Q'],self.params['simparams']['d']))
-            self.xi_Gamma_t[:,0] = xi_Gamma
-            self.xi_Gamma_l = np.zeros((self.hparams['Q'],self.params['simparams']['d']))
-            self.xi_Gamma_l[:,1] = xi_Gamma
-            self.xi_Gamma_r = np.ones((self.hparams['Q'],self.params['simparams']['d']))
-            self.xi_Gamma_r[:,1] = xi_Gamma
-            self.xi_Gamma_eta = np.zeros((2*self.hparams['Q'],self.params['simparams']['d']))
-            self.xi_Gamma_eta[:self.hparams['Q']] = self.xi_Gamma_b
-            self.xi_Gamma_eta[self.hparams['Q']:] = self.xi_Gamma_t        
-            self.xi_Gamma_g = np.zeros((2*self.hparams['Q'],self.params['simparams']['d']))
-            self.xi_Gamma_g[:self.hparams['Q']] = self.xi_Gamma_l
-            self.xi_Gamma_g[self.hparams['Q']:] = self.xi_Gamma_r        
-            self.w_Gamma_b = 1/(self.hparams['Q'])*np.ones((self.hparams['Q']))
-            self.w_Gamma_t = 1/(self.hparams['Q'])*np.ones((self.hparams['Q']))
-            self.w_Gamma_eta = 1/(2*self.hparams['Q'])*np.ones((2*self.hparams['Q']))
-            self.w_Gamma_g = 1/(2*self.hparams['Q'])*np.ones((2*self.hparams['Q']))   
+            quadrature = UniformQuadrature2D(Q=self.hparams['Q'])
         if self.hparams['quadrature']=='Gauss-Legendre':
-            #Interior
-            x, w = np.polynomial.legendre.leggauss(int(self.hparams['Q']/5))
-            x = np.array(np.meshgrid(x,x,indexing='ij')).reshape(2,-1).T/2 + 0.5
-            w = w/2*0.2
-            w = (w*w[:,None]).ravel()
-            xi_Omega = []
-            w_Omega = []
-            for i in range(5):
-                for j in range(5):
-                    newpts = 0.2*x
-                    newpts[:,0] = newpts[:,0] + 0.2*i
-                    newpts[:,1] = newpts[:,1] + 0.2*j
-                    xi_Omega.append(newpts)
-                    w_Omega.append(w)
-            self.w_Omega = np.array(w_Omega).flatten()
-            xi_Omega = np.array(xi_Omega)
-            self.xi_Omega = xi_Omega.reshape(xi_Omega.shape[0]*xi_Omega.shape[1],xi_Omega.shape[2])
-            #Boundaries
-            x, w = np.polynomial.legendre.leggauss(int(self.hparams['Q']/5))
-            x = x/2 + 0.5
-            w = w/2*0.2
-            xi_Gamma_i = []
-            w_Gamma_i = []
-            for i in range(5):
-                xi_Gamma_i.append(0.2*x + 0.2*i)
-                w_Gamma_i.append(w)
-            xi_Gamma_i = np.array(xi_Gamma_i)
-            xi_Gamma_i = xi_Gamma_i.flatten()
-            w_Gamma_i = np.array(w_Gamma_i).flatten()
-            self.xi_Gamma_b = np.zeros((self.hparams['Q'],self.params['simparams']['d']))
-            self.xi_Gamma_b[:,0] = xi_Gamma_i
-            self.xi_Gamma_t = np.ones((self.hparams['Q'],self.params['simparams']['d']))
-            self.xi_Gamma_t[:,0] = xi_Gamma_i
-            self.xi_Gamma_l = np.zeros((self.hparams['Q'],self.params['simparams']['d']))
-            self.xi_Gamma_l[:,1] = xi_Gamma_i
-            self.xi_Gamma_r = np.ones((self.hparams['Q'],self.params['simparams']['d']))
-            self.xi_Gamma_r[:,1] = xi_Gamma_i
-            self.xi_Gamma_eta = np.zeros((2*self.hparams['Q'],self.params['simparams']['d']))
-            self.xi_Gamma_eta[:self.hparams['Q']] = self.xi_Gamma_b
-            self.xi_Gamma_eta[self.hparams['Q']:] = self.xi_Gamma_t        
-            self.xi_Gamma_g = np.zeros((2*self.hparams['Q'],self.params['simparams']['d']))
-            self.xi_Gamma_g[:self.hparams['Q']] = self.xi_Gamma_l
-            self.xi_Gamma_g[self.hparams['Q']:] = self.xi_Gamma_r 
-            self.w_Gamma_b = w_Gamma_i
-            self.w_Gamma_t = w_Gamma_i
-            self.w_Gamma_l = w_Gamma_i
-            self.w_Gamma_r = w_Gamma_i
-            self.w_Gamma_eta = np.zeros((2*len(w_Gamma_i)))
-            self.w_Gamma_eta[:len(w_Gamma_i)] = self.w_Gamma_b
-            self.w_Gamma_eta[len(w_Gamma_i):] = self.w_Gamma_t
-            self.w_Gamma_g = np.zeros((2*len(w_Gamma_i)))
-            self.w_Gamma_g[:len(w_Gamma_i)] = self.w_Gamma_l
-            self.w_Gamma_g[len(w_Gamma_i):] = self.w_Gamma_r
+            quadrature = GaussLegendreQuadrature2D(Q=self.hparams['Q'], n_elements = self.Trunk_test.num_basis_1d - self.Trunk_test.p)
+        self.xi_Omega = quadrature.xi_Omega
+        self.xi_Gamma_b = quadrature.xi_Gamma_b
+        self.xi_Gamma_t = quadrature.xi_Gamma_t
+        self.xi_Gamma_l = quadrature.xi_Gamma_l
+        self.xi_Gamma_r = quadrature.xi_Gamma_r
+        self.xi_Gamma_eta = quadrature.xi_Gamma_eta
+        self.xi_Gamma_g = quadrature.xi_Gamma_g
+        self.w_Omega = quadrature.w_Omega
+        self.w_Gamma_b = quadrature.w_Gamma_b
+        self.w_Gamma_t = quadrature.w_Gamma_t
+        self.w_Gamma_l = quadrature.w_Gamma_l
+        self.w_Gamma_r = quadrature.w_Gamma_r
+        self.w_Gamma_eta = quadrature.w_Gamma_eta
+        self.w_Gamma_g = quadrature.w_Gamma_g
         #Outward normal
-        n_b = np.array([0,-1])
-        self.n_b = np.tile(n_b,(self.hparams['Q'],1))
-        n_t = np.array([0,1])
-        self.n_t = np.tile(n_t,(self.hparams['Q'],1))
-        n_l = np.array([-1,0])
-        self.n_l = np.tile(n_l,(self.hparams['Q'],1))
-        n_r = np.array([1,0])
-        self.n_r = np.tile(n_r,(self.hparams['Q'],1))
-        self.n_Gamma_eta = np.zeros((2*self.hparams['Q'],self.params['simparams']['d']))
-        self.n_Gamma_eta[:self.hparams['Q']] = self.n_b
-        self.n_Gamma_eta[self.hparams['Q']:] = self.n_t
-        self.n_Gamma_g = np.zeros((2*self.hparams['Q'],self.params['simparams']['d']))
-        self.n_Gamma_g[:self.hparams['Q']] = self.n_l
-        self.n_Gamma_g[self.hparams['Q']:] = self.n_r
+        outwardnormal = UnitSquareOutwardNormal(Q=self.hparams['Q'])
+        self.n_b = outwardnormal.n_b
+        self.n_t = outwardnormal.n_t
+        self.n_l = outwardnormal.n_l
+        self.n_r = outwardnormal.n_r
+        self.n_Gamma_eta = outwardnormal.n_Gamma_eta
+        self.n_Gamma_g = outwardnormal.n_Gamma_g
             
     def on_save_checkpoint(self, checkpoint):
         checkpoint['params'] = self.params

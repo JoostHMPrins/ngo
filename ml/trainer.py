@@ -28,12 +28,16 @@ def train(model, datamodule, hparams, loaddir, logdir, sublogdir, label):
     #Training
     start = time.time() 
     trainer = pl.Trainer(logger=logger, 
-                         accelerator=hparams['accelerator'], 
+                         accelerator='gpu', 
                          devices=hparams['devices'],
+                         strategy="ddp",
                          precision=hparams['precision'], 
-                         max_epochs=hparams['max_epochs'], 
+                         max_epochs=hparams['epochs'], 
                          check_val_every_n_epoch=1,
-                         callbacks=[checkpoint_callback, EarlyStopping(monitor='val_loss', patience=hparams['early_stopping_patience'])])
+                         callbacks=checkpoint_callback,
+                         profiler='simple')#,
+                         #use_distributed_sampler=False)
+                         #barebones=True)
     trainer.fit(MLmodel, data)
     end = time.time()
     Ctime = end - start #computation time

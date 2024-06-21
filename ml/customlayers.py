@@ -73,6 +73,15 @@ class ReshapeLayer(nn.Module):
         y = x.reshape(new_shape)
         return y
     
+class InversionLayer(nn.Module):
+    def __init__(self):
+        super().__init__()
+        # self.output_shape = output_shape
+    
+    def forward(self, x):
+        y = torch.linalg.pinv(x)
+        return y
+    
     
 class PConv(nn.Module):
     def __init__(self, hidden_channels, kernel_size, stride, bias):

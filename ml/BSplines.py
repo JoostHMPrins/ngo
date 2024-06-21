@@ -139,6 +139,8 @@ class BSplineBasis2D:
     def __init__(self, knots_x, knots_y, polynomial_order):
         self.basis_1d_x = BSplineBasis1D(knots_x, polynomial_order)
         self.basis_1d_y = BSplineBasis1D(knots_y, polynomial_order)
+        self.p = self.basis_1d_x.p
+        self.num_basis_1d = self.basis_1d_x.num_basis
 
     def forward(self, x):
         bx = self.basis_1d_x.forward(x[:,0])
