@@ -4,7 +4,8 @@ from tqdm.auto import tqdm, trange
 from ipywidgets import IntProgress
 import json
 import time
-from DataModule import *
+# from DataModule import *
+
 from logger import *
 
 def train(model, datamodule, hparams, loaddir, logdir, sublogdir, label):
@@ -34,10 +35,8 @@ def train(model, datamodule, hparams, loaddir, logdir, sublogdir, label):
                          precision=hparams['precision'], 
                          max_epochs=hparams['epochs'], 
                          check_val_every_n_epoch=1,
-                         callbacks=checkpoint_callback,
-                         profiler='simple')#,
-                         #use_distributed_sampler=False)
-                         #barebones=True)
+                         callbacks=checkpoint_callback)
+    
     trainer.fit(MLmodel, data)
     end = time.time()
     Ctime = end - start #computation time
