@@ -50,25 +50,49 @@ class MFSetDarcy:
         etats = []
         gls = []
         grs = []
-        for i in range(self.N_samples):
-            #Define functions
-            # theta = ScaledSquaredGRF(d=self.d,l=np.random.uniform(self.l_min,self.l_max),c=0.2,b=0.5)
-            # u = ScaledGRF(d=self.d,l=np.random.uniform(self.l_min/2,self.l_max/2),c=0.01,b=0)
-            theta = ScaledGRF(d=self.d,l=np.random.uniform(self.l_min/np.sqrt(2),self.l_max/np.sqrt(2)),c=np.random.uniform(0,0.2),b=1)
-            u = ScaledGRF(d=self.d,l=np.random.uniform(self.l_min/np.sqrt(2),self.l_max/np.sqrt(2)),c=np.random.uniform(),b=np.random.uniform(-1,1))
-            f = Forcing(theta, u)
-            etab = NeumannBC(np.array([0,-1]),theta,u)
-            etat = NeumannBC(np.array([0,1]),theta,u)
-            gl = DirichletBC(theta, u)
-            gr = DirichletBC(theta, u)
-            #Collect functions
-            thetas.append(theta.forward)
-            us.append(u.forward)
-            fs.append(f.forward)
-            etabs.append(etab.forward)
-            etats.append(etat.forward)
-            gls.append(gl.forward)
-            grs.append(gr.forward)
+        if self.l_min==self.l_max:
+            #Generate batches of GRFs
+            theta = ScaledGRF(N_samples=self.N_samples, d=self.d,l=np.random.uniform(self.l_min/np.sqrt(2),self.l_max/np.sqrt(2)),c=np.random.uniform(0,0.2),b=1)
+            u = ScaledGRF(N_samples=self.N_samples, d=self.d,l=np.random.uniform(self.l_min/np.sqrt(2),self.l_max/np.sqrt(2)),c=np.random.uniform(),b=np.random.uniform(-1,1))
+            for i in range(self.N_samples):
+                #Define functions
+                theta.i = i
+                u.i = i
+                f = Forcing(theta, u)
+                etab = NeumannBC(np.array([0,-1]),theta,u)
+                etat = NeumannBC(np.array([0,1]),theta,u)
+                gl = DirichletBC(theta, u)
+                gr = DirichletBC(theta, u)
+                thetas.append(theta.forward)
+                us.append(u.forward)
+                #Collect functions
+                thetas.append(theta.forward)
+                us.append(u.forward)
+                fs.append(f.forward)
+                etabs.append(etab.forward)
+                etats.append(etat.forward)
+                gls.append(gl.forward)
+                grs.append(gr.forward)
+        else:
+            for i in range(self.N_samples):
+                #Define functions
+                # theta = ScaledSquaredGRF(d=self.d,l=np.random.uniform(self.l_min,self.l_max),c=0.2,b=0.5)
+                # u = ScaledGRF(d=self.d,l=np.random.uniform(self.l_min/2,self.l_max/2),c=0.01,b=0)
+                theta = ScaledGRF(N_samples=1, d=self.d,l=np.random.uniform(self.l_min/np.sqrt(2),self.l_max/np.sqrt(2)),c=np.random.uniform(0,0.2),b=1)
+                u = ScaledGRF(N_samples=1, d=self.d,l=np.random.uniform(self.l_min/np.sqrt(2),self.l_max/np.sqrt(2)),c=np.random.uniform(),b=np.random.uniform(-1,1))
+                f = Forcing(theta, u)
+                etab = NeumannBC(np.array([0,-1]),theta,u)
+                etat = NeumannBC(np.array([0,1]),theta,u)
+                gl = DirichletBC(theta, u)
+                gr = DirichletBC(theta, u)
+                #Collect functions
+                thetas.append(theta.forward)
+                us.append(u.forward)
+                fs.append(f.forward)
+                etabs.append(etab.forward)
+                etats.append(etat.forward)
+                gls.append(gl.forward)
+                grs.append(gr.forward)
         #Save set
         self.theta = thetas
         self.u = us
