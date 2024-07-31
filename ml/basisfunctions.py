@@ -80,7 +80,6 @@ class ChebyshevTBasis1D:
     def basis_function(self, n):
         c = np.zeros(self.h)
         c[n] = 1
-
         basisfunction = np.polynomial.chebyshev.Chebyshev(coef=c,domain=[0,1])
         return basisfunction
     
@@ -102,7 +101,7 @@ class ChebyshevTBasis1D:
             basis_gradients[:, n] = basis_grad
         return basis_gradients
 
-    def plot_1d_bspline_basis(self):
+    def plot_1d_basis(self):
         resolution = 1000
         x_values = np.linspace(0, 1, resolution)  # Adjusted range for x_values
         basis_matrix = self.forward(x_values)
@@ -117,7 +116,7 @@ class ChebyshevTBasis1D:
         # plt.savefig("BSpline1D.svg", bbox_inches='tight', transparent=True)
         plt.show()
         
-    def plot_1d_bspline_basis_gradients(self):
+    def plot_1d_basis_gradients(self):
         """
         Plot the gradients of the 1D B-spline basis functions for a specified dimension.
 
