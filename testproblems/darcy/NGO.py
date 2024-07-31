@@ -5,6 +5,10 @@ import pytorch_lightning as pl
 import numpy as np
 import opt_einsum
 import time
+from numba.experimental import jitclass
+from numba import float32, int32
+import numba
+from typing import List, Callable
 
 import sys
 sys.path.insert(0, '../../ml')
@@ -13,7 +17,6 @@ from basisfunctions import *
 from quadrature import *
 from customlayers import *
 from customlosses import *
-
 
 class NGO(pl.LightningModule):
     def __init__(self, params):
@@ -34,7 +37,7 @@ class NGO(pl.LightningModule):
         #Geometry and quadrature
         self.geometry()
         self = self.to(self.hparams['dtype'])
-        
+    
     def discretize_input_functions(self, theta_f, f_f, etab_f, etat_f, gl_f, gr_f):
         theta = []
         theta_g = []
@@ -52,30 +55,33 @@ class NGO(pl.LightningModule):
             gl.append(gl_f[i](self.xi_Gamma_l))
             gr.append(gr_f[i](self.xi_Gamma_r))
         return np.array(theta), np.array(theta_g), np.array(f), np.array(etab), np.array(etat), np.array(gl), np.array(gr)
-        
+
     def discretize_output_function(self, u_f):
         u = []
         for i in range(len(u_f)):
             u.append(u_f[i](self.xi_Omega_L))
         return np.array(u)
 
-    def compute_K(self, theta, theta_g):
-        if self.hparams['data_based']==True:
+    def compute_F(self, theta, theta_g):
+        if self.hparams.get('model/data',False)=='data':
             basis_test = self.basis_test.forward(self.xi_Omega)
-            K_diag = opt_einsum.contract('q,qm,Nq->Nm', self.w_Omega, basis_test, theta)
-            K = opt_einsum.contract('Ni,ij->Nij', K_diag, np.identity(self.hparams['h']))
-        else:
+            F = opt_einsum.contract('q,qm,Nq->Nm', self.w_Omega, basis_test, theta).reshape((theta.shape[0],self.hparams['h'][0],self.hparams['h'][1]))
+        if self.hparams.get('model/data',False)=='matrix data':
+            basis_test = self.basis_test.forward(self.xi_Omega)
+            basis_trial = self.basis_trial.forward(self.xi_Omega)
+            F = opt_einsum.contract('q,Nq,qm,qn->Nmn', self.w_Omega, theta, basis_test, basis_trial)
+        if self.hparams.get('model/data',False)=='model':
             gradbasis_test = self.basis_test.grad(self.xi_Omega)
             gradbasis_trial = self.basis_trial.grad(self.xi_Omega)
             basis_test_g = self.basis_test.forward(self.xi_Gamma_g)
             gradbasis_test_g = self.basis_test.grad(self.xi_Gamma_g)
             basis_trial_g = self.basis_trial.forward(self.xi_Gamma_g)
             gradbasis_trial_g = self.basis_trial.grad(self.xi_Gamma_g)
-            K = opt_einsum.contract('q,Nq,qmx,qnx->Nmn', self.w_Omega, theta, gradbasis_test, gradbasis_trial)
-            K += -opt_einsum.contract('q,qm,qx,Nq,qnx->Nmn', self.w_Gamma_g, basis_test_g, self.n_Gamma_g, theta_g, gradbasis_trial_g)
-            K += -opt_einsum.contract('q,qn,qx,Nq,qmx->Nmn', self.w_Gamma_g, basis_trial_g, self.n_Gamma_g, theta_g, gradbasis_test_g)
-            K += self.hparams['gamma_stabilization']*opt_einsum.contract('q,qm,Nq,qn->Nmn', self.w_Gamma_g, basis_test_g, theta_g, basis_trial_g)
-        return K
+            F = opt_einsum.contract('q,Nq,qmx,qnx->Nmn', self.w_Omega, theta, gradbasis_test, gradbasis_trial)
+            F += -opt_einsum.contract('q,qm,qx,Nq,qnx->Nmn', self.w_Gamma_g, basis_test_g, self.n_Gamma_g, theta_g, gradbasis_trial_g)
+            F += -opt_einsum.contract('q,qn,qx,Nq,qmx->Nmn', self.w_Gamma_g, basis_trial_g, self.n_Gamma_g, theta_g, gradbasis_test_g)
+            F += self.hparams['gamma_stabilization']*opt_einsum.contract('q,qm,Nq,qn->Nmn', self.w_Gamma_g, basis_test_g, theta_g, basis_trial_g)
+        return F
     
     def compute_d(self, f, etab, etat, gl, gr):
         basis_test = self.basis_test.forward(self.xi_Omega)
@@ -117,13 +123,13 @@ class NGO(pl.LightningModule):
         u_n = opt_einsum.contract('nij,nj->ni', systemnet, LBranch)
         return u_n
     
-    def compute_NGO_coeffs(self, K, d):
-        A = self.systemnet.forward(K)
+    def compute_NGO_coeffs(self, F, d):
+        A = self.systemnet.forward(F)
         u_n = opt_einsum.contract('nij,nj->ni', A, d)
         return u_n
     
-    def compute_FEM_coeffs(self, K, d):
-        K_inv = np.linalg.inv(K)
+    def compute_FEM_coeffs(self, F, d):
+        K_inv = np.linalg.pinv(F)
         u_n = opt_einsum.contract('nij,nj->ni', K_inv, d)
         return u_n
     
@@ -135,7 +141,7 @@ class NGO(pl.LightningModule):
         basis_trial = self.basis_trial.forward(self.xi_Omega)
         u_w = opt_einsum.contract('q,qm,Nq->Nm', self.w_Omega, basis_test, u_q)
         M = opt_einsum.contract('q,qm,qn->mn', self.w_Omega, basis_test, basis_trial)
-        M_inv = np.linalg.inv(M)
+        M_inv = np.linalg.pinv(M)
         u_n = opt_einsum.contract('mn,Nm->Nn', M_inv, u_w)
         return u_n
     
@@ -170,13 +176,13 @@ class NGO(pl.LightningModule):
         if self.hparams.get('modeltype',False)=='VarMiON':
             u_n = self.compute_VarMiON_coeffs(theta, f, etab, etat, gl, gr).detach().numpy()
         if self.hparams.get('modeltype',False)=='NGO':
-            K = torch.tensor(self.compute_K(theta, theta_g), dtype=self.hparams['dtype'])
+            F = torch.tensor(self.compute_F(theta, theta_g), dtype=self.hparams['dtype'])
             d = torch.tensor(self.compute_d(f, etab, etat, gl, gr), dtype=self.hparams['dtype'])
-            u_n = self.compute_NGO_coeffs(K, d).detach().numpy()
+            u_n = self.compute_NGO_coeffs(F, d).detach().numpy()
         if self.hparams.get('modeltype',False)=='FEM':
-            K = torch.tensor(self.compute_K(theta, theta_g))
+            F = torch.tensor(self.compute_F(theta, theta_g))
             d = torch.tensor(self.compute_d(f, etab, etat, gl, gr))
-            u_n = self.compute_FEM_coeffs(K, d)
+            u_n = self.compute_FEM_coeffs(F, d)
         if self.hparams.get('modeltype',False)=='projection':
             u_n = self.compute_projection_coeffs(u)
         psi = self.basis_trial.forward(x)
@@ -212,9 +218,13 @@ class NGO(pl.LightningModule):
         self.n_Gamma_eta = outwardnormal.n_Gamma_eta
         self.n_Gamma_g = outwardnormal.n_Gamma_g
         #Loss quadrature
-        quadrature_L = GaussLegendreQuadrature2D(Q=self.hparams['Q_L'], n_elements=self.hparams['n_elements'])
+        if self.hparams['quadrature_L']=='uniform':
+            quadrature_L = UniformQuadrature2D(Q=self.hparams['Q_L'])
+        if self.hparams['quadrature_L']=='Gauss-Legendre':
+            quadrature_L = GaussLegendreQuadrature2D(Q=self.hparams['Q_L'], n_elements=self.hparams['n_elements_L'])
         self.xi_Omega_L = quadrature_L.xi_Omega
         self.w_Omega_L = quadrature_L.w_Omega
+        #Basis evaluation at quadrature points
         self.psix = torch.tensor(self.basis_trial.forward(self.xi_Omega_L), dtype=self.hparams['dtype'], device=self.device)
 
     def configure_optimizers(self):
@@ -226,7 +236,6 @@ class NGO(pl.LightningModule):
         u = train_batch[-1]
         u_hat = self.forward(*inputs)
         loss = self.hparams['loss'](self.w_Omega_L, u_hat, u)
-        # loss = self.hparams['loss'](u_hat, u)
         self.log('train_loss', loss)
         return loss
 
@@ -235,12 +244,9 @@ class NGO(pl.LightningModule):
         u = val_batch[-1]
         u_hat = self.forward(*inputs)
         loss = self.hparams['loss'](self.w_Omega_L, u_hat, u)
-        # loss = self.hparams['loss'](u_hat, u)
         metric = self.hparams['metric'](self.w_Omega_L, u_hat, u)
-        L2scaled = L2_scaled(u_hat, u)
         self.log('val_loss', loss)
         self.log('metric', metric)
-        self.log('L2_scaled', L2scaled)
 
     def on_save_checkpoint(self, checkpoint):
         checkpoint['params'] = self.params
@@ -251,3 +257,4 @@ class NGO(pl.LightningModule):
         print(torch.get_num_threads())
         self.psix = self.psix.to(self.device)
         self.w_Omega_L = torch.tensor(self.w_Omega_L).to(self.device)
+        self.hparams['N_w_real'] = sum(p.numel() for p in self.systemnet.parameters())
