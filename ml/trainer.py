@@ -14,8 +14,9 @@ def train(model, datamodule, hparams, loaddir, logdir, sublogdir, label):
     logger, checkpoint_callback = initialize_logger(logdir, sublogdir, label)
     
     #Load params
-    with open(loaddir + '/params.json', 'r') as fp:
-        params = json.load(fp)
+    # with open(loaddir + '/params.json', 'r') as fp:
+    #     params = json.load(fp)
+    params = {}
     params['hparams'] = hparams
     params['label'] = label
     
