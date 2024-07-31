@@ -35,7 +35,7 @@ class DataModule_Darcy_MS(pl.LightningDataModule):
         #Discretize input functions
         print('Preprocessing data...')
         theta, theta_g, f, etab, etat, gl, gr = dummyNGO.discretize_input_functions(dataset.theta, dataset.f, dataset.etab, dataset.etat, dataset.gl, dataset.gr)
-        K = dummyNGO.compute_K(theta, theta_g)
+        F = dummyNGO.compute_F(theta, theta_g)
         d = dummyNGO.compute_d(f, etab, etat, gl, gr)
         u = dummyNGO.discretize_output_function(dataset.u)
         #Convert to torch tensors
@@ -46,7 +46,7 @@ class DataModule_Darcy_MS(pl.LightningDataModule):
         etat = torch.tensor(etat, dtype=self.hyperparams['dtype'])
         gl = torch.tensor(gl, dtype=self.hyperparams['dtype'])
         gr = torch.tensor(gr, dtype=self.hyperparams['dtype'])
-        K = torch.tensor(K, dtype=self.hyperparams['dtype'])
+        F = torch.tensor(F, dtype=self.hyperparams['dtype'])
         d = torch.tensor(d, dtype=self.hyperparams['dtype'])
         u = torch.tensor(u, dtype=self.hyperparams['dtype'])
         #Define dataset
@@ -57,7 +57,7 @@ class DataModule_Darcy_MS(pl.LightningDataModule):
             dataset = torch.utils.data.TensorDataset(theta, f, etab, etat, gl, gr, u)
             self.trainingset, self.validationset = random_split(dataset, [int(0.9*u.shape[0]), int(0.1*u.shape[0])])
         if dummyNGO.hparams['modeltype']=='NGO':
-            dataset = torch.utils.data.TensorDataset(K, d, u)
+            dataset = torch.utils.data.TensorDataset(F, d, u)
             self.trainingset, self.validationset = random_split(dataset, [int(0.9*u.shape[0]), int(0.1*u.shape[0])])
 
     def train_dataloader(self):
@@ -88,7 +88,7 @@ class DataModule_hc2d(pl.LightningDataModule):
         u_raw = np.load(self.data_dir + '/u.npy')
         #Discretize input functions
         self.theta, self.theta_g, self.f, self.etab, self.etat = dummyNGO.discretize_input_functions(theta_raw, f_raw, etab_raw, etat_raw)
-        self.K = torch.tensor(dummyNGO.compute_K_db(self.theta), dtype=self.hyperparams['dtype']) if self.hyperparams['data_based']==True else torch.tensor(dummyNGO.compute_K(self.theta, self.theta_g), dtype=self.hyperparams['dtype'])
+        self.F = torch.tensor(dummyNGO.compute_F_db(self.theta), dtype=self.hyperparams['dtype']) if self.hyperparams['data_based']==True else torch.tensor(dummyNGO.compute_F(self.theta, self.theta_g), dtype=self.hyperparams['dtype'])
         self.d = torch.tensor(dummyNGO.compute_d(self.f, self.etab, self.etat), dtype=self.hyperparams['dtype'])
         psi = dummyNGO.basis_trial.forward(x_raw.reshape((x_raw.shape[0]*x_raw.shape[1],x_raw.shape[2]))).reshape((x_raw.shape[0],x_raw.shape[1],self.hyperparams['h']))
         #Sample x, psi and u
@@ -105,7 +105,7 @@ class DataModule_hc2d(pl.LightningDataModule):
         self.psi = torch.tensor(np.array(self.psi), dtype=self.hyperparams['dtype'])
         self.u = torch.tensor(np.array(self.u), dtype=self.hyperparams['dtype'])
         #Define dataset
-        self.dataset = torch.utils.data.TensorDataset(self.theta, self.f, self.etab, self.etat, self.K, self.d, self.psi, self.x, self.u)
+        self.dataset = torch.utils.data.TensorDataset(self.theta, self.f, self.etab, self.etat, self.F, self.d, self.psi, self.x, self.u)
         self.trainingset, self.validationset = random_split(self.dataset, [int(0.9*self.u.shape[0]), int(0.1*self.u.shape[0])])
 
     def train_dataloader(self):

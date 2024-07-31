@@ -54,11 +54,11 @@ class MFSetDarcy:
             #Define functions
             # theta = ScaledSquaredGRF(d=self.d,l=np.random.uniform(self.l_min,self.l_max),c=0.2,b=0.5)
             # u = ScaledGRF(d=self.d,l=np.random.uniform(self.l_min/2,self.l_max/2),c=0.01,b=0)
-            theta = ScaledGRF(d=self.d,l=np.random.uniform(self.l_min/2,self.l_max/2),c=np.random.uniform(0,0.2),b=1)
-            u = ScaledGRF(d=self.d,l=np.random.uniform(self.l_min/2,self.l_max/2),c=np.random.uniform(),b=np.random.uniform(-1,1))
+            theta = ScaledGRF(d=self.d,l=np.random.uniform(self.l_min/np.sqrt(2),self.l_max/np.sqrt(2)),c=np.random.uniform(0,0.2),b=1)
+            u = ScaledGRF(d=self.d,l=np.random.uniform(self.l_min/np.sqrt(2),self.l_max/np.sqrt(2)),c=np.random.uniform(),b=np.random.uniform(-1,1))
             f = Forcing(theta, u)
-            etab = NeumannBC(np.array([0,-1]),theta, u)
-            etat = NeumannBC(np.array([0,1]),theta, u)
+            etab = NeumannBC(np.array([0,-1]),theta,u)
+            etat = NeumannBC(np.array([0,1]),theta,u)
             gl = DirichletBC(theta, u)
             gr = DirichletBC(theta, u)
             #Collect functions
