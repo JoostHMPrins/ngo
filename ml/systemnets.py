@@ -6,37 +6,48 @@ from customlayers import *
 class UNet(nn.Module):
     def __init__(self, params):
         super().__init__()
-        print("hello")
         self.hparams = params['hparams']
+        #Balancing the number of trainable parameters to N_w
+        self.num_channels = 1
+        count = 0
+        num_channels_list = []
+        while count < self.hparams['N_w']:
+            self.init_layers()
+            count = sum(p.numel() for p in self.parameters())
+            num_channels_list.append(self.num_channels)
+            self.num_channels +=1
+        self.num_channels = num_channels_list[-2]
+        self.init_layers()
+        
+    def init_layers(self):
         self.layers = nn.ModuleList()
-        self.num_channels = self.hparams['num_channels']
         self.kernel_sizes = self.hparams['kernel_sizes']
-        # self.compression = self.kernel_sizes[0]*self.kernel_sizes[1]*self.kernel_sizes[2]*self.kernel_sizes[3]
-        # Adjusted convolutional layers
-        self.layers.append(ReshapeLayer(output_shape=(1,self.hparams['N'],self.hparams['N'])))
+        self.bottleneck_size = self.hparams['bottleneck_size']
+        #Layers
+
+        self.layers.append(ReshapeLayer(output_shape=(1,self.hparams['h'][0],self.hparams['h'][1])) if self.hparams['model/data']=='data' else ReshapeLayer(output_shape=(1,self.hparams['N'],self.hparams['N'])))
         self.layers.append(nn.Conv2d(in_channels=1, out_channels=self.num_channels, kernel_size=self.kernel_sizes[0], stride=self.kernel_sizes[0], bias=self.hparams.get('bias_NLBranch', True)))
         self.layers.append(nn.LeakyReLU())
         self.layers.append(nn.Conv2d(in_channels=self.num_channels, out_channels=self.num_channels, kernel_size=self.kernel_sizes[1], stride=self.kernel_sizes[1], bias=self.hparams.get('bias_NLBranch', True)))
         self.layers.append(nn.LeakyReLU())
         self.layers.append(nn.Conv2d(in_channels=self.num_channels, out_channels=self.num_channels, kernel_size=self.kernel_sizes[2], stride=self.kernel_sizes[2], bias=self.hparams.get('bias_NLBranch', True)))
         self.layers.append(nn.LeakyReLU())
-        self.layers.append(nn.Conv2d(in_channels=self.num_channels, out_channels=self.num_channels, kernel_size=self.kernel_sizes[3], stride=self.kernel_sizes[3], bias=self.hparams.get('bias_NLBranch', True)))
-        self.layers.append(ReshapeLayer(output_shape=(int(self.num_channels*(self.hparams['N'])**2),)))
-        self.layers.append(nn.Linear(in_features=int(self.num_channels*(self.hparams['N'])**2), out_features=int(self.num_channels*(self.hparams['N'])**2)))
+        self.layers.append(nn.Conv2d(in_channels=self.num_channels, out_channels=self.bottleneck_size, kernel_size=self.kernel_sizes[3], stride=self.kernel_sizes[3], bias=self.hparams.get('bias_NLBranch', True)))
+        self.layers.append(ReshapeLayer(output_shape=(int(self.bottleneck_size),)))
+        self.layers.append(nn.Linear(in_features=int(self.bottleneck_size), out_features=int(self.bottleneck_size)))
         self.layers.append(nn.LeakyReLU())
-        self.layers.append(ReshapeLayer(output_shape=(self.num_channels,int(self.hparams['N']),int(self.hparams['N']))))
-        self.layers.append(nn.ConvTranspose2d(self.num_channels, self.num_channels, kernel_size=self.kernel_sizes[3], stride=self.kernel_sizes[3], bias=self.hparams.get('bias_NLBranch', True)))
+        self.layers.append(ReshapeLayer(output_shape=(self.bottleneck_size,1,1)))
+        self.layers.append(nn.ConvTranspose2d(self.bottleneck_size, self.num_channels, kernel_size=self.kernel_sizes[4], stride=self.kernel_sizes[4], bias=self.hparams.get('bias_NLBranch', True)))
         self.layers.append(nn.LeakyReLU())
-        self.layers.append(nn.ConvTranspose2d(self.num_channels, self.num_channels, kernel_size=self.kernel_sizes[2], stride=self.kernel_sizes[2], bias=self.hparams.get('bias_NLBranch', True)))
+        self.layers.append(nn.ConvTranspose2d(self.num_channels, self.num_channels, kernel_size=self.kernel_sizes[5], stride=self.kernel_sizes[5], bias=self.hparams.get('bias_NLBranch', True)))
         self.layers.append(nn.LeakyReLU())
-        self.layers.append(nn.ConvTranspose2d(self.num_channels, self.num_channels, kernel_size=self.kernel_sizes[1], stride=self.kernel_sizes[1], bias=self.hparams.get('bias_NLBranch', True)))
+        self.layers.append(nn.ConvTranspose2d(self.num_channels, self.num_channels, kernel_size=self.kernel_sizes[6], stride=self.kernel_sizes[6], bias=self.hparams.get('bias_NLBranch', True)))
         self.layers.append(nn.LeakyReLU())
-        self.layers.append(nn.ConvTranspose2d(self.num_channels, 1, kernel_size=self.kernel_sizes[0], stride=self.kernel_sizes[0], bias=self.hparams.get('bias_NLBranch', True)))
+        self.layers.append(nn.ConvTranspose2d(self.num_channels, 1, kernel_size=self.kernel_sizes[7], stride=self.kernel_sizes[7], bias=self.hparams.get('bias_NLBranch', True)))
         self.layers.append(ReshapeLayer(output_shape=(self.hparams['N'],self.hparams['N'])))
         if self.hparams['NLB_outputactivation'] is not None:
             self.layers.append(self.hparams['NLB_outputactivation'])
 
-            
     def forward(self, x):
         if self.hparams.get('scaling_equivariance',False)==True:
             x_norm = torch.amax(torch.abs(x), dim=(-1,-2))
@@ -60,7 +71,7 @@ class UNet(nn.Module):
         x16 = self.layers[15](x15) + x5
         x17 = self.layers[16](x16)
         x18 = self.layers[17](x17) + x3
-        x19 = self.layers[18](x18) + x1
+        x19 = self.layers[18](x18) if self.hparams['model/data']=='data' else self.layers[18](x18) + x1
         x20 = self.layers[19](x19)
         x21 = self.layers[20](x20)
         y = x21
