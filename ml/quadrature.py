@@ -9,20 +9,20 @@ class UniformQuadrature2D:
         self.compute_boundaryquadrature()
         
     def compute_interiorquadrature(self):
-        x_0_Q, x_1_Q = np.mgrid[0:1:self.Q*1j, 0:1:self.Q*1j]
+        x_0_Q, x_1_Q = np.mgrid[1/(2*self.Q):1-1/(2*self.Q):self.Q*1j, 1/(2*self.Q):1-1/(2*self.Q):self.Q*1j]
         self.xi_Omega = np.vstack([x_0_Q.ravel(), x_1_Q.ravel()]).T
         self.w_Omega = 1/(self.Q**self.d)*np.ones((self.Q**self.d))
         
     def compute_boundaryquadrature(self):
-        xi_Gamma = np.linspace(0, 1, self.Q)
+        xi_Gamma_i = np.linspace(1/(2*self.Q),1-1/(2*self.Q), self.Q)
         self.xi_Gamma_b = np.zeros((self.Q,self.d))
-        self.xi_Gamma_b[:,0] = xi_Gamma
+        self.xi_Gamma_b[:,0] = xi_Gamma_i
         self.xi_Gamma_t = np.ones((self.Q,self.d))
-        self.xi_Gamma_t[:,0] = xi_Gamma
+        self.xi_Gamma_t[:,0] = xi_Gamma_i
         self.xi_Gamma_l = np.zeros((self.Q,self.d))
-        self.xi_Gamma_l[:,1] = xi_Gamma
+        self.xi_Gamma_l[:,1] = xi_Gamma_i
         self.xi_Gamma_r = np.ones((self.Q,self.d))
-        self.xi_Gamma_r[:,1] = xi_Gamma
+        self.xi_Gamma_r[:,1] = xi_Gamma_i
         self.xi_Gamma_eta = np.zeros((2*self.Q,self.d))
         self.xi_Gamma_eta[:self.Q] = self.xi_Gamma_b
         self.xi_Gamma_eta[self.Q:] = self.xi_Gamma_t        
@@ -33,8 +33,8 @@ class UniformQuadrature2D:
         self.w_Gamma_t = 1/(self.Q)*np.ones((self.Q))
         self.w_Gamma_l = 1/(self.Q)*np.ones((self.Q))
         self.w_Gamma_r = 1/(self.Q)*np.ones((self.Q))
-        self.w_Gamma_eta = 1/(2*self.Q)*np.ones((2*self.Q))
-        self.w_Gamma_g = 1/(2*self.Q)*np.ones((2*self.Q))
+        self.w_Gamma_eta = 1/(self.Q)*np.ones((2*self.Q))
+        self.w_Gamma_g = 1/(self.Q)*np.ones((2*self.Q))
         self.xi_Gamma = np.zeros((4,self.Q,2))
         self.xi_Gamma[0] = self.xi_Gamma_l
         self.xi_Gamma[1] = self.xi_Gamma_r
