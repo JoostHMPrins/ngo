@@ -4,6 +4,73 @@ import torch.nn.functional as F
 import numpy as np
 
 
+def sort_matrices(matrices):
+    """
+    Sort the rows and columns of each matrix in the batch by decreasing L2 norm.
+    
+    Args:
+        matrices (torch.Tensor): A batch of n x n matrices of shape (batch_size, n, n)
+    
+    Returns:
+        torch.Tensor: A batch of sorted n x n matrices of shape (batch_size, n, n)
+        torch.Tensor: Row sorted indices of shape (batch_size, n)
+        torch.Tensor: Column sorted indices of shape (batch_size, n)
+    """
+    batch_size, n, _ = matrices.shape
+    # Compute the L2 norm for rows and columns
+    row_norms = torch.norm(matrices, dim=2, p=2)  # shape: (batch_size, n)
+    col_norms = torch.norm(matrices, dim=1, p=2)  # shape: (batch_size, n)
+    # Sort indices by decreasing L2 norm
+    row_sorted_indices = torch.argsort(row_norms, dim=1, descending=True)  # shape: (batch_size, n)
+    col_sorted_indices = torch.argsort(col_norms, dim=1, descending=True)  # shape: (batch_size, n)
+    # Create a batch index tensor
+    batch_indices = torch.arange(batch_size)#.unsqueeze(1)  # shape: (batch_size, 1)
+    n_indices = torch.arange(n)
+    # Sort rows and columns using advanced indexing
+    sorted_matrices = matrices[batch_indices[:,None,None], row_sorted_indices[:,:,None], col_sorted_indices[:,None,:]]  # shape: (batch_size, n, n)
+    return sorted_matrices, row_sorted_indices, col_sorted_indices
+
+def unsort_matrices(sorted_matrices, row_sorted_indices, col_sorted_indices):
+    """
+    Unsort the matrices back to their original order.
+    
+    Args:
+        sorted_matrices (torch.Tensor): A batch of sorted n x n matrices of shape (batch_size, n, n)
+        row_sorted_indices (torch.Tensor): Row sorted indices of shape (batch_size, n)
+        col_sorted_indices (torch.Tensor): Column sorted indices of shape (batch_size, n)
+    
+    Returns:
+        torch.Tensor: A batch of unsorted n x n matrices of shape (batch_size, n, n)
+    """
+    batch_size, n, _ = sorted_matrices.shape
+    # Create inverse indices for rows and columns
+    row_sorted_indices_inv = torch.argsort(row_sorted_indices, dim=1)  # shape: (batch_size, n)
+    col_sorted_indices_inv = torch.argsort(col_sorted_indices, dim=1)  # shape: (batch_size, n)
+    # Create a batch index tensor
+    batch_indices = torch.arange(batch_size)#.unsqueeze(1)  # shape: (batch_size, 1)
+    # # Unsort rows and columns using advanced indexing
+    unsorted_matrices = sorted_matrices[batch_indices[:,None,None], col_sorted_indices_inv[:,:,None], row_sorted_indices_inv[:,None,:]]
+    return unsorted_matrices
+
+# # Example usage
+# batch_size, n = 1, 2
+# # matrices = torch.rand(batch_size, n, n)
+# matrices = F
+# sorter = NormSorter()
+# sorted_matrices, row_sorted_indices, col_sorted_indices = sort_matrices(matrices)
+
+# print("Original matrices:")
+# print(matrices)
+# print("\nSorted matrices:")
+# print(sorted_matrices)
+
+# # Unsort the matrices
+# unsorted_matrices = unsort_matrices(sorted_matrices, row_sorted_indices, col_sorted_indices)
+# print("\nUnsorted matrices (should match the original):")
+# print(unsorted_matrices)
+
+
+
 class GaussianRBF(nn.Module):
     def __init__(self, params, input_dim, output_dim):
         super().__init__()
