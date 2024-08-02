@@ -10,8 +10,10 @@ class Forcing:
         self.theta = theta
         self.u = u
 
-    def forward(self, x):
-        return -self.theta.forward(x)*self.u.laplacian(x) - np.sum(self.theta.grad(x)*self.u.grad(x), axis=-1)
+    def forward(self, i):
+        def function(x):
+            return -self.theta.forward(i)(x)*self.u.laplacian(i)(x) - np.sum(self.theta.grad(i)(x)*self.u.grad(i)(x), axis=-1)
+        return function
     
 class NeumannBC:
     def __init__(self, n, theta, u):
@@ -20,18 +22,21 @@ class NeumannBC:
         self.theta = theta
         self.u = u
 
-    def forward(self, x):
-        return opt_einsum.contract('i,N,Ni->N', self.n, self.theta.forward(x), self.u.grad(x))
-    
+    def forward(self, i):
+        def function(x):
+            return opt_einsum.contract('i,N,Ni->N', self.n, self.theta.forward(i)(x), self.u.grad(i)(x))
+        return function
+
 class DirichletBC:
     def __init__(self, theta, u):
         super().__init__()
         self.theta = theta
         self.u = u
 
-    def forward(self, x):
-        return self.theta.forward(x)*self.u.forward(x)
-    
+    def forward(self, i):
+        def function(x):
+            return self.theta.forward(i)(x)*self.u.forward(i)(x)
+        return function
 
 class MFSetDarcy:
     def __init__(self, N_samples, d, l_min, l_max):
@@ -52,47 +57,40 @@ class MFSetDarcy:
         grs = []
         if self.l_min==self.l_max:
             #Generate batches of GRFs
-            theta = ScaledGRF(N_samples=self.N_samples, d=self.d,l=np.random.uniform(self.l_min/np.sqrt(2),self.l_max/np.sqrt(2)),c=np.random.uniform(0,0.2),b=1)
-            u = ScaledGRF(N_samples=self.N_samples, d=self.d,l=np.random.uniform(self.l_min/np.sqrt(2),self.l_max/np.sqrt(2)),c=np.random.uniform(),b=np.random.uniform(-1,1))
+            theta = ScaledGRF(N_samples=self.N_samples, d=self.d,l=self.l_min,c=np.random.uniform(0,0.2),b=1)
+            u = ScaledGRF(N_samples=self.N_samples, d=self.d,l=self.l_min,c=np.random.uniform(),b=np.random.uniform(-1,1))
+            f = Forcing(theta, u)
+            etab = NeumannBC(np.array([0,-1]), theta, u)
+            etat = NeumannBC(np.array([0,1]), theta, u)
+            gl = DirichletBC(theta, u)
+            gr = DirichletBC(theta, u)
             for i in range(self.N_samples):
-                #Define functions
-                theta.i = i
-                u.i = i
-                f = Forcing(theta, u)
-                etab = NeumannBC(np.array([0,-1]),theta,u)
-                etat = NeumannBC(np.array([0,1]),theta,u)
-                gl = DirichletBC(theta, u)
-                gr = DirichletBC(theta, u)
-                thetas.append(theta.forward)
-                us.append(u.forward)
                 #Collect functions
-                thetas.append(theta.forward)
-                us.append(u.forward)
-                fs.append(f.forward)
-                etabs.append(etab.forward)
-                etats.append(etat.forward)
-                gls.append(gl.forward)
-                grs.append(gr.forward)
-        else:
+                thetas.append(theta.forward(i))
+                us.append(u.forward(i))
+                fs.append(f.forward(i))
+                etabs.append(etab.forward(i))
+                etats.append(etat.forward(i))
+                gls.append(gl.forward(i))
+                grs.append(gr.forward(i))
+        if self.l_min!=self.l_max:
             for i in range(self.N_samples):
                 #Define functions
-                # theta = ScaledSquaredGRF(d=self.d,l=np.random.uniform(self.l_min,self.l_max),c=0.2,b=0.5)
-                # u = ScaledGRF(d=self.d,l=np.random.uniform(self.l_min/2,self.l_max/2),c=0.01,b=0)
                 theta = ScaledGRF(N_samples=1, d=self.d,l=np.random.uniform(self.l_min/np.sqrt(2),self.l_max/np.sqrt(2)),c=np.random.uniform(0,0.2),b=1)
                 u = ScaledGRF(N_samples=1, d=self.d,l=np.random.uniform(self.l_min/np.sqrt(2),self.l_max/np.sqrt(2)),c=np.random.uniform(),b=np.random.uniform(-1,1))
                 f = Forcing(theta, u)
-                etab = NeumannBC(np.array([0,-1]),theta,u)
-                etat = NeumannBC(np.array([0,1]),theta,u)
+                etab = NeumannBC(np.array([0,-1]), theta, u)
+                etat = NeumannBC(np.array([0,1]), theta, u)
                 gl = DirichletBC(theta, u)
                 gr = DirichletBC(theta, u)
                 #Collect functions
-                thetas.append(theta.forward)
-                us.append(u.forward)
-                fs.append(f.forward)
-                etabs.append(etab.forward)
-                etats.append(etat.forward)
-                gls.append(gl.forward)
-                grs.append(gr.forward)
+                thetas.append(theta.forward(0))
+                us.append(u.forward(0))
+                fs.append(f.forward(0))
+                etabs.append(etab.forward(0))
+                etats.append(etat.forward(0))
+                gls.append(gl.forward(0))
+                grs.append(gr.forward(0))
         #Save set
         self.theta = thetas
         self.u = us

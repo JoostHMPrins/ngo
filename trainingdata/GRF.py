@@ -34,24 +34,29 @@ class GRF:
         f_hat = opt_einsum.contract('ij,nj->ni', cov_inv, f)
         return f_hat
     
-    def phi_n(self, x):
-        phi_n = self.f_hat[self.i,None,:]*np.exp(-np.sum((x[:,None,:] - self.mus[None,:,:])**2, axis=-1)/(2*self.l**2))
+    def phi_n(self, i, x):
+        phi_n = self.f_hat[i,None,:]*np.exp(-np.sum((x[:,None,:] - self.mus[None,:,:])**2, axis=-1)/(2*self.l**2))
         return phi_n
     
-    def forward(self, x):
-        phi_n = self.phi_n(x)
-        return np.sum(phi_n, axis=1)
+    def forward(self, i):
+        def function(x):
+            phi_n = self.phi_n(i, x)
+            return np.sum(phi_n, axis=1)
+        return function
     
-    def grad(self, x):
-        phi_n = self.phi_n(x)
-        prefactor = -1/(self.l**2)*(x[:,None,:] - self.mus[None,:,:])
-        return np.sum(prefactor*phi_n[:,:,None], axis=1)
-    
-    def laplacian(self, x):
-        phi_n = self.phi_n(x)
-        prefactor = (1/self.l**2)*(np.sum((x[:,None,:] - self.mus[None,:,:])**2, axis=-1)/self.l**2 - self.d)
-        return np.sum(prefactor*phi_n, axis=1)
+    def grad(self, i):
+        def function(x):
+            phi_n = self.phi_n(i, x)
+            prefactor = -1/(self.l**2)*(x[:,None,:] - self.mus[None,:,:])
+            return np.sum(prefactor*phi_n[:,:,None], axis=1)
+        return function
 
+    def laplacian(self, i):
+        def function(x):
+            phi_n = self.phi_n(i, x)
+            prefactor = (1/self.l**2)*(np.sum((x[:,None,:] - self.mus[None,:,:])**2, axis=-1)/self.l**2 - self.d)
+            return np.sum(prefactor*phi_n, axis=1)
+        return function
     
 class SquaredGRF:
     def __init__(self, d, l):
@@ -69,20 +74,26 @@ class SquaredGRF:
         
 
 class ScaledGRF:
-    def __init__(self, d, l, c, b):
+    def __init__(self, N_samples, d, l, c, b):
         super().__init__()
-        self.grf = GRF(d, l)
+        self.grf = GRF(N_samples, d, l)
         self.c = c
         self.b = b
-        
-    def forward(self, x):
-        return self.c*self.grf.forward(x) + self.b
     
-    def grad(self, x):
-        return self.c*self.grf.grad(x)
+    def forward(self, i):
+        def function(x):
+            return self.c*self.grf.forward(i)(x) + self.b
+        return function
     
-    def laplacian(self, x):
-        return self.c*self.grf.laplacian(x)
+    def grad(self, i):
+        def function(x):
+            return self.c*self.grf.grad(i)(x)
+        return function
+    
+    def laplacian(self, i):
+        def function(x):
+            return self.c*self.grf.laplacian(i)(x)
+        return function
     
     
 class ScaledSquaredGRF:
