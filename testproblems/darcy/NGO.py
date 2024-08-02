@@ -55,7 +55,7 @@ class NGO(pl.LightningModule):
             gl.append(gl_f[i](self.xi_Gamma_l))
             gr.append(gr_f[i](self.xi_Gamma_r))
         return np.array(theta), np.array(theta_g), np.array(f), np.array(etab), np.array(etat), np.array(gl), np.array(gr)
-
+    
     def discretize_output_function(self, u_f):
         u = []
         for i in range(len(u_f)):
@@ -80,6 +80,7 @@ class NGO(pl.LightningModule):
             F = opt_einsum.contract('q,Nq,qmx,qnx->Nmn', self.w_Omega, theta, gradbasis_test, gradbasis_trial)
             F += -opt_einsum.contract('q,qm,qx,Nq,qnx->Nmn', self.w_Gamma_g, basis_test_g, self.n_Gamma_g, theta_g, gradbasis_trial_g)
             F += -opt_einsum.contract('q,qn,qx,Nq,qmx->Nmn', self.w_Gamma_g, basis_trial_g, self.n_Gamma_g, theta_g, gradbasis_test_g)
+        if self.hparams.get('gamma_stabilization',0)!=0:
             F += self.hparams['gamma_stabilization']*opt_einsum.contract('q,qm,Nq,qn->Nmn', self.w_Gamma_g, basis_test_g, theta_g, basis_trial_g)
         return F
     
@@ -96,8 +97,9 @@ class NGO(pl.LightningModule):
         d += opt_einsum.contract('q,qm,Nq->Nm', self.w_Gamma_t, basis_test_t, etat)
         d -= opt_einsum.contract('q,qx,qmx,Nq->Nm', self.w_Gamma_l, self.n_l, gradbasis_test_l, gl)
         d -= opt_einsum.contract('q,qx,qmx,Nq->Nm', self.w_Gamma_r, self.n_r, gradbasis_test_r, gr)
-        d += self.hparams['gamma_stabilization']*opt_einsum.contract('q,qm,Nq->Nm', self.w_Gamma_l, basis_test_l, gl)
-        d += self.hparams['gamma_stabilization']*opt_einsum.contract('q,qm,Nq->Nm', self.w_Gamma_r, basis_test_r, gr)        
+        if self.hparams.get('gamma_stabilization',0)!=0:
+            d += self.hparams['gamma_stabilization']*opt_einsum.contract('q,qm,Nq->Nm', self.w_Gamma_l, basis_test_l, gl)
+            d += self.hparams['gamma_stabilization']*opt_einsum.contract('q,qm,Nq->Nm', self.w_Gamma_r, basis_test_r, gr)        
         return d
 
     def compute_DeepONet_coeffs(self, theta, f, etab, etat, gl, gr):

@@ -30,7 +30,7 @@ hparams['l_max'] = 1
 #Training settings
 hparams['dtype'] = torch.float32
 hparams['precision'] = 32
-hparams['devices'] = [0]
+hparams['devices'] = [3]
 hparams['loss'] = weightedrelativeL2
 hparams['metric'] = weightedrelativeL2
 hparams['optimizer'] = torch.optim.Adam 
@@ -41,7 +41,7 @@ hparams['epochs'] = 5000
 #System net
 hparams['modeltype'] = 'NGO'
 hparams['model/data'] = 'model'
-hparams['gamma_stabilization'] = 100
+hparams['gamma_stabilization'] = 0
 hparams['systemnet'] = UNet
 hparams['kernel_sizes'] = [5,5,2,2,2,2,5,5]
 hparams['N_w'] = 30000
@@ -70,12 +70,13 @@ hparams['n_elements_L'] = max(int((hparams['h'][0] - 1)/hparams['p']), 1)
 hparams['Q_L'] = 33*hparams['n_elements_L']
 
 #Symmetries
-hparams['scaling_equivariance'] = False
+hparams['scaling_equivariance'] = True
+hparams['permutation_equivariance'] = True
 
 loaddir = None
 logdir = '../../../nnlogs'
-sublogdir = 'modelvsdata'
-label = 'model_stabilized'
+sublogdir = 'symmetries'
+label = 'SE+PE'
 
 model = NGO
 datamodule = DataModule_Darcy_MS

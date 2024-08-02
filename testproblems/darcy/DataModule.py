@@ -52,13 +52,13 @@ class DataModule_Darcy_MS(pl.LightningDataModule):
         #Define dataset
         if dummyNGO.hparams['modeltype']=='DeepONet':
             dataset = torch.utils.data.TensorDataset(theta, f, etab, etat, gl, gr, u)
-            self.trainingset, self.validationset = random_split(dataset, [int(0.9*u.shape[0]), int(0.1*u.shape[0])])
+            self.trainingset, self.validationset = random_split(dataset, [int(0.9*u.shape[0]), u.shape[0] - int(0.9*u.shape[0])])
         if dummyNGO.hparams['modeltype']=='VarMiON':
             dataset = torch.utils.data.TensorDataset(theta, f, etab, etat, gl, gr, u)
-            self.trainingset, self.validationset = random_split(dataset, [int(0.9*u.shape[0]), int(0.1*u.shape[0])])
+            self.trainingset, self.validationset = random_split(dataset, [int(0.9*u.shape[0]), u.shape[0] - int(0.9*u.shape[0])])
         if dummyNGO.hparams['modeltype']=='NGO':
             dataset = torch.utils.data.TensorDataset(F, d, u)
-            self.trainingset, self.validationset = random_split(dataset, [int(0.9*u.shape[0]), int(0.1*u.shape[0])])
+            self.trainingset, self.validationset = random_split(dataset, [int(0.9*u.shape[0]), u.shape[0] - int(0.9*u.shape[0])])
 
     def train_dataloader(self):
         return DataLoader(self.trainingset, batch_size=self.hyperparams['batch_size'], shuffle=False, num_workers=2, pin_memory=False)#, persistent_workers=False)#, prefetch_factor=2)

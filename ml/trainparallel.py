@@ -28,19 +28,19 @@ hparams = {}
 #Training data
 hparams['N_samples'] = 10000
 hparams['d'] = 2
-hparams['l_min'] = 0.5
-hparams['l_max'] = 1
+hparams['l_min'] = float(args.arg)
+hparams['l_max'] = float(args.arg)
 
 #Training settings
 hparams['dtype'] = torch.float32
 hparams['precision'] = 32
-hparams['devices'] = [3]
+hparams['devices'] = [1]
 hparams['loss'] = weightedrelativeL2
 hparams['metric'] = weightedrelativeL2
 hparams['optimizer'] = torch.optim.Adam 
 hparams['learning_rate'] = 1e-3
 hparams['batch_size'] = 100
-hparams['epochs'] = int(args.arg)
+hparams['epochs'] = 5000
 
 #System net
 hparams['modeltype'] = 'NGO'
@@ -78,7 +78,7 @@ hparams['scaling_equivariance'] = False
 
 loaddir = None
 logdir = '../../../nnlogs'
-sublogdir = 'N_epochs'
+sublogdir = 'lambda_train'
 label = str(args.arg)
 
 
