@@ -49,6 +49,8 @@ class UNet(nn.Module):
             self.layers.append(self.hparams['NLB_outputactivation'])
 
     def forward(self, x):
+        if self.hparams.get('permutation_equivariance',False)==True:
+            x, row_sorted_indices, col_sorted_indices = sort_matrices(x)
         if self.hparams.get('scaling_equivariance',False)==True:
             x_norm = torch.amax(torch.abs(x), dim=(-1,-2))
             x = x/x_norm[:,None,None]
@@ -77,6 +79,8 @@ class UNet(nn.Module):
         y = x21
         if self.hparams.get('scaling_equivariance',False)==True:
             y = y/x_norm[:,None,None]    
+        if self.hparams.get('permutation_equivariance',False)==True:
+            y = unsort_matrices(y, row_sorted_indices, col_sorted_indices)
         return y
 
 
