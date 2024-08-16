@@ -9,7 +9,7 @@ class Forcing:
         super().__init__()
         self.theta = theta
         self.u = u
-
+    
     def forward(self, i):
         def function(x):
             return -self.theta.forward(i)(x)*self.u.laplacian(i)(x) - np.sum(self.theta.grad(i)(x)*self.u.grad(i)(x), axis=-1)
@@ -55,10 +55,16 @@ class MFSetDarcy:
         etats = []
         gls = []
         grs = []
+        l_theta = np.random.uniform(self.l_min/np.sqrt(2),self.l_max/np.sqrt(2), size=self.N_samples)
+        c_theta = np.random.uniform(0,0.2,size=self.N_samples)
+        b_theta = np.ones(self.N_samples)
+        l_u = np.random.uniform(self.l_min/np.sqrt(2),self.l_max/np.sqrt(2), size=self.N_samples)
+        c_u = np.random.uniform(0,1, size=self.N_samples)
+        b_u = np.random.uniform(-1,1, size=self.N_samples)
         if self.l_min==self.l_max:
             #Generate batches of GRFs
-            theta = ScaledGRF(N_samples=self.N_samples, d=self.d,l=self.l_min,c=np.random.uniform(0,0.2),b=1)
-            u = ScaledGRF(N_samples=self.N_samples, d=self.d,l=self.l_min,c=np.random.uniform(),b=np.random.uniform(-1,1))
+            theta = ScaledGRF(N_samples=self.N_samples, d=self.d,l=self.l_min,c=c_theta,b=b_theta)
+            u = ScaledGRF(N_samples=self.N_samples, d=self.d,l=self.l_min,c=c_u,b=b_u)
             f = Forcing(theta, u)
             etab = NeumannBC(np.array([0,-1]), theta, u)
             etat = NeumannBC(np.array([0,1]), theta, u)
@@ -76,8 +82,8 @@ class MFSetDarcy:
         if self.l_min!=self.l_max:
             for i in range(self.N_samples):
                 #Define functions
-                theta = ScaledGRF(N_samples=1, d=self.d,l=np.random.uniform(self.l_min/np.sqrt(2),self.l_max/np.sqrt(2)),c=np.random.uniform(0,0.2),b=1)
-                u = ScaledGRF(N_samples=1, d=self.d,l=np.random.uniform(self.l_min/np.sqrt(2),self.l_max/np.sqrt(2)),c=np.random.uniform(),b=np.random.uniform(-1,1))
+                theta = ScaledGRF(N_samples=1, d=self.d, l=l_theta[i], c=[c_theta[i]], b=[b_theta[i]])
+                u = ScaledGRF(N_samples=1, d=self.d, l=l_u[i], c=[c_u[i]], b=[b_u[i]])
                 f = Forcing(theta, u)
                 etab = NeumannBC(np.array([0,-1]), theta, u)
                 etat = NeumannBC(np.array([0,1]), theta, u)
