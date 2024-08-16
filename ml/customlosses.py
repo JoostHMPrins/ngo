@@ -21,3 +21,12 @@ def weightedrelativeL2(w, u_hat, u):
     L22_norm = torch.sum(w[None,:]*(u)**2, axis=-1)
     L2_norm = L22_norm**(1/2)
     return torch.mean(L2_diff/torch.maximum(L2_norm, 1e-7*torch.ones_like(L2_norm)))
+
+def frobeniusnorm(A_hat, A):
+    Frobenius = torch.norm(A_hat - A, dim=(-1,-2), p='fro')
+    return torch.mean(Frobenius)
+
+def relativefrobeniusnorm(A_hat, A):
+    Frobenius = torch.norm(A_hat - A, dim=(-1,-2), p='fro')
+    norm = torch.norm(A, dim=(-1,-2), p='fro')
+    return torch.mean(Frobenius/torch.maximum(norm, 1e-7*torch.ones_like(norm)))
