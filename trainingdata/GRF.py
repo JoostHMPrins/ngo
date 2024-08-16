@@ -4,6 +4,7 @@ from numba import jit
 import opt_einsum
 from numba import jit
 import scipy
+import torch
 
 class GRF:
     def __init__(self, N_samples, d, l):
@@ -57,7 +58,31 @@ class GRF:
             prefactor = (1/self.l**2)*(np.sum((x[:,None,:] - self.mus[None,:,:])**2, axis=-1)/self.l**2 - self.d)
             return np.sum(prefactor*phi_n, axis=1)
         return function
+        
+
+class ScaledGRF:
+    def __init__(self, N_samples, d, l, c, b):
+        super().__init__()
+        self.grf = GRF(N_samples, d, l)
+        self.c = c
+        self.b = b
     
+    def forward(self, i):
+        def function(x):
+            return self.c[i]*self.grf.forward(i)(x) + self.b[i]
+        return function
+    
+    def grad(self, i):
+        def function(x):
+            return self.c[i]*self.grf.grad(i)(x)
+        return function
+    
+    def laplacian(self, i):
+        def function(x):
+            return self.c[i]*self.grf.laplacian(i)(x)
+        return function
+    
+
 class SquaredGRF:
     def __init__(self, d, l):
         super().__init__()
@@ -71,29 +96,6 @@ class SquaredGRF:
     
     def laplacian(self, x):
         return self.grf.forward(x)*self.grf.laplacian(x) + np.sum(self.grf.grad(x)**2, axis=-1)
-        
-
-class ScaledGRF:
-    def __init__(self, N_samples, d, l, c, b):
-        super().__init__()
-        self.grf = GRF(N_samples, d, l)
-        self.c = c
-        self.b = b
-    
-    def forward(self, i):
-        def function(x):
-            return self.c*self.grf.forward(i)(x) + self.b
-        return function
-    
-    def grad(self, i):
-        def function(x):
-            return self.c*self.grf.grad(i)(x)
-        return function
-    
-    def laplacian(self, i):
-        def function(x):
-            return self.c*self.grf.laplacian(i)(x)
-        return function
     
     
 class ScaledSquaredGRF:
