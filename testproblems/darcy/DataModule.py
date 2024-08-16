@@ -30,7 +30,6 @@ class DataModule_Darcy_MS(pl.LightningDataModule):
         dummyNGO = NGO(self.params)
         # Generate input and output functions
         print('Generating data...')
-        N_samples = 10000
         dataset = MFSetDarcy(N_samples=self.hyperparams['N_samples'], d=self.hyperparams['d'], l_min=self.hyperparams['l_min'], l_max=self.hyperparams['l_max'])
         #Discretize input functions
         print('Preprocessing data...')
@@ -57,6 +56,9 @@ class DataModule_Darcy_MS(pl.LightningDataModule):
             dataset = torch.utils.data.TensorDataset(theta, f, etab, etat, gl, gr, u)
             self.trainingset, self.validationset = random_split(dataset, [int(0.9*u.shape[0]), u.shape[0] - int(0.9*u.shape[0])])
         if dummyNGO.hparams['modeltype']=='NGO':
+            dataset = torch.utils.data.TensorDataset(F, d, u)
+            self.trainingset, self.validationset = random_split(dataset, [int(0.9*u.shape[0]), u.shape[0] - int(0.9*u.shape[0])])
+        if dummyNGO.hparams['modeltype']=='CH':
             dataset = torch.utils.data.TensorDataset(F, d, u)
             self.trainingset, self.validationset = random_split(dataset, [int(0.9*u.shape[0]), u.shape[0] - int(0.9*u.shape[0])])
 
