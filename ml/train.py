@@ -22,19 +22,20 @@ from NGO import NGO
 from DataModule import *
 
 #Training data
-hparams['N_samples'] = 10000
+hparams['N_samples'] = 100
 hparams['d'] = 2
 hparams['l_min'] = 0.5
 hparams['l_max'] = 1
 
 #Training settings
-hparams['dtype'] = torch.float32
-hparams['precision'] = 32
+hparams['dtype'] = torch.float64
+hparams['precision'] = 64
 hparams['devices'] = [3]
-hparams['loss'] = weightedrelativeL2
+hparams['solution_loss'] = weightedrelativeL2
+hparams['matrix_loss'] = None #relativefrobeniusnorm
 hparams['metric'] = weightedrelativeL2
-hparams['optimizer'] = torch.optim.Adam 
-hparams['learning_rate'] = 1e-3
+hparams['optimizer'] = None
+hparams['learning_rate'] = None
 hparams['batch_size'] = 100
 hparams['epochs'] = 5000
 
@@ -70,13 +71,13 @@ hparams['n_elements_L'] = max(int((hparams['h'][0] - 1)/hparams['p']), 1)
 hparams['Q_L'] = 33*hparams['n_elements_L']
 
 #Symmetries
-hparams['scaling_equivariance'] = True
-hparams['permutation_equivariance'] = True
+hparams['scaling_equivariance'] = False
+hparams['permutation_equivariance'] = False
 
 loaddir = None
 logdir = '../../../nnlogs'
-sublogdir = 'symmetries'
-label = 'SE+PE'
+sublogdir = 'test'
+label = 'Adam+LBFGS_switchpatience=1'
 
 model = NGO
 datamodule = DataModule_Darcy_MS

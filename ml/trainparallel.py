@@ -28,13 +28,13 @@ hparams = {}
 #Training data
 hparams['N_samples'] = 10000
 hparams['d'] = 2
-hparams['l_min'] = float(args.arg)
-hparams['l_max'] = float(args.arg)
+hparams['l_min'] = 0.5
+hparams['l_max'] = 1
 
 #Training settings
 hparams['dtype'] = torch.float32
 hparams['precision'] = 32
-hparams['devices'] = [1]
+hparams['devices'] = [0]
 hparams['loss'] = weightedrelativeL2
 hparams['metric'] = weightedrelativeL2
 hparams['optimizer'] = torch.optim.Adam 
@@ -43,19 +43,20 @@ hparams['batch_size'] = 100
 hparams['epochs'] = 5000
 
 #System net
-hparams['modeltype'] = 'NGO'
+hparams['modeltype'] = 'CH'
 hparams['model/data'] = 'model'
 hparams['gamma_stabilization'] = 0
-hparams['systemnet'] = UNet
-hparams['kernel_sizes'] = [5,5,2,2,2,2,5,5]
+hparams['systemnet'] = AcCNN
+hparams['kernel_sizes'] = [2,2,2,2,2,2,2,2]
 hparams['N_w'] = 30000
-hparams['bottleneck_size'] = 20
-hparams['NLB_outputactivation'] = nn.Tanhshrink()
+hparams['bottleneck_size'] = None
+hparams['k'] = int(args.arg)
+hparams['NLB_outputactivation'] = None #nn.Tanhshrink()
 hparams['bias_NLBranch'] = False
 hparams['bias_LBranch'] = False
 
 #Bases
-hparams['h'] = [10,10]
+hparams['h'] = [4,4]
 hparams['p'] = 3
 hparams['C'] = 2
 hparams['N'] = np.prod(hparams['h'])
@@ -75,10 +76,11 @@ hparams['Q_L'] = 33*hparams['n_elements_L']
 
 #Symmetries
 hparams['scaling_equivariance'] = False
+hparams['permutation_equivariance'] = False
 
 loaddir = None
 logdir = '../../../nnlogs'
-sublogdir = 'lambda_train'
+sublogdir = 'CH_k_noc0'
 label = str(args.arg)
 
 
