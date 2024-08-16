@@ -1,5 +1,6 @@
 import torch
 from torch import nn
+import opt_einsum
 from customlayers import *
     
     
@@ -24,7 +25,6 @@ class UNet(nn.Module):
         self.kernel_sizes = self.hparams['kernel_sizes']
         self.bottleneck_size = self.hparams['bottleneck_size']
         #Layers
-
         self.layers.append(ReshapeLayer(output_shape=(1,self.hparams['h'][0],self.hparams['h'][1])) if self.hparams['model/data']=='data' else ReshapeLayer(output_shape=(1,self.hparams['N'],self.hparams['N'])))
         self.layers.append(nn.Conv2d(in_channels=1, out_channels=self.num_channels, kernel_size=self.kernel_sizes[0], stride=self.kernel_sizes[0], bias=self.hparams.get('bias_NLBranch', True)))
         self.layers.append(nn.LeakyReLU())
@@ -75,13 +75,110 @@ class UNet(nn.Module):
         x18 = self.layers[17](x17) + x3
         x19 = self.layers[18](x18) if self.hparams['model/data']=='data' else self.layers[18](x18) + x1
         x20 = self.layers[19](x19)
-        x21 = self.layers[20](x20)
-        y = x21
+        y = x20
+        if self.hparams['NLB_outputactivation'] is not None:
+            y = self.layers[20](y)
         if self.hparams.get('scaling_equivariance',False)==True:
             y = y/x_norm[:,None,None]    
         if self.hparams.get('permutation_equivariance',False)==True:
             y = unsort_matrices(y, row_sorted_indices, col_sorted_indices)
         return y
+    
+
+class AcCNN(nn.Module):
+    def __init__(self, params):
+        super().__init__()
+        self.hparams = params['hparams']
+        #Balancing the number of trainable parameters to N_w
+        self.num_channels = 1
+        count = 0
+        num_channels_list = []
+        while count < self.hparams['N_w']:
+            self.init_layers()
+            count = sum(p.numel() for p in self.parameters())
+            num_channels_list.append(self.num_channels)
+            self.num_channels +=1
+        self.num_channels = num_channels_list[-2]
+        self.init_layers()
+        
+    def init_layers(self):
+        self.layers = nn.ModuleList()
+        self.kernel_sizes = self.hparams['kernel_sizes']
+        self.bottleneck_size = self.hparams['bottleneck_size']
+        #Layers
+        self.layers.append(ReshapeLayer(output_shape=(1,self.hparams['h'][0],self.hparams['h'][1])) if self.hparams['model/data']=='data' else ReshapeLayer(output_shape=(1,self.hparams['N'],self.hparams['N'])))
+        self.layers.append(nn.Conv2d(in_channels=1, out_channels=self.num_channels, kernel_size=self.kernel_sizes[0], stride=self.kernel_sizes[0], bias=self.hparams.get('bias_NLBranch', True)))
+        self.layers.append(nn.LeakyReLU())
+        # self.layers.append(nn.BatchNorm2d(num_features=self.num_channels, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True))
+        self.layers.append(nn.Conv2d(in_channels=self.num_channels, out_channels=self.num_channels, kernel_size=self.kernel_sizes[1], stride=self.kernel_sizes[1], bias=self.hparams.get('bias_NLBranch', True)))
+        self.layers.append(nn.LeakyReLU())
+        # self.layers.append(nn.BatchNorm2d(num_features=self.num_channels, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True))
+        self.layers.append(nn.Conv2d(in_channels=self.num_channels, out_channels=self.num_channels, kernel_size=self.kernel_sizes[2], stride=self.kernel_sizes[2], bias=self.hparams.get('bias_NLBranch', True)))
+        self.layers.append(nn.LeakyReLU())
+        # self.layers.append(nn.BatchNorm2d(num_features=self.num_channels, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True))
+        self.layers.append(nn.Conv2d(in_channels=self.num_channels, out_channels=self.num_channels, kernel_size=self.kernel_sizes[3], stride=self.kernel_sizes[3], bias=self.hparams.get('bias_NLBranch', True)))
+        self.layers.append(ReshapeLayer(output_shape=(int(self.num_channels),)))
+        self.layers.append(nn.Linear(in_features=int(self.num_channels), out_features=int(self.num_channels)))
+        self.layers.append(nn.LeakyReLU())
+        # self.layers.append(nn.Linear(in_features=int(self.num_channels), out_features=int(self.num_channels)))
+        # self.layers.append(nn.LeakyReLU())
+        self.layers.append(nn.Linear(in_features=int(self.num_channels), out_features=int(self.hparams['k'])))
+        if self.hparams['NLB_outputactivation'] is not None:
+            self.layers.append(self.hparams['NLB_outputactivation'])
+
+    def forward(self, x):
+        for layer in self.layers:
+            x = layer(x)
+        y = x
+        return y
+    
+
+class KandK(nn.Module):
+    def __init__(self, params):
+        super().__init__()
+        self.hparams = params['hparams']
+        self.init_layers()
+        
+    def init_layers(self):
+        self.layers1 = nn.ModuleList()
+        #Layers
+        for i in range(self.hparams['N_layers']):
+            self.layers1.append(nn.Linear(in_features=int(self.hparams['N']), out_features=int(self.hparams['k']), bias=True))
+            self.layers1.append(nn.Softmax()) 
+            self.layers1.append(nn.Linear(in_features=int(self.hparams['k']), out_features=int(self.hparams['k']), bias=False)) 
+
+        # self.layers2 = nn.ModuleList()
+        # for i in range(self.hparams['N_layers']):
+        #     self.layers2.append(nn.Linear(in_features=int(self.hparams['k']), out_features=int(100), bias=False)) 
+        #     self.layers2.append(nn.ReLU())
+        #     self.layers2.append(nn.Linear(in_features=int(100), out_features=int(100), bias=False)) 
+        #     self.layers2.append(nn.ReLU())
+        #     self.layers2.append(nn.Linear(in_features=int(100), out_features=int(100), bias=False)) 
+        #     self.layers2.append(nn.ReLU())
+        #     self.layers2.append(nn.Linear(in_features=int(100), out_features=int(100), bias=False)) 
+        #     self.layers2.append(nn.ReLU())
+        #     self.layers2.append(nn.Linear(in_features=int(100), out_features=int(self.hparams['k']), bias=False)) 
+
+    def forward(self, x):
+        F = x
+        F_i = x
+        lnabsTrF_i = torch.zeros((x.shape[0],self.hparams['N']), dtype=self.hparams['dtype'], device=self.device)
+        TrF_i = opt_einsum.contract('nii->n', F_i)
+        lnabsTrF_i[:,0] = torch.log(torch.abs(TrF_i))
+        for i in range(1,self.hparams['N']):
+            F_i = torch.matmul(F,F_i)
+            # F_i = F_i/torch.amax(torch.abs(F_i), dim=(-1,-2))[:,None,None]
+            TrF_i = opt_einsum.contract('nii->n', F_i)
+            lnabsTrF_i[:,i] = torch.log(torch.abs(TrF_i))
+        c = torch.zeros(x.shape[0],self.hparams['k'], dtype=self.hparams['dtype'], device=self.device)
+        for i in range(0, len(self.layers1), 3):
+            c_i = torch.exp(self.layers1[i](lnabsTrF_i))
+            c_i = self.layers1[i+1](c_i)
+            c_i = self.layers1[i+2](c_i)
+            c += c_i
+        # for layer in self.layers2:
+        #     c = layer(c)
+        return c
 
 
 class NLBranch_NGO(nn.Module):
