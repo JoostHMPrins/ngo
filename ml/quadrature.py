@@ -127,7 +127,7 @@ class GaussLegendreQuadrature2D:
         plt.scatter(self.xi_Gamma[:,0], self.xi_Gamma[:,1], c=self.w_Gamma, s=1)
         plt.axis('square')
         plt.colorbar()
-        # plt.savefig("GL_Q"+str(self.Q)+".svg", bbox_inches='tight')#, transparent=True)
+        plt.savefig("GL_Q"+str(self.Q)+".svg", bbox_inches='tight')#, transparent=True)
 
           
 class UnitSquareOutwardNormal:
