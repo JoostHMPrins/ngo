@@ -5,10 +5,9 @@ import pytorch_lightning as pl
 import numpy as np
 import opt_einsum
 import time
-from numba.experimental import jitclass
-from numba import float32, int32
-import numba
-from typing import List, Callable
+from numba import jit, prange
+from numba.typed import List
+import torchmin
 
 import sys
 sys.path.insert(0, '../../ml')
@@ -17,6 +16,7 @@ from basisfunctions import *
 from quadrature import *
 from customlayers import *
 from customlosses import *
+from nys_newton_cg import *
 
 class NGO(pl.LightningModule):
     def __init__(self, params):
@@ -37,30 +37,20 @@ class NGO(pl.LightningModule):
         #Geometry and quadrature
         self.geometry()
         self = self.to(self.hparams['dtype'])
+
+    def discretize_input_functions(self, theta, f, etab, etat, gl, gr):
+        theta_d = discretize_functions(theta, self.xi_Omega)
+        theta_g_d = discretize_functions(theta, self.xi_Gamma_g)
+        f_d = discretize_functions(f, self.xi_Omega)
+        etab_d = discretize_functions(etab, self.xi_Gamma_b)
+        etat_d = discretize_functions(etat, self.xi_Gamma_t)
+        gl_d = discretize_functions(gl, self.xi_Gamma_l)
+        gr_d = discretize_functions(gr, self.xi_Gamma_r)
+        return theta_d, theta_g_d, f_d, etab_d, etat_d, gl_d, gr_d
     
-    def discretize_input_functions(self, theta_f, f_f, etab_f, etat_f, gl_f, gr_f):
-        theta = []
-        theta_g = []
-        f = []
-        etab = []
-        etat = []
-        gl = []
-        gr = []
-        for i in range(len(theta_f)):
-            theta.append(theta_f[i](self.xi_Omega))
-            theta_g.append(theta_f[i](self.xi_Gamma_g))
-            f.append(f_f[i](self.xi_Omega))
-            etab.append(etab_f[i](self.xi_Gamma_b))
-            etat.append(etat_f[i](self.xi_Gamma_t))
-            gl.append(gl_f[i](self.xi_Gamma_l))
-            gr.append(gr_f[i](self.xi_Gamma_r))
-        return np.array(theta), np.array(theta_g), np.array(f), np.array(etab), np.array(etat), np.array(gl), np.array(gr)
-    
-    def discretize_output_function(self, u_f):
-        u = []
-        for i in range(len(u_f)):
-            u.append(u_f[i](self.xi_Omega_L))
-        return np.array(u)
+    def discretize_output_function(self, u):
+        u_d = discretize_functions(u, self.xi_Omega)
+        return u_d
 
     def compute_F(self, theta, theta_g):
         if self.hparams.get('model/data',False)=='data':
@@ -130,6 +120,22 @@ class NGO(pl.LightningModule):
         u_n = opt_einsum.contract('nij,nj->ni', A, d)
         return u_n
     
+    def compute_CH_coeffs(self, F, d):
+        c = self.systemnet.forward(F)
+        Identity = torch.eye(self.hparams['N'], dtype=self.hparams['dtype'], device=self.device)
+        F_i = torch.tile(Identity, (F.shape[0],1,1))
+        A_i = c[:,1,None,None]*F_i
+        # A_i = A_i/torch.amax(torch.abs(A_i), dim=(-1,-2))[:,None,None]
+        u_n = opt_einsum.contract('nij,nj->ni', A_i, d)
+        for i in range(2, self.hparams['k']):
+            F_i = torch.matmul(F, F_i)
+            # F_i = F_i/torch.amax(torch.abs(F_i), dim=(-1,-2))[:,None,None]
+            A_i = c[:,i,None,None]*F_i
+            # A_i = A_i/torch.amax(torch.abs(A_i), dim=(-1,-2))[:,None,None]
+            u_n = u_n + opt_einsum.contract('nij,nj->ni', A_i, d)
+        u_n = -1/c[:,0,None]*u_n
+        return u_n         
+
     def compute_FEM_coeffs(self, F, d):
         K_inv = np.linalg.pinv(F)
         u_n = opt_einsum.contract('nij,nj->ni', K_inv, d)
@@ -154,6 +160,8 @@ class NGO(pl.LightningModule):
             self.compute_coeffs = self.compute_VarMiON_coeffs
         if self.hparams.get('modeltype',False)=='NGO':
             self.compute_coeffs = self.compute_NGO_coeffs
+        if self.hparams.get('modeltype',False)=='CH':
+            self.compute_coeffs = self.compute_CH_coeffs
         if self.hparams.get('modeltype',False)=='FEM':
             self.compute_coeffs = self.compute_FEM_coeffs
         if self.hparams.get('modeltype',False)=='projection':
@@ -165,25 +173,31 @@ class NGO(pl.LightningModule):
         return u_hat
     
     def simforward(self, theta, f, etab, etat, gl, gr, x, u):
+        # self.geometry()
         theta, theta_g, f, etab, etat, gl, gr = self.discretize_input_functions(theta, f, etab, etat, gl, gr)
-        theta = torch.tensor(theta, dtype=self.hparams['dtype'])
-        theta_g = torch.tensor(theta_g, dtype=self.hparams['dtype'])
-        f = torch.tensor(f, dtype=self.hparams['dtype'])
-        etab = torch.tensor(etab, dtype=self.hparams['dtype'])
-        etat = torch.tensor(etat, dtype=self.hparams['dtype'])
-        gl = torch.tensor(gl, dtype=self.hparams['dtype'])
-        gr = torch.tensor(gr, dtype=self.hparams['dtype'])
         if self.hparams.get('modeltype',False)=='DeepONet':
+            theta = torch.tensor(theta, dtype=self.hparams['dtype'], device=self.hparams['device'])
+            f = torch.tensor(f, dtype=self.hparams['dtype'], device=self.hparams['device'])
+            etab = torch.tensor(etab, dtype=self.hparams['dtype'], device=self.hparams['device'])
+            etat = torch.tensor(etat, dtype=self.hparams['dtype'], device=self.hparams['device'])
+            gl = torch.tensor(gl, dtype=self.hparams['dtype'], device=self.hparams['device'])
+            gr = torch.tensor(gr, dtype=self.hparams['dtype'], device=self.hparams['device'])
             u_n = self.compute_DeepONet_coeffs(theta, f, etab, etat, gl, gr).detach().numpy()
         if self.hparams.get('modeltype',False)=='VarMiON':
+            theta = torch.tensor(theta, dtype=self.hparams['dtype'], device=self.hparams['device'])
+            f = torch.tensor(f, dtype=self.hparams['dtype'], device=self.hparams['device'])
+            etab = torch.tensor(etab, dtype=self.hparams['dtype'], device=self.hparams['device'])
+            etat = torch.tensor(etat, dtype=self.hparams['dtype'], device=self.hparams['device'])
+            gl = torch.tensor(gl, dtype=self.hparams['dtype'], device=self.hparams['device'])
+            gr = torch.tensor(gr, dtype=self.hparams['dtype'], device=self.hparams['device'])
             u_n = self.compute_VarMiON_coeffs(theta, f, etab, etat, gl, gr).detach().numpy()
         if self.hparams.get('modeltype',False)=='NGO':
-            F = torch.tensor(self.compute_F(theta, theta_g), dtype=self.hparams['dtype'])
-            d = torch.tensor(self.compute_d(f, etab, etat, gl, gr), dtype=self.hparams['dtype'])
+            F = torch.tensor(self.compute_F(theta, theta_g), dtype=self.hparams['dtype'], device=self.hparams['device'])
+            d = torch.tensor(self.compute_d(f, etab, etat, gl, gr), dtype=self.hparams['dtype'], device=self.hparams['device'])
             u_n = self.compute_NGO_coeffs(F, d).detach().numpy()
         if self.hparams.get('modeltype',False)=='FEM':
-            F = torch.tensor(self.compute_F(theta, theta_g))
-            d = torch.tensor(self.compute_d(f, etab, etat, gl, gr))
+            F = torch.tensor(self.compute_F(theta, theta_g), dtype=self.hparams['dtype'], device=self.hparams['device'])
+            d = torch.tensor(self.compute_d(f, etab, etat, gl, gr), dtype=self.hparams['dtype'], device=self.hparams['device'])
             u_n = self.compute_FEM_coeffs(F, d)
         if self.hparams.get('modeltype',False)=='projection':
             u_n = self.compute_projection_coeffs(u)
@@ -230,23 +244,50 @@ class NGO(pl.LightningModule):
         self.psix = torch.tensor(self.basis_trial.forward(self.xi_Omega_L), dtype=self.hparams['dtype'], device=self.device)
 
     def configure_optimizers(self):
-        optimizer = self.hparams['optimizer'](self.parameters(), lr=self.hparams['learning_rate'])
-        return optimizer
+        self.metric = [1]
+        self.automatic_optimization = False
+        self.optimizer_idx = 0
+        # optimizer1 = NysNewtonCG(self.parameters())
+        optimizer1 = torch.optim.Adam(self.parameters(), lr=1e-3)
+        optimizer2 = torch.optim.LBFGS(self.parameters(), lr=1, line_search_fn='strong_wolfe', history_size=200, max_iter=100)
+        return [optimizer1, optimizer2, optimizer1, optimizer2, optimizer1, optimizer2, optimizer1, optimizer2, optimizer1, optimizer2]
 
     def training_step(self, train_batch, batch_idx):
+        opt = self.optimizers()[self.optimizer_idx]
         inputs = train_batch[:-1]
-        u = train_batch[-1]
-        u_hat = self.forward(*inputs)
-        loss = self.hparams['loss'](self.w_Omega_L, u_hat, u)
-        self.log('train_loss', loss)
-        return loss
+        def closure():
+            opt.zero_grad()
+            loss = 0
+            if self.hparams.get('solution_loss',None)!=None:
+                u = train_batch[-1]
+                u_hat = self.forward(*inputs)
+                loss += self.hparams['solution_loss'](self.w_Omega_L, u_hat, u)
+            if self.hparams.get('matrix_loss',None)!=None:
+                F = inputs[0]
+                A_hat = self.systemnet.forward(F)
+                loss += self.hparams['matrix_loss'](torch.matmul(F, torch.matmul(A_hat,F)),F)
+            # self.manual_backward(loss)
+            self.log('train_loss', loss)
+            print(loss)
+            grad_tuple = torch.autograd.grad(loss, self.systemnet.parameters(), create_graph=True)
+            return loss, grad_tuple
+            # return loss
+        opt.update_preconditioner(self, grad_tuple)
+        opt.step(closure=closure)
 
     def validation_step(self, val_batch, batch_idx):
         inputs = val_batch[:-1]
-        u = val_batch[-1]
-        u_hat = self.forward(*inputs)
-        loss = self.hparams['loss'](self.w_Omega_L, u_hat, u)
+        loss = 0
+        if self.hparams.get('solution_loss',None)!=None:
+            u = val_batch[-1]
+            u_hat = self.forward(*inputs)
+            loss += self.hparams['solution_loss'](self.w_Omega_L, u_hat, u)
+        if self.hparams.get('matrix_loss',None)!=None:
+            F = inputs[0]
+            A_hat = self.systemnet.forward(F)
+            loss += self.hparams['matrix_loss'](torch.matmul(F, torch.matmul(A_hat,F)),F)
         metric = self.hparams['metric'](self.w_Omega_L, u_hat, u)
+        self.metric.append(metric)
         self.log('val_loss', loss)
         self.log('metric', metric)
 
@@ -260,3 +301,9 @@ class NGO(pl.LightningModule):
         self.psix = self.psix.to(self.device)
         self.w_Omega_L = torch.tensor(self.w_Omega_L).to(self.device)
         self.hparams['N_w_real'] = sum(p.numel() for p in self.systemnet.parameters())
+        self.systemnet.device = self.device
+
+    def on_validation_epoch_end(self):
+        if self.metric[-1]<0.01:
+            if self.metric[-1]>self.metric[-2]:
+                self.optimizer_idx+=1
