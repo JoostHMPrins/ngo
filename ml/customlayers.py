@@ -4,6 +4,15 @@ import torch.nn.functional as F
 import numpy as np
 
 
+def discretize_functions(f_list, x):
+    f_list = np.array(f_list)
+    f_discretized = np.zeros((len(f_list),x.shape[0]))
+    for i in range(len(f_list)):
+        print(i)
+        f_discretized[i] = f_list[i](x)
+    return f_discretized
+
+
 def sort_matrices(matrices):
     """
     Sort the rows and columns of each matrix in the batch by decreasing L2 norm.
