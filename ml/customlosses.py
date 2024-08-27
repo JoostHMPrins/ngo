@@ -30,3 +30,12 @@ def relativefrobeniusnorm(A_hat, A):
     Frobenius = torch.norm(A_hat - A, dim=(-1,-2), p='fro')
     norm = torch.norm(A, dim=(-1,-2), p='fro')
     return torch.mean(Frobenius/torch.maximum(norm, 1e-7*torch.ones_like(norm)))
+
+def relativevectorfrobeniusnorm(A_hat, A):
+    Frobenius = torch.norm(A_hat - A, dim=(-1), p='fro')
+    norm = torch.norm(A, dim=(-1), p='fro')
+    return torch.mean(Frobenius/torch.maximum(norm, 1e-7*torch.ones_like(norm)))
+
+def vectorfrobeniusnorm(A_hat, A):
+    Frobenius = torch.norm(A_hat - A, dim=(-1), p='fro')
+    return torch.mean(Frobenius)
