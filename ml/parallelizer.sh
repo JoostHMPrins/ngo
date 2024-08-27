@@ -1,6 +1,6 @@
 #!/bin/bash
 
-values=(2 4 6 8 10 12 14 16)
+values=(2 5 20)
 
 for value in "${values[@]}"
 do

@@ -9,12 +9,12 @@ class UniformQuadrature2D:
         self.compute_boundaryquadrature()
         
     def compute_interiorquadrature(self):
-        x_0_Q, x_1_Q = np.mgrid[1/(2*self.Q):1-1/(2*self.Q):self.Q*1j, 1/(2*self.Q):1-1/(2*self.Q):self.Q*1j]
+        x_0_Q, x_1_Q = np.mgrid[0:1:self.Q*1j, 0:1:self.Q*1j]
         self.xi_Omega = np.vstack([x_0_Q.ravel(), x_1_Q.ravel()]).T
         self.w_Omega = 1/(self.Q**self.d)*np.ones((self.Q**self.d))
         
     def compute_boundaryquadrature(self):
-        xi_Gamma_i = np.linspace(1/(2*self.Q),1-1/(2*self.Q), self.Q)
+        xi_Gamma_i = np.linspace(0,1, self.Q)
         self.xi_Gamma_b = np.zeros((self.Q,self.d))
         self.xi_Gamma_b[:,0] = xi_Gamma_i
         self.xi_Gamma_t = np.ones((self.Q,self.d))
@@ -127,7 +127,7 @@ class GaussLegendreQuadrature2D:
         plt.scatter(self.xi_Gamma[:,0], self.xi_Gamma[:,1], c=self.w_Gamma, s=1)
         plt.axis('square')
         plt.colorbar()
-        plt.savefig("GL_Q"+str(self.Q)+".svg", bbox_inches='tight')#, transparent=True)
+        # plt.savefig("GL_Q"+str(self.Q)+".svg", bbox_inches='tight')#, transparent=True)
 
           
 class UnitSquareOutwardNormal:
