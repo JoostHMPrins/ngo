@@ -36,6 +36,7 @@ def train(model, datamodule, hparams, loaddir, logdir, sublogdir, label):
                          precision=hparams['precision'], 
                          max_epochs=hparams['epochs'], 
                          check_val_every_n_epoch=1,
+                         reload_dataloaders_every_n_epochs=1,
                          callbacks=checkpoint_callback)
     
     trainer.fit(MLmodel, data)
