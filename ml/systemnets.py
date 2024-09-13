@@ -6,26 +6,16 @@ from customlayers import *
 
 
 class FNO(nn.Module):
-    def __init__(self, params):
+    def __init__(self, hparams):
         super().__init__()
-        self.hparams = params['hparams']
-        #Balancing the number of trainable parameters to N_w
-        self.num_channels = 1
-        count = 0
-        num_channels_list = []
-        while count < self.hparams['N_w']:
-            self.init_layers()
-            count = sum(p.numel() for p in self.parameters())
-            num_channels_list.append(self.num_channels)
-            self.num_channels +=1
-        self.num_channels = num_channels_list[-2]
-        self.init_layers()
+        self.hparams = hparams
+        self = balance_num_trainable_params(model=self, N_w=self.hparams['N_w'])
 
     def init_layers(self):
         self.layers = nn.ModuleList()
         if self.hparams['input_shape']==1:
             self.layers.append(ReshapeLayer(output_shape=(1,self.hparams['N'],self.hparams['N'])))
-        self.layers.append(neuralop.models.FNO(n_modes=self.hparams['h_FNO'], in_channels=self.hparams['input_shape'], out_channels=1, hidden_channels=self.num_channels, domain_padding=0.2))
+        self.layers.append(neuralop.models.FNO(n_modes=self.hparams['h_FNO'], in_channels=self.hparams['input_shape'], out_channels=1, hidden_channels=self.free_parameter, domain_padding=0.2))
         if self.hparams['input_shape']==1:
             self.layers.append(ReshapeLayer(output_shape=(self.hparams['N'],self.hparams['N'])))
 
@@ -37,47 +27,36 @@ class FNO(nn.Module):
 
    
 class UNet(nn.Module):
-    def __init__(self, params):
+    def __init__(self, hparams):
         super().__init__()
-        self.hparams = params['hparams']
-        #Balancing the number of trainable parameters to N_w
-        self.num_channels = 1
-        count = 0
-        num_channels_list = []
-        while count < self.hparams['N_w']:
-            self.init_layers()
-            count = sum(p.numel() for p in self.parameters())
-            num_channels_list.append(self.num_channels)
-            self.num_channels +=1
-        self.num_channels = num_channels_list[-2]
-        self.init_layers()
+        self.hparams = hparams
+        self = balance_num_trainable_params(model=self, N_w=self.hparams['N_w'])
         
     def init_layers(self):
         self.layers = nn.ModuleList()
         self.kernel_sizes = self.hparams['kernel_sizes']
         self.bottleneck_size = self.hparams['bottleneck_size']
         #Layers
-        self.layers.append(ReshapeLayer(output_shape=(self.hparams['input_shape'])))
-        self.layers.append(nn.Conv2d(in_channels=self.hparams['input_shape'][0], out_channels=self.num_channels, kernel_size=self.kernel_sizes[0], stride=self.kernel_sizes[0], bias=False))
+        self.layers.append(ReshapeLayer(output_shape=self.hparams['input_shape']))
+        self.layers.append(nn.Conv2d(in_channels=self.hparams['input_shape'][0], out_channels=self.free_parameter, kernel_size=self.kernel_sizes[0], stride=self.kernel_sizes[0], bias=False))
         self.layers.append(nn.LeakyReLU())
-        self.layers.append(nn.Conv2d(in_channels=self.num_channels, out_channels=self.num_channels, kernel_size=self.kernel_sizes[1], stride=self.kernel_sizes[1], bias=False))
+        self.layers.append(nn.Conv2d(in_channels=self.free_parameter, out_channels=self.free_parameter, kernel_size=self.kernel_sizes[1], stride=self.kernel_sizes[1], bias=False))
         self.layers.append(nn.LeakyReLU())
-        self.layers.append(nn.Conv2d(in_channels=self.num_channels, out_channels=self.num_channels, kernel_size=self.kernel_sizes[2], stride=self.kernel_sizes[2], bias=False))
+        self.layers.append(nn.Conv2d(in_channels=self.free_parameter, out_channels=self.free_parameter, kernel_size=self.kernel_sizes[2], stride=self.kernel_sizes[2], bias=False))
         self.layers.append(nn.LeakyReLU())
-        self.layers.append(nn.Conv2d(in_channels=self.num_channels, out_channels=self.bottleneck_size, kernel_size=self.kernel_sizes[3], stride=self.kernel_sizes[3], bias=False))
+        self.layers.append(nn.Conv2d(in_channels=self.free_parameter, out_channels=self.bottleneck_size, kernel_size=self.kernel_sizes[3], stride=self.kernel_sizes[3], bias=False))
         self.layers.append(ReshapeLayer(output_shape=(int(self.bottleneck_size),)))
         self.layers.append(nn.Linear(in_features=int(self.bottleneck_size), out_features=int(self.bottleneck_size)))
         self.layers.append(nn.LeakyReLU())
         self.layers.append(ReshapeLayer(output_shape=(self.bottleneck_size,1,1)))
-        self.layers.append(nn.ConvTranspose2d(self.bottleneck_size, self.num_channels, kernel_size=self.kernel_sizes[4], stride=self.kernel_sizes[4], bias=False))
+        self.layers.append(nn.ConvTranspose2d(self.bottleneck_size, self.free_parameter, kernel_size=self.kernel_sizes[4], stride=self.kernel_sizes[4], bias=False))
         self.layers.append(nn.LeakyReLU())
-        self.layers.append(nn.ConvTranspose2d(self.num_channels, self.num_channels, kernel_size=self.kernel_sizes[5], stride=self.kernel_sizes[5], bias=False))
+        self.layers.append(nn.ConvTranspose2d(self.free_parameter, self.free_parameter, kernel_size=self.kernel_sizes[5], stride=self.kernel_sizes[5], bias=False))
         self.layers.append(nn.LeakyReLU())
-        self.layers.append(nn.ConvTranspose2d(self.num_channels, self.num_channels, kernel_size=self.kernel_sizes[6], stride=self.kernel_sizes[6], bias=False))
+        self.layers.append(nn.ConvTranspose2d(self.free_parameter, self.free_parameter, kernel_size=self.kernel_sizes[6], stride=self.kernel_sizes[6], bias=False))
         self.layers.append(nn.LeakyReLU())
-        self.layers.append(nn.ConvTranspose2d(self.num_channels, 1, kernel_size=self.kernel_sizes[7], stride=self.kernel_sizes[7], bias=False))
-        self.layers.append(ReshapeLayer(output_shape=(self.hparams['N'],self.hparams['N'])))           
-
+        self.layers.append(nn.ConvTranspose2d(self.free_parameter, 1, kernel_size=self.kernel_sizes[7], stride=self.kernel_sizes[7], bias=False))
+        self.layers.append(ReshapeLayer(output_shape=self.hparams['output_shape']))           
         if self.hparams['NLB_outputactivation'] is not None:
             self.layers.append(self.hparams['NLB_outputactivation'])
 
@@ -119,19 +98,19 @@ class UNet(nn.Module):
     
 
 class AcCNN(nn.Module):
-    def __init__(self, params):
+    def __init__(self, hparams):
         super().__init__()
-        self.hparams = params['hparams']
+        self.hparams = hparams
         #Balancing the number of trainable parameters to N_w
-        self.num_channels = 1
+        self.free_parameter = 1
         count = 0
         num_channels_list = []
         while count < self.hparams['N_w']:
             self.init_layers()
             count = sum(p.numel() for p in self.parameters())
-            num_channels_list.append(self.num_channels)
-            self.num_channels +=1
-        self.num_channels = num_channels_list[-2]
+            num_channels_list.append(self.free_parameter)
+            self.free_parameter +=1
+        self.free_parameter = num_channels_list[-2]
         self.init_layers()
         
     def init_layers(self):
@@ -140,22 +119,22 @@ class AcCNN(nn.Module):
         self.bottleneck_size = self.hparams['bottleneck_size']
         #Layers
         self.layers.append(ReshapeLayer(output_shape=(1,self.hparams['h'][0],self.hparams['h'][1])) if self.hparams['model/data']=='data' else ReshapeLayer(output_shape=(1,self.hparams['N'],self.hparams['N'])))
-        self.layers.append(nn.Conv2d(in_channels=1, out_channels=self.num_channels, kernel_size=self.kernel_sizes[0], stride=self.kernel_sizes[0], bias=self.hparams.get('bias_NLBranch', True)))
+        self.layers.append(nn.Conv2d(in_channels=1, out_channels=self.free_parameter, kernel_size=self.kernel_sizes[0], stride=self.kernel_sizes[0], bias=self.hparams.get('bias_NLBranch', True)))
         self.layers.append(nn.LeakyReLU())
-        # self.layers.append(nn.BatchNorm2d(num_features=self.num_channels, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True))
-        self.layers.append(nn.Conv2d(in_channels=self.num_channels, out_channels=self.num_channels, kernel_size=self.kernel_sizes[1], stride=self.kernel_sizes[1], bias=self.hparams.get('bias_NLBranch', True)))
+        # self.layers.append(nn.BatchNorm2d(num_features=self.free_parameter, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True))
+        self.layers.append(nn.Conv2d(in_channels=self.free_parameter, out_channels=self.free_parameter, kernel_size=self.kernel_sizes[1], stride=self.kernel_sizes[1], bias=self.hparams.get('bias_NLBranch', True)))
         self.layers.append(nn.LeakyReLU())
-        # self.layers.append(nn.BatchNorm2d(num_features=self.num_channels, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True))
-        self.layers.append(nn.Conv2d(in_channels=self.num_channels, out_channels=self.num_channels, kernel_size=self.kernel_sizes[2], stride=self.kernel_sizes[2], bias=self.hparams.get('bias_NLBranch', True)))
+        # self.layers.append(nn.BatchNorm2d(num_features=self.free_parameter, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True))
+        self.layers.append(nn.Conv2d(in_channels=self.free_parameter, out_channels=self.free_parameter, kernel_size=self.kernel_sizes[2], stride=self.kernel_sizes[2], bias=self.hparams.get('bias_NLBranch', True)))
         self.layers.append(nn.LeakyReLU())
-        # self.layers.append(nn.BatchNorm2d(num_features=self.num_channels, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True))
-        self.layers.append(nn.Conv2d(in_channels=self.num_channels, out_channels=self.num_channels, kernel_size=self.kernel_sizes[3], stride=self.kernel_sizes[3], bias=self.hparams.get('bias_NLBranch', True)))
-        self.layers.append(ReshapeLayer(output_shape=(int(self.num_channels),)))
-        self.layers.append(nn.Linear(in_features=int(self.num_channels), out_features=int(self.num_channels)))
+        # self.layers.append(nn.BatchNorm2d(num_features=self.free_parameter, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True))
+        self.layers.append(nn.Conv2d(in_channels=self.free_parameter, out_channels=self.free_parameter, kernel_size=self.kernel_sizes[3], stride=self.kernel_sizes[3], bias=self.hparams.get('bias_NLBranch', True)))
+        self.layers.append(ReshapeLayer(output_shape=(int(self.free_parameter),)))
+        self.layers.append(nn.Linear(in_features=int(self.free_parameter), out_features=int(self.free_parameter)))
         self.layers.append(nn.LeakyReLU())
-        # self.layers.append(nn.Linear(in_features=int(self.num_channels), out_features=int(self.num_channels)))
+        # self.layers.append(nn.Linear(in_features=int(self.free_parameter), out_features=int(self.free_parameter)))
         # self.layers.append(nn.LeakyReLU())
-        self.layers.append(nn.Linear(in_features=int(self.num_channels), out_features=int(self.hparams['k'])))
+        self.layers.append(nn.Linear(in_features=int(self.free_parameter), out_features=int(self.hparams['k'])))
         if self.hparams['NLB_outputactivation'] is not None:
             self.layers.append(self.hparams['NLB_outputactivation'])
 
@@ -167,9 +146,9 @@ class AcCNN(nn.Module):
     
 
 class KandK(nn.Module):
-    def __init__(self, params):
+    def __init__(self, hparams):
         super().__init__()
-        self.hparams = params['hparams']
+        self.hparams = hparams
         self.init_layers()
         
     def init_layers(self):
@@ -215,19 +194,19 @@ class KandK(nn.Module):
     
     
 class InvNet(nn.Module):
-    def __init__(self, params):
+    def __init__(self, hparams):
         super().__init__()
-        self.hparams = params['hparams']
+        self.hparams = hparams
         #Balancing the number of trainable parameters to N_w
-        self.num_channels = 1
+        self.free_parameter = 1
         count = 0
         num_channels_list = []
         while count < self.hparams['N_w']:
             self.init_layers()
             count = sum(p.numel() for p in self.parameters())
-            num_channels_list.append(self.num_channels)
-            self.num_channels +=1
-        self.num_channels = num_channels_list[-2]
+            num_channels_list.append(self.free_parameter)
+            self.free_parameter +=1
+        self.free_parameter = num_channels_list[-2]
         self.init_layers()
         
     def init_layers(self):
@@ -235,25 +214,22 @@ class InvNet(nn.Module):
         self.kernel_sizes = self.hparams['kernel_sizes']
         self.bottleneck_size = self.hparams['bottleneck_size']
         #Layers
-        self.layers.append(ReshapeLayer(output_shape=(1,self.hparams['h_F'][0],self.hparams['h_F'][1])) if self.hparams['model/data']=='data' else ReshapeLayer(output_shape=(1,self.hparams['N_F'],self.hparams['N_F'])))
-        self.layers.append(nn.Conv2d(in_channels=1, out_channels=self.num_channels, kernel_size=self.kernel_sizes[0], stride=self.kernel_sizes[0], bias=self.hparams.get('bias_NLBranch', True)))
-        self.layers.append(nn.LeakyReLU())
-        self.layers.append(nn.Conv2d(in_channels=self.num_channels, out_channels=self.num_channels, kernel_size=self.kernel_sizes[1], stride=self.kernel_sizes[1], bias=self.hparams.get('bias_NLBranch', True)))
-        self.layers.append(nn.LeakyReLU())
-        self.layers.append(nn.Conv2d(in_channels=self.num_channels, out_channels=self.num_channels, kernel_size=self.kernel_sizes[2], stride=self.kernel_sizes[2], bias=self.hparams.get('bias_NLBranch', True)))
-        self.layers.append(nn.LeakyReLU())
-        self.layers.append(nn.Conv2d(in_channels=self.num_channels, out_channels=self.bottleneck_size, kernel_size=self.kernel_sizes[3], stride=self.kernel_sizes[3], bias=self.hparams.get('bias_NLBranch', True)))
-        # self.layers.append(ReshapeLayer(output_shape=(int(self.bottleneck_size),)))
+        self.layers.append(ReshapeLayer(output_shape=(1,self.hparams['N_F'],self.hparams['N_F'])))# if self.hparams['model/data']=='data' else ReshapeLayer(output_shape=(1,self.hparams['N_F'],self.hparams['N_F'])))
+        self.layers.append(nn.Conv2d(in_channels=1, out_channels=self.free_parameter, kernel_size=self.kernel_sizes[0], stride=self.kernel_sizes[0], bias=False))
+        #self.layers.append(nn.Tanh())
+        self.layers.append(nn.Conv2d(in_channels=self.free_parameter, out_channels=self.free_parameter, kernel_size=self.kernel_sizes[1], stride=self.kernel_sizes[1], bias=False))
+        #self.layers.append(nn.Tanh())
+        self.layers.append(nn.Conv2d(in_channels=self.free_parameter, out_channels=self.free_parameter, kernel_size=self.kernel_sizes[2], stride=self.kernel_sizes[2], bias=False))
+        #self.layers.append(nn.Tanh())
+        self.layers.append(nn.Conv2d(in_channels=self.free_parameter, out_channels=self.bottleneck_size, kernel_size=self.kernel_sizes[3], stride=self.kernel_sizes[3], bias=False))
         self.layers.append(InversionLayer())
-        self.layers.append(nn.LeakyReLU())
-        # self.layers.append(ReshapeLayer(output_shape=(self.bottleneck_size,1,1)))
-        self.layers.append(nn.ConvTranspose2d(self.bottleneck_size, self.num_channels, kernel_size=self.kernel_sizes[4], stride=self.kernel_sizes[4], bias=self.hparams.get('bias_NLBranch', True)))
-        self.layers.append(nn.LeakyReLU())
-        self.layers.append(nn.ConvTranspose2d(self.num_channels, self.num_channels, kernel_size=self.kernel_sizes[5], stride=self.kernel_sizes[5], bias=self.hparams.get('bias_NLBranch', True)))
-        self.layers.append(nn.LeakyReLU())
-        self.layers.append(nn.ConvTranspose2d(self.num_channels, self.num_channels, kernel_size=self.kernel_sizes[6], stride=self.kernel_sizes[6], bias=self.hparams.get('bias_NLBranch', True)))
-        self.layers.append(nn.LeakyReLU())
-        self.layers.append(nn.ConvTranspose2d(self.num_channels, 1, kernel_size=self.kernel_sizes[7], stride=self.kernel_sizes[7], bias=self.hparams.get('bias_NLBranch', True)))
+        self.layers.append(nn.ConvTranspose2d(self.bottleneck_size, self.free_parameter, kernel_size=self.kernel_sizes[4], stride=self.kernel_sizes[4], bias=False))
+        #self.layers.append(nn.Tanh())
+        self.layers.append(nn.ConvTranspose2d(self.free_parameter, self.free_parameter, kernel_size=self.kernel_sizes[5], stride=self.kernel_sizes[5], bias=False))
+        #self.layers.append(nn.Tanh())
+        self.layers.append(nn.ConvTranspose2d(self.free_parameter, self.free_parameter, kernel_size=self.kernel_sizes[6], stride=self.kernel_sizes[6], bias=False))
+        #self.layers.append(nn.Tanh())
+        self.layers.append(nn.ConvTranspose2d(self.free_parameter, 1, kernel_size=self.kernel_sizes[7], stride=self.kernel_sizes[7], bias=False))
         self.layers.append(ReshapeLayer(output_shape=(self.hparams['N'],self.hparams['N'])))
         if self.hparams['NLB_outputactivation'] is not None:
             self.layers.append(self.hparams['NLB_outputactivation'])
@@ -274,20 +250,20 @@ class InvNet(nn.Module):
         return y
     
 
-class PCNN(nn.Module):
-    def __init__(self, params):
+class PNet(nn.Module):
+    def __init__(self, hparams):
         super().__init__()
-        self.hparams = params['hparams']
+        self.hparams = hparams
         #Balancing the number of trainable parameters to N_w
-        self.num_channels = 1
+        self.free_parameter = 1
         count = 0
         num_channels_list = []
         while count < self.hparams['N_w']:
             self.init_layers()
             count = sum(p.numel() for p in self.parameters())
-            num_channels_list.append(self.num_channels)
-            self.num_channels +=1
-        self.num_channels = num_channels_list[-2]
+            num_channels_list.append(self.free_parameter)
+            self.free_parameter +=1
+        self.free_parameter = num_channels_list[-2]
         self.init_layers()
         
     def init_layers(self):
@@ -295,14 +271,14 @@ class PCNN(nn.Module):
         self.kernel_sizes = self.hparams['kernel_sizes']
         self.bottleneck_size = self.hparams['bottleneck_size']
         #Layers
-        self.layers.append(ReshapeLayer(output_shape=(1,self.hparams['h_F'][0],self.hparams['h_F'][1])) if self.hparams['model/data']=='data' else ReshapeLayer(output_shape=(1,self.hparams['N_F'],self.hparams['N_F'])))
-        self.layers.append(nn.ConvTranspose2d(1, self.num_channels, kernel_size=self.kernel_sizes[0], stride=self.kernel_sizes[0], bias=self.hparams.get('bias_NLBranch', True)))
-        self.layers.append(nn.LeakyReLU())
-        self.layers.append(nn.ConvTranspose2d(self.num_channels, self.num_channels, kernel_size=self.kernel_sizes[1], stride=self.kernel_sizes[1], bias=self.hparams.get('bias_NLBranch', True)))
-        self.layers.append(nn.LeakyReLU())
-        self.layers.append(nn.ConvTranspose2d(self.num_channels, self.num_channels, kernel_size=self.kernel_sizes[2], stride=self.kernel_sizes[2], bias=self.hparams.get('bias_NLBranch', True)))
-        self.layers.append(nn.LeakyReLU())
-        self.layers.append(nn.ConvTranspose2d(self.num_channels, 1, kernel_size=self.kernel_sizes[3], stride=self.kernel_sizes[3], bias=self.hparams.get('bias_NLBranch', True)))
+        self.layers.append(ReshapeLayer(output_shape=(1,self.hparams['h_F'][0],self.hparams['h_F'][1])) if self.hparams['modeltype']=='data NGO' else ReshapeLayer(output_shape=(1,self.hparams['N_F'],self.hparams['N_F'])))
+        self.layers.append(nn.ConvTranspose2d(1, self.free_parameter, kernel_size=self.kernel_sizes[0], stride=self.kernel_sizes[0], bias=self.hparams.get('bias_NLBranch', True)))
+        # self.layers.append(nn.LeakyReLU())
+        self.layers.append(nn.ConvTranspose2d(self.free_parameter, self.free_parameter, kernel_size=self.kernel_sizes[1], stride=self.kernel_sizes[1], bias=False))
+        # self.layers.append(nn.LeakyReLU())
+        self.layers.append(nn.ConvTranspose2d(self.free_parameter, self.free_parameter, kernel_size=self.kernel_sizes[2], stride=self.kernel_sizes[2], bias=False))
+        # self.layers.append(nn.LeakyReLU())
+        self.layers.append(nn.ConvTranspose2d(self.free_parameter, 1, kernel_size=self.kernel_sizes[3], stride=self.kernel_sizes[3], bias=False))
         self.layers.append(ReshapeLayer(output_shape=(self.hparams['N'],self.hparams['N'])))
         if self.hparams['NLB_outputactivation'] is not None:
             self.layers.append(self.hparams['NLB_outputactivation'])
@@ -324,39 +300,39 @@ class PCNN(nn.Module):
     
     
 class SPCNN(nn.Module):
-    def __init__(self, params):
+    def __init__(self, hparams):
         super().__init__()
-        self.hparams = params['hparams']
+        self.hparams = hparams
         self.layers = nn.ModuleList()
         self.kernel_size = self.hparams['kernel_sizes'][0]
-        self.num_channels =self.hparams['num_channels']
+        self.free_parameter =self.hparams['free_parameter']
     
         # Adjusted convolutional layers
         self.layers.append(ReshapeLayer(output_shape=(1,self.hparams['N'],self.hparams['N'])))
-        self.layers.append(nn.ConvTranspose2d(in_channels=1, out_channels=self.num_channels, kernel_size=self.kernel_size, stride=1, bias=False))
+        self.layers.append(nn.ConvTranspose2d(in_channels=1, out_channels=self.free_parameter, kernel_size=self.kernel_size, stride=1, bias=False))
         self.layers.append(nn.LeakyReLU())
         
-        # #self.layers.append(nn.BatchNorm2d(num_features=self.num_channels, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True))
-        self.layers.append(nn.Conv2d(in_channels=self.num_channels, out_channels=self.num_channels, kernel_size=self.kernel_size, stride=1, bias=False))
+        # #self.layers.append(nn.BatchNorm2d(num_features=self.free_parameter, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True))
+        self.layers.append(nn.Conv2d(in_channels=self.free_parameter, out_channels=self.free_parameter, kernel_size=self.kernel_size, stride=1, bias=False))
         self.layers.append(nn.LeakyReLU())
-        # #self.layers.append(nn.BatchNorm2d(num_features=self.num_channels, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True))
-        self.layers.append(nn.ConvTranspose2d(in_channels=self.num_channels, out_channels=self.num_channels, kernel_size=self.kernel_size, stride=1, bias=False))
+        # #self.layers.append(nn.BatchNorm2d(num_features=self.free_parameter, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True))
+        self.layers.append(nn.ConvTranspose2d(in_channels=self.free_parameter, out_channels=self.free_parameter, kernel_size=self.kernel_size, stride=1, bias=False))
         self.layers.append(nn.LeakyReLU())
-        # #self.layers.append(nn.BatchNorm2d(num_features=self.num_channels, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True))
-        # self.layers.append(nn.Conv2d(in_channels=self.num_channels, out_channels=self.num_channels, kernel_size=self.kernel_size, stride=1, bias=False))
+        # #self.layers.append(nn.BatchNorm2d(num_features=self.free_parameter, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True))
+        # self.layers.append(nn.Conv2d(in_channels=self.free_parameter, out_channels=self.free_parameter, kernel_size=self.kernel_size, stride=1, bias=False))
         # self.layers.append(nn.LeakyReLU())
-        # #self.layers.append(nn.BatchNorm2d(num_features=self.num_channels, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True))
-        # self.layers.append(nn.ConvTranspose2d(in_channels=self.num_channels, out_channels=self.num_channels, kernel_size=self.kernel_size, stride=1, bias=False))
+        # #self.layers.append(nn.BatchNorm2d(num_features=self.free_parameter, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True))
+        # self.layers.append(nn.ConvTranspose2d(in_channels=self.free_parameter, out_channels=self.free_parameter, kernel_size=self.kernel_size, stride=1, bias=False))
         # self.layers.append(nn.LeakyReLU())
-        # #self.layers.append(nn.BatchNorm2d(num_features=self.num_channels, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True))
-        # self.layers.append(nn.Conv2d(in_channels=self.num_channels, out_channels=self.num_channels, kernel_size=self.kernel_size, stride=1, bias=False))
+        # #self.layers.append(nn.BatchNorm2d(num_features=self.free_parameter, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True))
+        # self.layers.append(nn.Conv2d(in_channels=self.free_parameter, out_channels=self.free_parameter, kernel_size=self.kernel_size, stride=1, bias=False))
         # self.layers.append(nn.LeakyReLU())
-        # #self.layers.append(nn.BatchNorm2d(num_features=self.num_channels, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True))
-        # self.layers.append(nn.ConvTranspose2d(in_channels=self.num_channels, out_channels=self.num_channels, kernel_size=self.kernel_size, stride=1, bias=False))
+        # #self.layers.append(nn.BatchNorm2d(num_features=self.free_parameter, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True))
+        # self.layers.append(nn.ConvTranspose2d(in_channels=self.free_parameter, out_channels=self.free_parameter, kernel_size=self.kernel_size, stride=1, bias=False))
         # self.layers.append(nn.LeakyReLU())
 
-        #self.layers.append(nn.BatchNorm2d(num_features=self.num_channels, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True))
-        self.layers.append(nn.Conv2d(in_channels=self.num_channels, out_channels=1, kernel_size=self.kernel_size, stride=1, bias=False))
+        #self.layers.append(nn.BatchNorm2d(num_features=self.free_parameter, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True))
+        self.layers.append(nn.Conv2d(in_channels=self.free_parameter, out_channels=1, kernel_size=self.kernel_size, stride=1, bias=False))
         self.layers.append(ReshapeLayer(output_shape=(64,64)))
         if self.hparams['NLB_outputactivation'] is not None:
             self.layers.append(self.hparams['NLB_outputactivation'])
@@ -369,9 +345,9 @@ class SPCNN(nn.Module):
     
     
 class LBranchNet(nn.Module):
-    def __init__(self, params, input_dim, output_dim):
+    def __init__(self, hparams, input_dim, output_dim):
         super().__init__()
-        self.hparams = params['hparams']
+        self.hparams = hparams
         self.layers = nn.ModuleList()
         self.layers.append(nn.Linear(input_dim, output_dim, bias=False))
 
@@ -388,11 +364,11 @@ class LBranchNet(nn.Module):
     
 
 class DeepONetBranch(nn.Module):
-    def __init__(self, params):
+    def __init__(self, hparams):
         super().__init__()
-        self.hparams = params['hparams']
+        self.hparams = hparams
         self.layers = nn.ModuleList()
-        self.layers.append(nn.Linear(input_dim=2*self.hparams['Q']**params['simparams']['d']+4*self.hparams['Q'], output_dim=self.hparams['N'], bias=False))
+        self.layers.append(nn.Linear(input_dim=2*self.hparams['Q']**self.hparams['d']+4*self.hparams['Q'], output_dim=self.hparams['N'], bias=False))
         if self.hparams['NLB_outputactivation']!=None:
             self.layers.append(self.hparams['NLB_outputactivation'])
 
