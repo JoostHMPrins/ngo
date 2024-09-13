@@ -11,56 +11,51 @@ from NeuralOperator import NeuralOperator
 from darcy_mfs import *
 
 import sys
-sys.path.insert(0, '../../trainingdata') 
-from datasaver import load_function_list
 sys.path.insert(0, '../../ml') 
 from quadrature import *
 
 
 class DataModule_Darcy_MS(pl.LightningDataModule):
 
-    def __init__(self, data_dir, params):
+    def __init__(self, data_dir, hparams):
         super().__init__()
-        
-        self.params = params
+        self.hparams.update(hparams)
+        self.device = self.hparams['used_device']
         self.data_dir = data_dir
-        self.hyperparams = params['hparams']
-        
-    def setup(self, stage=None):
-        dummymodel = NeuralOperator(self.params)
+        dummymodel = NeuralOperator(self.hparams)
         # Generate input and output functions
-        print('Generating data...')
-        dataset = ManufacturedSolutionsSetDarcy(N_samples=self.hyperparams['N_samples'], d=self.hyperparams['d'], l_min=self.hyperparams['l_min'], l_max=self.hyperparams['l_max'])
+        print('Generating functions...')
+        dataset = ManufacturedSolutionsSetDarcy(N_samples=self.hparams['N_samples'], d=self.hparams['d'], l_min=self.hparams['l_min'], l_max=self.hparams['l_max'], device=self.device)
         #Discretize input functions
         print('Preprocessing data...')
-        theta, theta_g, f, etab, etat, gl, gr = dummymodel.discretize_input_functions(dataset.theta, dataset.f, dataset.etab, dataset.etat, dataset.gl, dataset.gr)
-        u = dummymodel.discretize_output_function(dataset.u)
+        self.theta, self.theta_g, self.f, self.etab, self.etat, self.gl, self.gr = dummymodel.discretize_input_functions(dataset.theta, dataset.f, dataset.etab, dataset.etat, dataset.gl, dataset.gr)
+        self.u = dummymodel.discretize_output_function(dataset.u)
         if dummymodel.hparams['modeltype']=='model NGO' or dummymodel.hparams['modeltype']=='data NGO' or dummymodel.hparams['modeltype']=='matrix data NGO':
-            F = dummymodel.compute_F(theta, theta_g)
-            d = dummymodel.compute_d(f, etab, etat, gl, gr)
-            F = torch.tensor(F, dtype=self.hyperparams['dtype'])
-            if self.hyperparams['N']!=self.hyperparams['N_F']:
-                F = torch.linalg.pinv(F)
-            d = torch.tensor(d, dtype=self.hyperparams['dtype'])
-        #Convert to torch tensors
-        theta = torch.tensor(theta, dtype=self.hyperparams['dtype'])
-        theta_g = torch.tensor(theta_g, dtype=self.hyperparams['dtype'])
-        f = torch.tensor(f, dtype=self.hyperparams['dtype'])
-        etab = torch.tensor(etab, dtype=self.hyperparams['dtype'])
-        etat = torch.tensor(etat, dtype=self.hyperparams['dtype'])
-        gl = torch.tensor(gl, dtype=self.hyperparams['dtype'])
-        gr = torch.tensor(gr, dtype=self.hyperparams['dtype'])
-        u = torch.tensor(u, dtype=self.hyperparams['dtype'])
-        #Define dataset
-        if dummymodel.hparams['modeltype']=='DeepONet' or dummymodel.hparams['modeltype']=='VarMiON' or dummymodel.hparams['modeltype']=='FNO':
-            dataset = torch.utils.data.TensorDataset(theta, f, etab, etat, gl, gr, u)
-            self.trainingset, self.validationset = random_split(dataset, [int(0.9*self.hyperparams['N_samples']), self.hyperparams['N_samples'] - int(0.9*self.hyperparams['N_samples'])])
-        if dummymodel.hparams['modeltype']=='NGO':
-            dataset = torch.utils.data.TensorDataset(F, d, u)
-            self.trainingset, self.validationset = random_split(dataset, [int(0.9*self.hyperparams['N_samples']), self.hyperparams['N_samples'] - int(0.9*self.hyperparams['N_samples'])])
+            self.F = dummymodel.compute_F(self.theta, self.theta_g)
+            self.d = dummymodel.compute_d(self.f, self.etab, self.etat, self.gl, self.gr)
+            if self.hparams['N']!=self.hparams['N_F']:
+                self.F = np.linalg.pinv(self.F)
+
+    def setup(self, stage=None):
+        if self.hparams['modeltype']=='NN' or self.hparams['modeltype']=='DeepONet' or self.hparams['modeltype']=='VarMiON' or self.hparams['modeltype']=='FNO':
+            self.theta = torch.tensor(self.theta, dtype=self.hparams['dtype'])
+            self.f = torch.tensor(self.f, dtype=self.hparams['dtype'])
+            self.etab = torch.tensor(self.etab, dtype=self.hparams['dtype'])
+            self.etat = torch.tensor(self.etat, dtype=self.hparams['dtype'])
+            self.gl = torch.tensor(self.gl, dtype=self.hparams['dtype'])
+            self.gr = torch.tensor(self.gr, dtype=self.hparams['dtype']) 
+            self.u = torch.tensor(self.u, dtype=self.hparams['dtype'])             
+            dataset = torch.utils.data.TensorDataset(self.theta, self.f, self.etab, self.etat, self.gl, self.gr, self.u)
+            self.trainingset, self.validationset = random_split(dataset, [int(0.9*self.hparams['N_samples']), self.hparams['N_samples'] - int(0.9*self.hparams['N_samples'])])
+        if self.hparams['modeltype']=='model NGO' or self.hparams['modeltype']=='data NGO' or self.hparams['modeltype']=='matrix data NGO':
+            self.F = torch.tensor(self.F, dtype=self.hparams['dtype'])
+            self.d = torch.tensor(self.d, dtype=self.hparams['dtype'])
+            self.u = torch.tensor(self.u, dtype=self.hparams['dtype'])   
+            dataset = torch.utils.data.TensorDataset(self.F, self.d, self.u)
+            self.trainingset, self.validationset = random_split(dataset, [int(0.9*self.hparams['N_samples']), self.hparams['N_samples'] - int(0.9*self.hparams['N_samples'])])
 
     def train_dataloader(self):
-        return DataLoader(self.trainingset, batch_size=self.hyperparams['batch_size'], shuffle=False, num_workers=2, pin_memory=False)#, persistent_workers=False)#, prefetch_factor=2)
+        return DataLoader(self.trainingset, batch_size=self.hparams['batch_size'], shuffle=True, num_workers=0, pin_memory=False)
 
     def val_dataloader(self):
-        return DataLoader(self.validationset, batch_size=self.hyperparams['N_samples']-int(0.9*self.hyperparams['N_samples']), shuffle=False, num_workers=2, pin_memory=False)#, persistent_workers=False)#, prefetch_factor=2)
+        return DataLoader(self.validationset, batch_size=self.hparams['N_samples']-int(0.9*self.hparams['N_samples']), shuffle=False, num_workers=0, pin_memory=False)
