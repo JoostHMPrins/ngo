@@ -1,8 +1,9 @@
 import numpy as np
+import torch
 import opt_einsum
 
 import sys
-sys.path.insert(0,'../trainingdata')
+sys.path.insert(0,'/home/prins/st8/prins/phd/gitlab/ngo-pde-gk/trainingdata')
 from GRF import *
 
 
@@ -14,7 +15,7 @@ class Forcing:
     
     def forward(self, i):
         def function(x):
-            return -self.theta.forward(i)(x)*self.u.laplacian(i)(x) - np.sum(self.theta.grad(i)(x)*self.u.grad(i)(x), axis=-1)
+            return -self.theta.forward(i)(x)*self.u.laplacian(i)(x) - torch.sum(self.theta.grad(i)(x)*self.u.grad(i)(x), dim=-1)
         return function
     
     
@@ -44,8 +45,9 @@ class DirichletBC:
     
 
 class ManufacturedSolutionsSetDarcy:
-    def __init__(self, N_samples, d, l_min, l_max):
+    def __init__(self, N_samples, d, l_min, l_max, device):
         super().__init__()
+        self.device = device
         self.N_samples = N_samples #Number of samples
         self.d = d #Dimensionality of problem
         self.l_min = l_min #Minimum GRF length scale
@@ -70,13 +72,16 @@ class ManufacturedSolutionsSetDarcy:
         l_u = np.random.uniform(self.l_min/np.sqrt(2),self.l_max/np.sqrt(2), size=self.N_samples)
         c_u = np.random.uniform(0,1, size=self.N_samples)
         b_u = np.random.uniform(-1,1, size=self.N_samples)
+        #Neumann boundary normals
+        n_b = torch.tensor([0,-1], device=self.device, dtype=torch.float64)
+        n_t = torch.tensor([0,1], device=self.device, dtype=torch.float64)
         if self.l_min==self.l_max:
-            #Generate batches of GRFs
-            theta = ScaledGRF(N_samples=self.N_samples, d=self.d,l=self.l_min,c=c_theta,b=b_theta)
-            u = ScaledGRF(N_samples=self.N_samples, d=self.d,l=self.l_min,c=c_u,b=b_u)
+            #Generate batches of GRFs with the same length scale
+            theta = ScaledGRF(N_samples=self.N_samples, d=self.d,l=self.l_min,c=c_theta,b=b_theta, device=self.device)
+            u = ScaledGRF(N_samples=self.N_samples, d=self.d,l=self.l_min,c=c_u,b=b_u, device=self.device)
             f = Forcing(theta, u)
-            etab = NeumannBC(np.array([0,-1]), theta, u)
-            etat = NeumannBC(np.array([0,1]), theta, u)
+            etab = NeumannBC(n_b, theta, u)
+            etat = NeumannBC(n_t, theta, u)
             gl = DirichletBC(theta, u)
             gr = DirichletBC(theta, u)
             for i in range(self.N_samples):
@@ -90,12 +95,13 @@ class ManufacturedSolutionsSetDarcy:
                 grs.append(gr.forward(i))
         if self.l_min!=self.l_max:
             for i in range(self.N_samples):
+                print(i)
                 #Define functions
-                theta = ScaledGRF(N_samples=1, d=self.d, l=l_theta[i], c=[c_theta[i]], b=[b_theta[i]])
-                u = ScaledGRF(N_samples=1, d=self.d, l=l_u[i], c=[c_u[i]], b=[b_u[i]])
+                theta = ScaledGRF(N_samples=1, d=self.d, l=l_theta[i], c=[c_theta[i]], b=[b_theta[i]], device=self.device)
+                u = ScaledGRF(N_samples=1, d=self.d, l=l_u[i], c=[c_u[i]], b=[b_u[i]], device=self.device)
                 f = Forcing(theta, u)
-                etab = NeumannBC(np.array([0,-1]), theta, u)
-                etat = NeumannBC(np.array([0,1]), theta, u)
+                etab = NeumannBC(n_b, theta, u)
+                etat = NeumannBC(n_t, theta, u)
                 gl = DirichletBC(theta, u)
                 gr = DirichletBC(theta, u)
                 #Collect functions
