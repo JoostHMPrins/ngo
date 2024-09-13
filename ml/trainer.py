@@ -13,20 +13,14 @@ def train(model, datamodule, hparams, loaddir, logdir, sublogdir, label):
     #Initialize logger and checkpointer
     logger, checkpoint_callback = initialize_logger(logdir, sublogdir, label)
     
-    #Load params
-    # with open(loaddir + '/params.json', 'r') as fp:
-    #     params = json.load(fp)
-    params = {}
-    params['hparams'] = hparams
-    params['label'] = label
-    
     #Load data
-    data = datamodule(loaddir, params)
+    data = datamodule(loaddir, hparams)
 
     #Model
-    MLmodel = model(params)
+    MLmodel = model(hparams)
     MLmodel = MLmodel.to(hparams['dtype'])
-    
+    MLmodel.hparams['used_device'] = 'cuda:2'
+
     #Training
     start = time.time() 
     trainer = pl.Trainer(logger=logger, 

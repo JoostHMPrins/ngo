@@ -22,20 +22,24 @@ def weightedrelativeL2(w, u_hat, u):
     L2_norm = L22_norm**(1/2)
     return torch.mean(L2_diff/torch.maximum(L2_norm, 1e-7*torch.ones_like(L2_norm)))
 
-def frobeniusnorm(A_hat, A):
-    Frobenius = torch.norm(A_hat - A, dim=(-1,-2), p='fro')
+def matrixnorm(A_hat, A):
+    p = 'fro'
+    Frobenius = torch.norm(A_hat - A, dim=(-1,-2), p=p)
     return torch.mean(Frobenius)
 
-def relativefrobeniusnorm(A_hat, A):
-    Frobenius = torch.norm(A_hat - A, dim=(-1,-2), p='fro')
-    norm = torch.norm(A, dim=(-1,-2), p='fro')
+def relativematrixnorm(A_hat, A):
+    p = 'fro'
+    Frobenius = torch.norm(A_hat - A, dim=(-1,-2), p=p)
+    norm = torch.norm(A, dim=(-1,-2), p=p)
     return torch.mean(Frobenius/torch.maximum(norm, 1e-7*torch.ones_like(norm)))
 
-def relativevectorfrobeniusnorm(A_hat, A):
-    Frobenius = torch.norm(A_hat - A, dim=(-1), p='fro')
-    norm = torch.norm(A, dim=(-1), p='fro')
+def relativevectornorm(A_hat, A):
+    p = 'fro'
+    Frobenius = torch.norm(A_hat - A, dim=(-1), p=p)
+    norm = torch.norm(A, dim=(-1), p=p)
     return torch.mean(Frobenius/torch.maximum(norm, 1e-7*torch.ones_like(norm)))
 
-def vectorfrobeniusnorm(A_hat, A):
-    Frobenius = torch.norm(A_hat - A, dim=(-1), p='fro')
+def vectornorm(A_hat, A):
+    p = 'fro'
+    Frobenius = torch.norm(A_hat - A, dim=(-1), p=p)
     return torch.mean(Frobenius)
