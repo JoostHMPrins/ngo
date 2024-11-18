@@ -10,14 +10,14 @@ class GRF:
         self.N_samples = N_samples #Number of GRF samples
         self.d = d #Dimensionality of GRF
         self.l = l #Length scale of GRF
-        self.n_samples_per_l = 1 #Number of GRF sample locations per volume element 1/l^d
+        self.n_mus = int(np.ceil(max(10,1/self.l**self.d))) #Number of GRF sample locations per volume element 1/l^d
         self.mus = self.compute_mus()
         self.f_hat = self.compute_RBFintcoeffs()
         self.mus = torch.tensor(self.mus, device=self.device)
     
     #Sample n_samples_per_l/l^d random points on the unit square
     def compute_mus(self):
-        mus = np.random.uniform(0,1,size=(int(np.ceil(self.n_samples_per_l/self.l**self.d)), self.d))
+        mus = np.random.uniform(0,1,size=(self.n_mus,self.d))
         return mus
 
     #Compute Gaussian covariance matrix cov between points
@@ -27,7 +27,7 @@ class GRF:
     
     #Sample from a multivariate Gaussian with covariance cov
     def compute_GRFpoints(self, cov):
-        f = np.random.multivariate_normal(np.zeros(int(np.ceil(self.n_samples_per_l/self.l**self.d))), cov=cov, size=self.N_samples)
+        f = np.random.multivariate_normal(np.zeros(self.n_mus), cov=cov, size=self.N_samples)
         return f
     
     #Interpolate the GRF with Gaussian RBFs
