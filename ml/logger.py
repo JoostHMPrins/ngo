@@ -10,7 +10,7 @@ def initialize_logger(logdir, sublogdir, label):
         
     checkpoint_path = logdir + '/' + sublogdir + '/' + label
 
-    checkpoint_callback = ModelCheckpoint(dirpath=checkpoint_path, monitor='val_loss', mode='min', verbose=False, save_top_k=1)
+    checkpoint_callback = ModelCheckpoint(dirpath=checkpoint_path, monitor='val_loss', mode='min', verbose=False, every_n_epochs=1, save_top_k=1)
     logger = TensorBoardLogger(logdir, name=sublogdir, version=label)
 
     return logger, checkpoint_callback
