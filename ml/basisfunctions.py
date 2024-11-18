@@ -147,6 +147,59 @@ class ChebyshevTBasis1D:
 # basis_1d.plot_1d_bspline_basis_gradients()
 
 
+class SincBasis1D:
+    def __init__(self, h):
+        self.h = h
+        self.Dx = 1/(h-1)
+        self.grid = np.linspace(0,1,self.h)
+    
+    def forward(self, x):
+        x_scaled = np.pi*(x[:,None] - self.grid[None,:])/self.Dx
+        basis_values = np.sin(x_scaled)/x_scaled
+        return basis_values
+    
+    def grad(self, x):
+        x_scaled = np.pi*(x[:,None] - self.grid[None,:])/self.Dx
+        basis_gradients = np.cos(x_scaled)/x_scaled - np.sin(x_scaled)/x_scaled**2
+        return basis_gradients
+
+    def plot_1d_basis(self):
+        resolution = 1000
+        x_values = np.linspace(0, 1, resolution)  # Adjusted range for x_values
+        basis_matrix = self.forward(x_values)
+        plt.figure(figsize=(8, 6))
+        for i in range(self.h):
+            plt.plot(x_values, basis_matrix[:,i], label=f'Basis {i}')
+        plt.title(f'1D Basis Functions')
+        plt.xlabel('x')
+        plt.ylabel('Basis Values')
+        plt.legend()
+        plt.grid(True)
+        # plt.savefig("BSpline1D.svg", bbox_inches='tight', transparent=True)
+        plt.show()
+        
+    def plot_1d_basis_gradients(self):
+        """
+        Plot the gradients of the 1D B-spline basis functions for a specified dimension.
+
+        Args:
+        dim_idx (int): Index of the dimension for which to plot the basis function gradients.
+        """
+        resolution = 1000
+        x_values = np.linspace(0, 1, resolution)  # Use full knot span for x_values
+        basis_gradients_matrix = self.grad(x_values)
+        plt.figure(figsize=(8, 6))
+        for i in range(self.h):
+            plt.plot(x_values, basis_gradients_matrix[:, i], label=f'Gradient {i}')
+        plt.title(f'Gradients of 1D Basis Functions')
+        plt.xlabel('x')
+        plt.ylabel('Gradient Values')
+        plt.legend()
+        plt.grid(True)
+        # plt.savefig("BSplinegrad1D.svg", bbox_inches='tight', transparent=True)
+        plt.show()
+
+
 class TensorizedBasis:
     def __init__(self, bases):
         self.bases = bases
