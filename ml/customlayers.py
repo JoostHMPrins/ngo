@@ -48,8 +48,8 @@ def sort_matrices(matrices):
     """
     batch_size, n, _ = matrices.shape
     # Compute the L2 norm for rows and columns
-    row_norms = torch.norm(matrices, dim=2, p=2)  # shape: (batch_size, n)
-    col_norms = torch.norm(matrices, dim=1, p=2)  # shape: (batch_size, n)
+    row_norms = torch.norm(matrices, dim=2, p=np.inf)  # shape: (batch_size, n)
+    col_norms = torch.norm(matrices, dim=1, p=np.inf)  # shape: (batch_size, n)
     # Sort indices by decreasing L2 norm
     row_sorted_indices = torch.argsort(row_norms, dim=1, descending=True)  # shape: (batch_size, n)
     col_sorted_indices = torch.argsort(col_norms, dim=1, descending=True)  # shape: (batch_size, n)
