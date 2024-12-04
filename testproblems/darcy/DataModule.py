@@ -8,17 +8,18 @@ from numba import jit
 import opt_einsum
 
 from NeuralOperator import NeuralOperator
-from darcy_mfs import *
+from darcy_ms import *
 
 import sys
 sys.path.insert(0, '../../ml') 
 from quadrature import *
+from basisfunctions import *
 
 sys.path.insert(0, '../../trainingdata')
 from datasaver import load_function_list
 
 
-class DataModule_Darcy_MS(pl.LightningDataModule):
+class DataModule(pl.LightningDataModule):
 
     def __init__(self, data_dir, hparams):
         super().__init__()
@@ -39,7 +40,7 @@ class DataModule_Darcy_MS(pl.LightningDataModule):
         else:
             # Generate input and output functions
             print('Generating functions...')
-            dataset = ManufacturedSolutionsSetDarcy(N_samples=self.N_samples, d=self.hparams['d'], l_min=self.hparams['l_min'], l_max=self.hparams['l_max'], device=self.device)
+            dataset = ManufacturedSolutionsSetDarcy(N_samples=self.N_samples, variables=self.hparams['variables'], l_min=self.hparams['l_min'], l_max=self.hparams['l_max'], device=self.device)
             theta = dataset.theta
             f = dataset.f
             etab = dataset.etab
@@ -66,12 +67,16 @@ class DataModule_Darcy_MS(pl.LightningDataModule):
             self.gr = torch.tensor(self.gr, dtype=self.hparams['dtype']) 
             self.u = torch.tensor(self.u, dtype=self.hparams['dtype'])             
             dataset = torch.utils.data.TensorDataset(self.theta, self.f, self.etab, self.etat, self.gl, self.gr, self.u)
+            # self.trainingset = torch.utils.data.TensorDataset(self.theta[:self.hparams['N_samples_train']], self.f[:self.hparams['N_samples_train']], self.etab[:self.hparams['N_samples_train']], self.etat[:self.hparams['N_samples_train']], self.gl[:self.hparams['N_samples_train']], self.gr[:self.hparams['N_samples_train']], self.u[:self.hparams['N_samples_train']])
+            # self.validationset = torch.utils.data.TensorDataset(self.theta[self.hparams['N_samples_train']:], self.f[self.hparams['N_samples_train']:], self.etab[self.hparams['N_samples_train']:], self.etat[self.hparams['N_samples_train']:], self.gl[self.hparams['N_samples_train']:], self.gr[self.hparams['N_samples_train']:], self.u[self.hparams['N_samples_train']:])
         if self.hparams['modeltype']=='model NGO' or self.hparams['modeltype']=='data NGO' or self.hparams['modeltype']=='matrix data NGO':
             self.theta_bar = torch.tensor(self.theta_bar, dtype=self.hparams['dtype'])            
             self.F = torch.tensor(self.F, dtype=self.hparams['dtype'])
             self.d = torch.tensor(self.d, dtype=self.hparams['dtype'])
             self.u = torch.tensor(self.u, dtype=self.hparams['dtype'])   
             dataset = torch.utils.data.TensorDataset(self.theta_bar, self.F, self.d, self.u)
+            # self.trainingset = torch.utils.data.TensorDataset(self.theta_bar[:self.hparams['N_samples_train']], self.F[:self.hparams['N_samples_train']], self.d[:self.hparams['N_samples_train']], self.u[:self.hparams['N_samples_train']])
+            # self.validationset = torch.utils.data.TensorDataset(self.theta_bar[self.hparams['N_samples_train']:], self.F[self.hparams['N_samples_train']:], self.d[self.hparams['N_samples_train']:], self.u[self.hparams['N_samples_train']:])
         self.trainingset, self.validationset = random_split(dataset, [self.hparams['N_samples_train'], self.hparams['N_samples_val']])
 
     def train_dataloader(self):

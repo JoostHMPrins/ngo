@@ -23,22 +23,23 @@ from basisfunctions import *
 import sys
 sys.path.insert(0, '../testproblems/darcy')
 from NeuralOperator import NeuralOperator
-from DataModule import *
+from DataModule import DataModule
 
 #Training data
 hparams = {}
-hparams['N_samples_train'] = 10000
+hparams['N_samples_train'] = int(args.arg)
 hparams['N_samples_val'] = 1000
 hparams['d'] = 2
-hparams['l_min'] = 0.5
-hparams['l_max'] = 1
+hparams['variables'] = ['x','x']
+hparams['l_min'] = [0.5,0.5]
+hparams['l_max'] = [1,1]
 loaddir = None #'../../../trainingdata/darcy_mfs_l1e-2to1e0'
 
 #Training settings
 hparams['dtype'] = torch.float32
 hparams['precision'] = 32
-hparams['devices'] = [1]
-hparams['used_device'] = 'cuda:1'
+hparams['devices'] = [0]
+hparams['used_device'] = 'cuda:0'
 hparams['solution_loss'] = weightedrelativeL2
 hparams['matrix_loss'] = None #relativematrixnorm
 hparams['metric'] = weightedrelativeL2
@@ -47,7 +48,7 @@ hparams['optimizer2'] = torch.optim.LBFGS
 hparams['switch_threshold'] = None
 hparams['learning_rate'] = 1e-3
 hparams['batch_size'] = 100
-hparams['epochs'] = 20000
+hparams['epochs'] = int(20000*10000/int(args.arg))
 
 #Bases
 hparams['h'] = [10,10]
@@ -58,37 +59,45 @@ hparams['test_bases'] = [BSplineBasis1D(h=hparams['h'][0], p=hparams['p'], C=hpa
 hparams['trial_bases'] = [BSplineBasis1D(h=hparams['h'][0], p=hparams['p'], C=hparams['C']), BSplineBasis1D(h=hparams['h'][1], p=hparams['p'], C=hparams['C'])]
 # hparams['test_bases'] = [ChebyshevTBasis1D(h=hparams['h'][0]), ChebyshevTBasis1D(h=hparams['h'][1])]
 # hparams['trial_bases'] = [ChebyshevTBasis1D(h=hparams['h'][0]), ChebyshevTBasis1D(h=hparams['h'][1])]
+# hparams['test_bases'] = [SincBasis1D(h=hparams['h'][0]), SincBasis1D(h=hparams['h'][1])]
+# hparams['trial_bases'] = [SincBasis1D(h=hparams['h'][0]), SincBasis1D(h=hparams['h'][1])]
+hparams['POD'] = False
 
 #Quadrature
 hparams['quadrature'] = 'Gauss-Legendre'
-hparams['n_elements'] = 3 #max(int((hparams['h'][0] - 1)/hparams['p']), 1)
-hparams['Q'] = 99 #33*hparams['n_elements']
+hparams['n_elements'] = max(int((hparams['h'][0] - 1)/hparams['p']), 1)
+hparams['Q'] = 33*hparams['n_elements']
 hparams['quadrature_L'] = 'uniform'
 hparams['n_elements_L'] = 1 #max(int((hparams['h'][0] - 1)/hparams['p']), 1)
-hparams['Q_L'] = 100 #33*hparams['n_elements_L']
-
+hparams['Q_L'] = 100
 #System net'
 hparams['modeltype'] = 'data NGO'
 hparams['systemnet'] = CNN
+# hparams['input_shape'] = (1,hparams['N'],hparams['N'])
 hparams['input_shape'] = (1,hparams['h'][0],hparams['h'][1])
 hparams['output_shape'] = (hparams['N'],hparams['N'])
-hparams['N_w'] = int(args.arg)
+hparams['N_w'] = 30000
 hparams['A0net'] = None
-hparams['Neumannseries'] = False #True
-hparams['Neumannseries_order'] = None #1
+hparams['Neumannseries'] = False
+hparams['Neumannseries_order'] = None
 hparams['skipconnections'] = True
+# hparams['kernel_sizes'] = [2,2,int(hparams['h'][0]/2),int(hparams['h'][0]/2),int(hparams['h'][0]/2),int(hparams['h'][0]/2),2,2]
+# hparams['kernel_sizes'] = [1,1,2,int(hparams['h'][0]/2),int(hparams['h'][0]/2),2,1,int(hparams['h'][0])]
+# hparams['kernel_sizes'] = [2,2,5,5,5,5,2,2]
 hparams['kernel_sizes'] = [1,1,2,5,5,2,1,10]
 hparams['gamma_stabilization'] = 0
 hparams['bottleneck_size'] = 20
-hparams['outputactivation'] = None #nn.Tanhshrink()
+hparams['outputactivation'] = None
 
 #Symmetries
 hparams['scaling_equivariance'] = True
 hparams['permutation_equivariance'] = False
 
 logdir = '../../../nnlogs'
-sublogdir = 'N_w_models/dataNGO'
+sublogdir = 'N_samples/dataNGO'
 # sublogdir = 'test'
+# hparams['N_samples_train'] = 1
+# hparams['N_samples_val'] = 1
 label = str(args.arg)
 hparams['label'] = label
 

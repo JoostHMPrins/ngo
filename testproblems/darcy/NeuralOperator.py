@@ -29,11 +29,17 @@ class NeuralOperator(pl.LightningModule):
         self.hparams['N_w_real'] = sum(p.numel() for p in self.parameters())
         #System net
         self.systemnet = self.hparams['systemnet'](self.hparams)
-        #Bases
-        self.basis_test = TensorizedBasis(self.hparams['test_bases'])
-        self.basis_trial = TensorizedBasis(self.hparams['trial_bases'])
         #Geometry and quadrature
         self.geometry()
+        #Bases
+        if self.hparams.get('POD',False)==False:
+            self.basis_test = TensorizedBasis(self.hparams['test_bases']) 
+            self.basis_trial = TensorizedBasis(self.hparams['trial_bases'])
+        if self.hparams.get('POD',False)==True:
+            self.basis_test = BSplineInterpolatedPOD2D(N_samples=self.hparams['N_samples_train'], d=self.hparams['d'], l_min=self.hparams['l_min'], l_max=self.hparams['l_max'], w=self.w_Omega, xi=self.xi_Omega, N=self.hparams['N'], device=self.used_device)
+            self.basis_trial = BSplineInterpolatedPOD2D(N_samples=self.hparams['N_samples_train'], d=self.hparams['d'], l_min=self.hparams['l_min'], l_max=self.hparams['l_max'], w=self.w_Omega, xi=self.xi_Omega, N=self.hparams['N'], device=self.used_device)
+        #Basis evaluation at quadrature points
+        self.psix = torch.tensor(self.basis_trial.forward(self.xi_Omega_L.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
         #A_0 (K inverse for constant theta)
         if self.hparams['Neumannseries']==True:
             self.F_0, self.A_0 = self.compute_F_0_A_0()
@@ -276,7 +282,49 @@ class NeuralOperator(pl.LightningModule):
         self.w_Gamma_r =torch.tensor( quadrature.w_Gamma_r, dtype=self.hparams['dtype'], device=self.used_device)
         self.w_Gamma_eta = torch.tensor(quadrature.w_Gamma_eta, dtype=self.hparams['dtype'], device=self.used_device)
         self.w_Gamma_g = torch.tensor(quadrature.w_Gamma_g, dtype=self.hparams['dtype'], device=self.used_device)
+        # if self.hparams['quadrature']=='Gauss-Legendre':
+            # Q = np.array(self.hparams['Q'])
+            # n_elements = np.array(self.hparams['n_elements'])
+            # Q_per_element = Q/n_elements
+            # quad_Omega = GaussLegendreQuadrature(Q=[int(Q_per_element[0]),int(Q_per_element[1])], n_elements=n_elements)
+            # quad_Gamma_x = GaussLegendreQuadrature(Q=[int(Q[1]/n_elements[1])], n_elements=[n_elements[1]])
+            # quad_Gamma_y = GaussLegendreQuadrature(Q=[int(Q[0]/n_elements[0])], n_elements=[n_elements[0]])
+            # self.w_Omega = quad_Omega.w
+            # self.xi_Omega = quad_Omega.xi
+            # self.w_Gamma_b = quad_Gamma_y.w
+            # self.xi_Gamma_b = np.zeros((Q[0],self.hparams['d']))
+            # self.xi_Gamma_b[:,0] = quad_Gamma_y.xi[:,0]
+            # self.w_Gamma_t = quad_Gamma_y.w
+            # self.xi_Gamma_t = np.ones((Q[0],self.hparams['d']))
+            # self.xi_Gamma_t[:,0] = quad_Gamma_y.xi[:,0]
+            # self.w_Gamma_l = quad_Gamma_x.w
+            # self.xi_Gamma_l = np.zeros((Q[1],self.hparams['d']))
+            # self.xi_Gamma_l[:,1] = quad_Gamma_x.xi[:,0]
+            # self.w_Gamma_r = quad_Gamma_x.w
+            # self.xi_Gamma_r = np.ones((Q[1],self.hparams['d']))
+            # self.xi_Gamma_r[:,1] = quad_Gamma_x.xi[:,0]
+            # self.w_Gamma_eta = np.append(self.w_Gamma_b, self.w_Gamma_t, axis=0)
+            # self.xi_Gamma_eta = np.append(self.xi_Gamma_b, self.xi_Gamma_t, axis=0)
+            # self.w_Gamma_g = np.append(self.w_Gamma_l, self.w_Gamma_r, axis=0)
+            # self.xi_Gamma_g = np.append(self.xi_Gamma_l, self.xi_Gamma_r, axis=0)
+            # self.xi_Omega = torch.tensor(self.xi_Omega, dtype=self.hparams['dtype'], device=self.used_device)
+            # self.xi_Gamma_b = torch.tensor(self.xi_Gamma_b, dtype=self.hparams['dtype'], device=self.used_device)
+            # self.xi_Gamma_t = torch.tensor(self.xi_Gamma_t, dtype=self.hparams['dtype'], device=self.used_device)
+            # self.xi_Gamma_l = torch.tensor(self.xi_Gamma_l, dtype=self.hparams['dtype'], device=self.used_device)
+            # self.xi_Gamma_r = torch.tensor(self.xi_Gamma_r, dtype=self.hparams['dtype'], device=self.used_device)
+            # self.xi_Gamma_eta = torch.tensor(self.xi_Gamma_eta, dtype=self.hparams['dtype'], device=self.used_device)
+            # self.xi_Gamma_g = torch.tensor(self.xi_Gamma_g, dtype=self.hparams['dtype'], device=self.used_device)
+            # self.w_Omega = torch.tensor(self.w_Omega, dtype=self.hparams['dtype'], device=self.used_device)
+            # self.w_Gamma_b = torch.tensor(self.w_Gamma_b, dtype=self.hparams['dtype'], device=self.used_device)
+            # self.w_Gamma_t = torch.tensor(self.w_Gamma_t, dtype=self.hparams['dtype'], device=self.used_device)
+            # self.w_Gamma_l = torch.tensor(self.w_Gamma_l, dtype=self.hparams['dtype'], device=self.used_device)
+            # self.w_Gamma_r =torch.tensor( self.w_Gamma_r, dtype=self.hparams['dtype'], device=self.used_device)
+            # self.w_Gamma_eta = torch.tensor(self.w_Gamma_eta, dtype=self.hparams['dtype'], device=self.used_device)
+            # self.w_Gamma_g = torch.tensor(self.w_Gamma_g, dtype=self.hparams['dtype'], device=self.used_device)
+
         #Outward normal
+        # if self.hparams['Q'][0]!=self.hparams['Q'][1]:
+        #     raise ValueError
         outwardnormal = UnitSquareOutwardNormal(Q=self.hparams['Q'])
         self.n_b = torch.tensor(outwardnormal.n_b, dtype=self.hparams['dtype'], device=self.used_device)
         self.n_t = torch.tensor(outwardnormal.n_t, dtype=self.hparams['dtype'], device=self.used_device)
@@ -291,8 +339,6 @@ class NeuralOperator(pl.LightningModule):
             quadrature_L = GaussLegendreQuadrature2D(Q=self.hparams['Q_L'], n_elements=self.hparams['n_elements_L'])
         self.xi_Omega_L = torch.tensor(quadrature_L.xi_Omega, dtype=self.hparams['dtype'], device=self.used_device)
         self.w_Omega_L = torch.tensor(quadrature_L.w_Omega, dtype=self.hparams['dtype'], device=self.used_device)
-        #Basis evaluation at quadrature points
-        self.psix = torch.tensor(self.basis_trial.forward(self.xi_Omega_L.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
 
     def configure_optimizers(self):
         self.metric = [1]
