@@ -4,6 +4,86 @@ import torch.nn.functional as F
 import numpy as np
 
 
+class ConvNd(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size, stride, bias, padding=0, dilation=1):
+        """
+        Generalized N-dimensional convolution module.
+
+        Args:
+            in_channels (int): Number of input channels.
+            out_channels (int): Number of output channels.
+            kernel_size (int or tuple): Size of the convolving kernel.
+            stride (int or tuple, optional): Stride of the convolution. Default: 1.
+            padding (int or tuple, optional): Zero-padding added to all sides. Default: 0.
+            dilation (int or tuple, optional): Spacing between kernel elements. Default: 1.
+            bias (bool, optional): If True, adds a learnable bias to the output. Default: True.
+        """
+        super().__init__()
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+
+        # Ensure kernel_size, stride, padding, and dilation are tuples matching spatial dimensions
+        self.kernel_size = kernel_size if isinstance(kernel_size, tuple) else (kernel_size,)
+        self.stride = stride if isinstance(stride, tuple) else (stride,) * len(self.kernel_size)
+        self.padding = padding if isinstance(padding, tuple) else (padding,) * len(self.kernel_size)
+        self.dilation = dilation if isinstance(dilation, tuple) else (dilation,) * len(self.kernel_size)
+
+        # Initialize weights and bias
+        self.weight = nn.Parameter(
+            torch.randn(out_channels, in_channels, *self.kernel_size)
+        )
+        if bias:
+            self.bias = nn.Parameter(torch.randn(out_channels))
+        else:
+            self.register_parameter("bias", None)
+
+    def forward(self, x):
+        """
+        Forward pass for the generalized N-dimensional convolution.
+
+        Args:
+            x (torch.Tensor): Input tensor of shape (batch_size, in_channels, *spatial_dims).
+
+        Returns:
+            torch.Tensor: Output tensor of shape (batch_size, out_channels, *spatial_dims_out).
+        """
+        batch_size, in_channels, *spatial_dims = x.shape
+        ndim = len(spatial_dims)
+
+        # Adjust padding, stride, and dilation to match the number of dimensions
+        assert len(self.kernel_size) == ndim, "Kernel size dimensions must match input dimensions"
+
+        # Pad the input tensor
+        pad = [(p, p) for p in reversed(self.padding)]  # Reverse to get correct padding order
+        pad = [item for sublist in pad for item in sublist]  # Flatten padding list
+        x_padded = torch.nn.functional.pad(x, pad, mode='constant', value=0)
+
+        # Compute output spatial dimensions
+        out_dims = [
+            (spatial_dims[i] + 2 * self.padding[i] - self.dilation[i] * (self.kernel_size[i] - 1) - 1) // self.stride[i] + 1
+            for i in range(ndim)
+        ]
+
+        # Extract patches using unfold (this is done sequentially for each spatial dimension)
+        patches = x_padded.unfold(2, self.kernel_size[0], self.stride[0])
+        for i in range(1, ndim):
+            patches = patches.unfold(2 + i, self.kernel_size[i], self.stride[i])
+
+        # Reshape patches to prepare for convolution
+        patches = patches.contiguous().view(batch_size, in_channels, -1, *out_dims)
+
+        # Perform convolution via einsum
+        weight_shape = self.weight.shape
+        weight = self.weight.view(self.out_channels, self.in_channels, -1)
+        out = torch.einsum("bci...,oci->bo...", patches, weight)
+
+        # Add bias if applicable
+        if self.bias is not None:
+            out += self.bias.view(1, -1, *[1] * ndim)
+
+        return out
+
+
 def balance_num_trainable_params(model, N_w):
     model.free_parameter = 1
     N_w_real_0 = model.hparams['N_w_real']
