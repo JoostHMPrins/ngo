@@ -2,6 +2,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 import opt_einsum
 from scipy.interpolate import BSpline
+import torch
+
+from customlayers import discretize_functions
+
+# import sys
+# sys.path.insert(0, '../testproblems/darcy')
+# from darcy_ms import ManufacturedSolutionsSetDarcy
 
 class BSplineBasis1D:
     def __init__(self, h, p, C):
@@ -152,15 +159,32 @@ class SincBasis1D:
         self.h = h
         self.Dx = 1/(h-1)
         self.grid = np.linspace(0,1,self.h)
+        self.tol = 1e-7
+
+    def sinc(self, x):
+        output = np.sin(x)/x
+        # output[np.abs(x)<self.tol] = 1
+        output[x==0] = 1
+        return output
+    
+    def dsincdx(self, x):
+        output = np.cos(x)/x - np.sin(x)/x**2
+        # output[np.abs(x)<self.tol] = 0
+        output[x==0] = 1
+        return output
     
     def forward(self, x):
-        x_scaled = np.pi*(x[:,None] - self.grid[None,:])/self.Dx
-        basis_values = np.sin(x_scaled)/x_scaled
+        basis_values = np.zeros((x.shape[0],self.h))
+        for n in range(self.h):
+            x_scaled = np.pi*(x - self.grid[n])/self.Dx
+            basis_values[:, n] = self.sinc(x_scaled)
         return basis_values
     
     def grad(self, x):
-        x_scaled = np.pi*(x[:,None] - self.grid[None,:])/self.Dx
-        basis_gradients = np.cos(x_scaled)/x_scaled - np.sin(x_scaled)/x_scaled**2
+        basis_gradients = np.zeros((x.shape[0],self.h))
+        for n in range(self.h):
+            x_scaled = np.pi*(x - self.grid[n])/self.Dx
+            basis_gradients[:, n] = np.pi/self.Dx*self.dsincdx(x_scaled)
         return basis_gradients
 
     def plot_1d_basis(self):
@@ -301,45 +325,55 @@ class BSplineInterpolator2D:
         gradpsi = self.basis_2d.grad(x)
         output = opt_einsum.contract('n,Nni->Ni', self.coeffs, gradpsi)
         return output
-
+    
 
 class BSplineInterpolatedPOD2D:
-    def __init__(self, x_data, u_data, h, knots_x, knots_y, polynomial_order):
-        self.basis_2d = BSplineBasis2D(knots_x, knots_y, polynomial_order)
-        self.h = self.basis_2d.basis_1d_x.h
-        self.p = self.basis_2d.p
-        # self.PODbasis = self.compute_PODbasis(u_data, h)
-        # self.PODcoeffs = self.compute_PODcoeffs(x_data, u_data, h, knots_x, knots_y, polynomial_order)
-        self.PODcoeffs = np.load('../../../trainingdata/PODcoeffs.npy')
-        # self.errors = self.compute_projection_errors(x_data)
+    def __init__(self, N_samples, variables, l_min, l_max, w, xi, N, device):
+        self.basis_1d = BSplineBasis1D(h=31,p=3,C=2)
+        self.bsplinebasis = TensorizedBasis([self.basis_1d,self.basis_1d])
+        self.N = N
+        self.w = w
+        self.xi = xi
+        self.u = ManufacturedSolutionsSetDarcy(N_samples=N_samples, variables=variables, l_min=l_min, l_max=l_max, device=device).u
+        self.u_q = discretize_functions(self.u, torch.tensor(self.xi, device=device), device).detach().cpu().numpy()
+        self.device = device
+        # self.PODbasis = self.compute_PODbasis(self.u_q, self.N)
+        # self.PODcoeffs = self.compute_PODcoeffs(self.u_q, self.N)
+        self.PODcoeffs = np.load('../../../trainingdata/PODcoeffs.npy')[:self.N]
+        # self.errors = self.compute_projection_errors()
         
-    def compute_PODbasis(self, u_data, h):
-        U, self.singularvalues, Vstar = np.linalg.svd(u_data.T, full_matrices=False)
+    def compute_PODbasis(self, u_q, N):
+        U, self.singularvalues, Vstar = np.linalg.svd(u_q.T, full_matrices=False)
         PODbasis = U.T
-        PODbasis_truncated = PODbasis[:h]
-        return PODbasis_truncated
+        PODbasis = PODbasis
+        return PODbasis
     
-    def compute_PODcoeffs(self, x_data, u_data, h, knots_x, knots_y, polynomial_order):
-        PODbasis = self.compute_PODbasis(u_data, h)
-        PODcoeffs = []
-        for i in range(len(PODbasis)):
-            interpolator = BSplineInterpolator2D(x_data, PODbasis[i], knots_x, knots_y, polynomial_order)
-            PODcoeffs.append(interpolator.compute_coeffs(x_data, PODbasis[i]))
-        PODcoeffs = np.array(PODcoeffs)
-        np.save('../../../PODcoeffs.npy', PODcoeffs)
+    def compute_PODcoeffs(self, u_q, N):
+        PODbasis_d = self.compute_PODbasis(u_q, N)
+        bsplinebasis_d = self.bsplinebasis.forward(self.xi)
+        d = opt_einsum.contract('q,nq,ql->nl', self.w, PODbasis_d, bsplinebasis_d)
+        M = opt_einsum.contract('q,ql,qm->lm', self.w, bsplinebasis_d, bsplinebasis_d)
+        M_inv = np.linalg.inv(M)
+        PODcoeffs = opt_einsum.contract('lm,nl->nm',M_inv, d)
+        np.save('../../../trainingdata/PODcoeffs.npy', PODcoeffs)
         return PODcoeffs
         
     def forward(self, x):
-        psi = self.basis_2d.forward(x)
+        psi = self.bsplinebasis.forward(x)
         output = opt_einsum.contract('nm,Nm->Nn', self.PODcoeffs, psi)
         return output
     
     def grad(self, x):
-        gradpsi = self.basis_2d.grad(x)
+        gradpsi = self.bsplinebasis.grad(x)
         output = opt_einsum.contract('nm,Nmi->Nni', self.PODcoeffs, gradpsi)
         return output
     
-    def compute_projection_errors(self, x_data):
-        PODbasis_int = self.forward(x_data)
-        errors = np.linalg.norm(PODbasis_int.T - self.PODbasis, ord=2, axis=-1)/np.linalg.norm(self.PODbasis, ord=2, axis=-1)
-        return errors
+    def compute_projection_errors(self):
+        pi = self.PODbasis
+        pi_proj = self.forward(self.xi).T
+        L22_diff = np.sum(self.w*(pi - pi_proj)**2, axis=-1)
+        L2_diff = L22_diff**(1/2)
+        L22_norm = np.sum(self.w*(pi)**2, axis=-1)
+        L2_norm = L22_norm**(1/2)
+        L2_scaled_array = L2_diff/np.maximum(L2_norm, 1e-7*np.ones_like(L2_norm))
+        return L2_scaled_array
