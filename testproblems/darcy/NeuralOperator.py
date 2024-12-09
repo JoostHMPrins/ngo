@@ -36,8 +36,8 @@ class NeuralOperator(pl.LightningModule):
             self.basis_test = TensorizedBasis(self.hparams['test_bases']) 
             self.basis_trial = TensorizedBasis(self.hparams['trial_bases'])
         if self.hparams.get('POD',False)==True:
-            self.basis_test = BSplineInterpolatedPOD2D(N_samples=self.hparams['N_samples_train'], d=self.hparams['d'], l_min=self.hparams['l_min'], l_max=self.hparams['l_max'], w=self.w_Omega, xi=self.xi_Omega, N=self.hparams['N'], device=self.used_device)
-            self.basis_trial = BSplineInterpolatedPOD2D(N_samples=self.hparams['N_samples_train'], d=self.hparams['d'], l_min=self.hparams['l_min'], l_max=self.hparams['l_max'], w=self.w_Omega, xi=self.xi_Omega, N=self.hparams['N'], device=self.used_device)
+            self.basis_test = BSplineInterpolatedPOD2D(N_samples=self.hparams['N_samples_train'], variables=hparams['variables'], l_min=self.hparams['l_min'], l_max=self.hparams['l_max'], w=self.w_Omega, xi=self.xi_Omega, N=self.hparams['N'], device=self.used_device)
+            self.basis_trial = BSplineInterpolatedPOD2D(N_samples=self.hparams['N_samples_train'], variables=hparams['variables'], l_min=self.hparams['l_min'], l_max=self.hparams['l_max'], w=self.w_Omega, xi=self.xi_Omega, N=self.hparams['N'], device=self.used_device)
         #Basis evaluation at quadrature points
         self.psix = torch.tensor(self.basis_trial.forward(self.xi_Omega_L.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
         #A_0 (K inverse for constant theta)
@@ -61,68 +61,98 @@ class NeuralOperator(pl.LightningModule):
         u_d = discretize_functions(u, self.xi_Omega_L, device=self.used_device)
         return u_d
 
+    # def compute_F(self, theta, theta_g):
+    #     if  self.hparams['modeltype']=='data NGO':
+    #         basis_test = self.basis_test.forward(self.xi_Omega.cpu().numpy())
+    #         F = opt_einsum.contract('q,qm,Nq->Nm', self.w_Omega.cpu().numpy(), basis_test, theta.cpu().numpy()).reshape((theta.shape[0],self.hparams['h'][0],self.hparams['h'][1]))
+    #     if  self.hparams['modeltype']=='matrix data NGO':
+    #         basis_test = self.basis_test.forward(self.xi_Omega.cpu().numpy())
+    #         basis_trial = self.basis_trial.forward(self.xi_Omega.cpu().numpy())
+    #         F = opt_einsum.contract('q,Nq,qm,qn->Nmn', self.w_Omega.cpu().numpy(), theta.cpu().numpy(), basis_test, basis_trial)
+    #     if  self.hparams['modeltype']=='model NGO' or self.hparams['modeltype']=='FEM':
+    #         gradbasis_test = self.basis_test.grad(self.xi_Omega.cpu().numpy())
+    #         gradbasis_trial = self.basis_trial.grad(self.xi_Omega.cpu().numpy())
+    #         basis_test_g = self.basis_test.forward(self.xi_Gamma_g.cpu().numpy())
+    #         gradbasis_test_g = self.basis_test.grad(self.xi_Gamma_g.cpu().numpy())
+    #         basis_trial_g = self.basis_trial.forward(self.xi_Gamma_g.cpu().numpy())
+    #         gradbasis_trial_g = self.basis_trial.grad(self.xi_Gamma_g.cpu().numpy())
+    #         F = opt_einsum.contract('q,Nq,qmx,qnx->Nmn', self.w_Omega.cpu().numpy(), theta.cpu().numpy(), gradbasis_test, gradbasis_trial)
+    #         F += -opt_einsum.contract('q,qm,qx,Nq,qnx->Nmn', self.w_Gamma_g.cpu().numpy(), basis_test_g, self.n_Gamma_g.cpu().numpy(), theta_g.cpu().numpy(), gradbasis_trial_g)
+    #         F += -opt_einsum.contract('q,qn,qx,Nq,qmx->Nmn', self.w_Gamma_g.cpu().numpy(), basis_trial_g, self.n_Gamma_g.cpu().numpy(), theta_g.cpu().numpy(), gradbasis_test_g)
+    #     if self.hparams.get('gamma_stabilization',0)!=0:
+    #         F += self.hparams['gamma_stabilization']*opt_einsum.contract('q,qm,Nq,qn->Nmn', self.w_Gamma_g.cpu().numpy(), basis_test_g, theta_g.cpu().numpy(), basis_trial_g)
+    #     return F
+
     def compute_F(self, theta, theta_g):
         if  self.hparams['modeltype']=='data NGO':
-            basis_test = self.basis_test.forward(self.xi_Omega.cpu().numpy())
-            F = opt_einsum.contract('q,qm,Nq->Nm', self.w_Omega.cpu().numpy(), basis_test, theta.cpu().numpy()).reshape((theta.shape[0],self.hparams['h'][0],self.hparams['h'][1]))
+            basis_test = torch.tensor(self.basis_test.forward(self.xi_Omega.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
+            F = torch.zeros((theta.shape[0],self.hparams['N']), dtype=self.hparams['dtype'], device=self.used_device)
+            for i in range(theta.shape[0]):
+                F[i] = opt_einsum.contract('q,qm,q->m', self.w_Omega, basis_test, theta[i])
+            F = F.reshape((theta.shape[0],self.hparams['h'][0],self.hparams['h'][1]))
         if  self.hparams['modeltype']=='matrix data NGO':
-            basis_test = self.basis_test.forward(self.xi_Omega.cpu().numpy())
-            basis_trial = self.basis_trial.forward(self.xi_Omega.cpu().numpy())
-            F = opt_einsum.contract('q,Nq,qm,qn->Nmn', self.w_Omega.cpu().numpy(), theta.cpu().numpy(), basis_test, basis_trial)
+            basis_test = torch.tensor(self.basis_test.forward(self.xi_Omega.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
+            basis_trial = torch.tensor(self.basis_trial.forward(self.xi_Omega.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
+            F = opt_einsum.contract('q,q,qm,qn->mn', self.w_Omega, theta, basis_test, basis_trial)
         if  self.hparams['modeltype']=='model NGO' or self.hparams['modeltype']=='FEM':
-            gradbasis_test = self.basis_test.grad(self.xi_Omega.cpu().numpy())
-            gradbasis_trial = self.basis_trial.grad(self.xi_Omega.cpu().numpy())
-            basis_test_g = self.basis_test.forward(self.xi_Gamma_g.cpu().numpy())
-            gradbasis_test_g = self.basis_test.grad(self.xi_Gamma_g.cpu().numpy())
-            basis_trial_g = self.basis_trial.forward(self.xi_Gamma_g.cpu().numpy())
-            gradbasis_trial_g = self.basis_trial.grad(self.xi_Gamma_g.cpu().numpy())
-            F = opt_einsum.contract('q,Nq,qmx,qnx->Nmn', self.w_Omega.cpu().numpy(), theta.cpu().numpy(), gradbasis_test, gradbasis_trial)
-            F += -opt_einsum.contract('q,qm,qx,Nq,qnx->Nmn', self.w_Gamma_g.cpu().numpy(), basis_test_g, self.n_Gamma_g.cpu().numpy(), theta_g.cpu().numpy(), gradbasis_trial_g)
-            F += -opt_einsum.contract('q,qn,qx,Nq,qmx->Nmn', self.w_Gamma_g.cpu().numpy(), basis_trial_g, self.n_Gamma_g.cpu().numpy(), theta_g.cpu().numpy(), gradbasis_test_g)
-        if self.hparams.get('gamma_stabilization',0)!=0:
-            F += self.hparams['gamma_stabilization']*opt_einsum.contract('q,qm,Nq,qn->Nmn', self.w_Gamma_g.cpu().numpy(), basis_test_g, theta_g.cpu().numpy(), basis_trial_g)
+            gradbasis_test = torch.tensor(self.basis_test.grad(self.xi_Omega.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
+            gradbasis_trial = torch.tensor(self.basis_trial.grad(self.xi_Omega.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
+            basis_test_g = torch.tensor(self.basis_test.forward(self.xi_Gamma_g.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
+            gradbasis_test_g = torch.tensor(self.basis_test.grad(self.xi_Gamma_g.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
+            basis_trial_g = torch.tensor(self.basis_trial.forward(self.xi_Gamma_g.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
+            gradbasis_trial_g = torch.tensor(self.basis_trial.grad(self.xi_Gamma_g.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
+            F = torch.zeros((theta.shape[0],self.hparams['N'],self.hparams['N']), dtype=self.hparams['dtype'], device=self.used_device)
+            for i in range(theta.shape[0]):
+                print(i)
+                F[i] = opt_einsum.contract('q,q,qmx,qnx->mn', self.w_Omega, theta[i], gradbasis_test, gradbasis_trial)
+                F[i] += -opt_einsum.contract('q,qm,qx,q,qnx->mn', self.w_Gamma_g, basis_test_g, self.n_Gamma_g, theta_g[i], gradbasis_trial_g)
+                F[i] += -opt_einsum.contract('q,qn,qx,q,qmx->mn', self.w_Gamma_g, basis_trial_g, self.n_Gamma_g, theta_g[i], gradbasis_test_g)
+            if self.hparams.get('gamma_stabilization',0)!=0:
+                F[i] += self.hparams['gamma_stabilization']*opt_einsum.contract('q,qm,q,qn->mn', self.w_Gamma_g, basis_test_g, theta_g[i], basis_trial_g)
         return F
     
     def compute_F_0_A_0(self):
-        theta = torch.ones(self.w_Omega.shape, dtype=self.hparams['dtype'], device=self.used_device).reshape(1,self.w_Omega.shape[0])
-        theta_g = torch.ones(self.w_Gamma_g.shape, dtype=self.hparams['dtype'], device=self.used_device).reshape(1,self.w_Gamma_g.shape[0])
-        gradbasis_test = self.basis_test.grad(self.xi_Omega.cpu().numpy())
-        gradbasis_trial = self.basis_trial.grad(self.xi_Omega.cpu().numpy())
-        basis_test_g = self.basis_test.forward(self.xi_Gamma_g.cpu().numpy())
-        gradbasis_test_g = self.basis_test.grad(self.xi_Gamma_g.cpu().numpy())
-        basis_trial_g = self.basis_trial.forward(self.xi_Gamma_g.cpu().numpy())
-        gradbasis_trial_g = self.basis_trial.grad(self.xi_Gamma_g.cpu().numpy())
-        F_0 = opt_einsum.contract('q,Nq,qmx,qnx->Nmn', self.w_Omega.cpu().numpy(), theta.cpu().numpy(), gradbasis_test, gradbasis_trial)
-        F_0 += -opt_einsum.contract('q,qm,qx,Nq,qnx->Nmn', self.w_Gamma_g.cpu().numpy(), basis_test_g, self.n_Gamma_g.cpu().numpy(), theta_g.cpu().numpy(), gradbasis_trial_g)
-        F_0 += -opt_einsum.contract('q,qn,qx,Nq,qmx->Nmn', self.w_Gamma_g.cpu().numpy(), basis_trial_g, self.n_Gamma_g.cpu().numpy(), theta_g.cpu().numpy(), gradbasis_test_g)
+        theta = torch.ones(self.w_Omega.shape, dtype=self.hparams['dtype'], device=self.used_device)
+        theta_g = torch.ones(self.w_Gamma_g.shape, dtype=self.hparams['dtype'], device=self.used_device)
+        gradbasis_test = torch.tensor(self.basis_test.grad(self.xi_Omega.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
+        gradbasis_trial = torch.tensor(self.basis_trial.grad(self.xi_Omega.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
+        basis_test_g = torch.tensor(self.basis_test.forward(self.xi_Gamma_g.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
+        gradbasis_test_g = torch.tensor(self.basis_test.grad(self.xi_Gamma_g.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
+        basis_trial_g = torch.tensor(self.basis_trial.forward(self.xi_Gamma_g.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
+        gradbasis_trial_g = torch.tensor(self.basis_trial.grad(self.xi_Gamma_g.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
+        F_0 = torch.zeros((theta.shape[0],self.hparams['N'],self.hparams['N']), dtype=self.hparams['dtype'], device=self.used_device)
+        F_0 = opt_einsum.contract('q,q,qmx,qnx->mn', self.w_Omega, theta, gradbasis_test, gradbasis_trial)
+        F_0 += -opt_einsum.contract('q,qm,qx,q,qnx->mn', self.w_Gamma_g, basis_test_g, self.n_Gamma_g, theta_g, gradbasis_trial_g)
+        F_0 += -opt_einsum.contract('q,qn,qx,q,qmx->mn', self.w_Gamma_g, basis_trial_g, self.n_Gamma_g, theta_g, gradbasis_test_g)
         if self.hparams.get('gamma_stabilization',None)!=None:
-            F_0 += self.hparams['gamma_stabilization']*opt_einsum.contract('q,qm,Nq,qn->Nmn', self.w_Gamma_g.cpu().numpy(), basis_test_g, theta_g.cpu().numpy(), basis_trial_g)
-        F_0 = F_0[0]
-        F_0 = torch.tensor(F_0, dtype=self.hparams['dtype'], device=self.used_device)
+            F_0 += self.hparams['gamma_stabilization']*opt_einsum.contract('q,qm,q,qn->mn', self.w_Gamma_g, basis_test_g, theta_g, basis_trial_g)
         A_0 = torch.linalg.pinv(F_0)
         A_0 = torch.tensor(A_0, dtype=self.hparams['dtype'], device=self.used_device)
         if  self.hparams['modeltype']=='data NGO':
-            basis_test = self.basis_test.forward(self.xi_Omega.cpu().numpy())
-            F = opt_einsum.contract('q,qm,Nq->Nm', self.w_Omega.cpu().numpy(), basis_test, theta.cpu().numpy()).reshape((theta.shape[0],self.hparams['h'][0],self.hparams['h'][1]))
+            basis_test = torch.tensor(self.basis_test.forward(self.xi_Omega.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
+            F = opt_einsum.contract('q,qm,Nq->Nm', self.w_Omega, basis_test, theta).reshape((theta.shape[0],self.hparams['h'][0],self.hparams['h'][1]))
             F_0 = torch.tensor(F, dtype=self.hparams['dtype'], device=self.used_device)
         return F_0, A_0
     
     def compute_d(self, f, etab, etat, gl, gr):
-        basis_test = self.basis_test.forward(self.xi_Omega.cpu().numpy())
-        basis_test_b = self.basis_test.forward(self.xi_Gamma_b.cpu().numpy())
-        basis_test_t = self.basis_test.forward(self.xi_Gamma_t.cpu().numpy())
-        basis_test_l = self.basis_test.forward(self.xi_Gamma_l.cpu().numpy())
-        basis_test_r = self.basis_test.forward(self.xi_Gamma_r.cpu().numpy())
-        gradbasis_test_l = self.basis_test.grad(self.xi_Gamma_l.cpu().numpy())
-        gradbasis_test_r = self.basis_test.grad(self.xi_Gamma_r.cpu().numpy())
-        d = opt_einsum.contract('q,qm,Nq->Nm', self.w_Omega.cpu().numpy(), basis_test, f.cpu().numpy())
-        d += opt_einsum.contract('q,qm,Nq->Nm', self.w_Gamma_b.cpu().numpy(), basis_test_b, etab.cpu().numpy())
-        d += opt_einsum.contract('q,qm,Nq->Nm', self.w_Gamma_t.cpu().numpy(), basis_test_t, etat.cpu().numpy())
-        d -= opt_einsum.contract('q,qx,qmx,Nq->Nm', self.w_Gamma_l.cpu().numpy(), self.n_l.cpu().numpy(), gradbasis_test_l, gl.cpu().numpy())
-        d -= opt_einsum.contract('q,qx,qmx,Nq->Nm', self.w_Gamma_r.cpu().numpy(), self.n_r.cpu().numpy(), gradbasis_test_r, gr.cpu().numpy())
-        if self.hparams.get('gamma_stabilization',0)!=0:
-            d += self.hparams['gamma_stabilization']*opt_einsum.contract('q,qm,Nq->Nm', self.w_Gamma_l.cpu().numpy(), basis_test_l, gl.cpu().numpy())
-            d += self.hparams['gamma_stabilization']*opt_einsum.contract('q,qm,Nq->Nm', self.w_Gamma_r.cpu().numpy(), basis_test_r, gr.cpu().numpy())        
+        basis_test = torch.tensor(self.basis_test.forward(self.xi_Omega.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
+        basis_test_b = torch.tensor(self.basis_test.forward(self.xi_Gamma_b.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
+        basis_test_t = torch.tensor(self.basis_test.forward(self.xi_Gamma_t.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
+        basis_test_l = torch.tensor(self.basis_test.forward(self.xi_Gamma_l.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
+        basis_test_r = torch.tensor(self.basis_test.forward(self.xi_Gamma_r.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
+        gradbasis_test_l = torch.tensor(self.basis_test.grad(self.xi_Gamma_l.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
+        gradbasis_test_r = torch.tensor(self.basis_test.grad(self.xi_Gamma_r.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
+        d = torch.zeros((f.shape[0],self.hparams['N']), dtype=self.hparams['dtype'], device=self.used_device)
+        for i in range(f.shape[0]):
+            print(i)
+            d[i] = opt_einsum.contract('q,qm,q->m', self.w_Omega, basis_test, f[i])
+            d[i] += opt_einsum.contract('q,qm,q->m', self.w_Gamma_b, basis_test_b, etab[i])
+            d[i] += opt_einsum.contract('q,qm,q->m', self.w_Gamma_t, basis_test_t, etat[i])
+            d[i] -= opt_einsum.contract('q,qx,qmx,q->m', self.w_Gamma_l, self.n_l, gradbasis_test_l, gl[i])
+            d[i] -= opt_einsum.contract('q,qx,qmx,q->m', self.w_Gamma_r, self.n_r, gradbasis_test_r, gr[i])
+            if self.hparams.get('gamma_stabilization',0)!=0:
+                d[i] += self.hparams['gamma_stabilization']*opt_einsum.contract('q,qm,q->m', self.w_Gamma_l, basis_test_l, gl[i])
+                d[i] += self.hparams['gamma_stabilization']*opt_einsum.contract('q,qm,q->m', self.w_Gamma_r, basis_test_r, gr[i])        
         return d
     
     def NN_forward(self, theta, f, etab, etat, gl, gr):
