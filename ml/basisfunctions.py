@@ -334,8 +334,8 @@ class BSplineInterpolatedPOD2D:
         self.N = N
         self.w = w
         self.xi = xi
-        self.u = ManufacturedSolutionsSetDarcy(N_samples=N_samples, variables=variables, l_min=l_min, l_max=l_max, device=device).u
-        self.u_q = discretize_functions(self.u, torch.tensor(self.xi, device=device), device).detach().cpu().numpy()
+        #self.u = ManufacturedSolutionsSetDarcy(N_samples=N_samples, variables=variables, l_min=l_min, l_max=l_max, device=device).u
+        #self.u_q = discretize_functions(self.u, torch.tensor(self.xi, device=device), device).detach().cpu().numpy()
         self.device = device
         # self.PODbasis = self.compute_PODbasis(self.u_q, self.N)
         # self.PODcoeffs = self.compute_PODcoeffs(self.u_q, self.N)
