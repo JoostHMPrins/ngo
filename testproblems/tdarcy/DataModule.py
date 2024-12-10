@@ -44,6 +44,7 @@ class DataModule(pl.LightningDataModule):
         self.theta_d, self.theta_x0_d, self.theta_xL_d, self.f_d, self.eta_y0_d, self.eta_yL_d, self.g_x0_d, self.g_xL_d, self.u0_d = dummymodel.discretize_input_functions(theta, f, eta_y0, eta_yL, g_x0, g_xL, u0)
         self.theta_bar = torch.sum(dummymodel.w_OmegaT[None,:]*self.theta_d, axis=-1)
         self.u_d = dummymodel.discretize_output_function(u)
+        print('Assembling system...')
         if dummymodel.hparams['modeltype']=='model NGO' or dummymodel.hparams['modeltype']=='data NGO':
             self.F = dummymodel.compute_F(self.theta_d, self.theta_x0_d, self.theta_xL_d)
             self.d = dummymodel.compute_d(self.f_d, self.eta_y0_d, self.eta_yL_d, self.g_x0_d, self.g_xL_d, self.u0_d)
