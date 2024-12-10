@@ -447,13 +447,13 @@ class NeuralOperator(pl.LightningModule):
         checkpoint['hparams'] = self.hparams
         
     def on_fit_start(self):
-        self.used_device = self.device
+        self.used_device = self.used_device
         torch.set_num_threads(2)
         self.psix = self.psix.to(self.used_device)
         self.w_Omega_L = torch.tensor(self.w_Omega_L).to(self.used_device)
         self.systemnet.device = self.used_device
         if self.hparams.get('A0net')!=None:
-            self.A0net = loadmodelfromlabel(model=NeuralOperator, label=self.hparams['A0net'][1], logdir='../../../nnlogs', sublogdir=self.hparams['A0net'][0], map_location=self.hparams['used_device'])
+            self.A0net = loadmodelfromlabel(model=NeuralOperator, label=self.hparams['A0net'][1], logdir='../../../nnlogs', sublogdir=self.hparams['A0net'][0], map_location=self.hparams['device'])
             self.A0net.systemnet = self.A0net.systemnet.to(self.used_device)
             for param in self.A0net.parameters():
                 param.requires_grad = False
