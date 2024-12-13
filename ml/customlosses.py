@@ -22,6 +22,13 @@ def weightedrelativeL2(w, u_hat, u):
     L2_norm = L22_norm**(1/2)
     return torch.mean(L2_diff/torch.maximum(L2_norm, 1e-7*torch.ones_like(L2_norm)))
 
+def weightedrelativeL2_set(w, u_hat, u):
+    L22_diff = torch.sum(w[None,:]*(u_hat - u)**2, axis=-1)
+    L2_diff = L22_diff**(1/2)
+    L22_norm = torch.sum(w[None,:]*(u)**2, axis=-1)
+    L2_norm = L22_norm**(1/2)
+    return L2_diff/torch.maximum(L2_norm, 1e-7*torch.ones_like(L2_norm))
+
 def matrixnorm(A_hat, A):
     p = 'fro'
     Frobenius = torch.norm(A_hat - A, dim=(-1,-2), p=p)
