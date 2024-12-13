@@ -1,6 +1,6 @@
 #!/bin/bash
 
-values=()
+values=(6 8 9)
 
 for value in "${values[@]}"
 do

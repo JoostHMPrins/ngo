@@ -106,8 +106,8 @@ def balance_num_trainable_params(model, N_w):
     return model  
 
 
-def discretize_functions(f_list, x, device):
-    f_discretized = torch.zeros((len(f_list),x.shape[0]), device=device)
+def discretize_functions(f_list, x, dtype, device):
+    f_discretized = torch.zeros((len(f_list),x.shape[0]), dtype=dtype, device=device)
     for i in range(len(f_list)):
         print(i)
         f_discretized[i] = f_list[i](x)

@@ -28,13 +28,14 @@ hparams['d'] = len(hparams['variables'])
 hparams['l_min'] = [0.5,0.5]
 hparams['l_max'] = [1,1]
 loaddir = None #'../../../trainingdata/darcy_mfs_l1e-2to1e0'
+hparams['project_inputs'] = False
 
 #Training settings
 hparams['dtype'] = torch.float32
 hparams['precision'] = 32
-hparams['assembly_device'] = 'cpu'
-hparams['train_device'] = 'cuda:1'
-hparams['devices'] = [1]
+hparams['assembly_device'] = 'cuda:2'
+hparams['train_device'] = 'cuda:2'
+hparams['devices'] = [2]
 hparams['solution_loss'] = weightedrelativeL2
 hparams['matrix_loss'] = None #relativematrixnorm
 hparams['metric'] = weightedrelativeL2
@@ -51,20 +52,22 @@ hparams['p'] = [3,3]
 hparams['C'] = [2,2]
 hparams['N'] = np.prod(hparams['h'])
 # hparams['test_bases'] = [BSplineBasis1D(h=hparams['h'][0], p=hparams['p'][0], C=hparams['C'][0]),
-#                          BSplineBasis1D(h=hparams['h'][1], p=hparams['p'][1], C=hparams['C'][1]),
-#                          BSplineBasis1D(h=hparams['h'][2], p=hparams['p'][2], C=hparams['C'][2])]
+#                          BSplineBasis1D(h=hparams['h'][1], p=hparams['p'][1], C=hparams['C'][1])]
+                         #BSplineBasis1D(h=hparams['h'][2], p=hparams['p'][2], C=hparams['C'][2])]
 # hparams['test_bases'] = [ChebyshevTBasis1D(h=hparams['h'][0]),
 #                          ChebyshevTBasis1D(h=hparams['h'][1])]
 # hparams['test_bases'] = [SincBasis1D(h=hparams['h'][0]),
 #                          SincBasis1D(h=hparams['h'][1])]
-hparams['test_bases'] = 'POD'
+hparams['test_bases'] = [FourierBasis1D(h=hparams['h'][0]),
+                         FourierBasis1D(h=hparams['h'][1])]
+# hparams['test_bases'] = 'POD'
 hparams['trial_bases'] = hparams['test_bases']
-hparams['POD'] = True
+hparams['POD'] = False
 
 #Quadrature
 hparams['quadrature'] = 'Gauss-Legendre'
-hparams['n_elements'] = 30
-hparams['Q'] = 600
+hparams['n_elements'] = 1
+hparams['Q'] = 100
 hparams['quadrature_L'] = 'uniform'
 hparams['n_elements_L'] = 1 #max(int((hparams['h'][0] - 1)/hparams['p']), 1)
 hparams['Q_L'] = 100 #33*hparams['n_elements_L']
@@ -96,11 +99,11 @@ hparams['scaling_equivariance'] = True
 hparams['permutation_equivariance'] = False
 
 logdir = '../../../nnlogs'
-sublogdir = 'basisfunctions/POD'
+sublogdir = 'Fourier'
 # sublogdir = 'test'
-# hparams['N_samples_train'] = 1
-# hparams['N_samples_val'] = 1
-label = 'modelNGO'
+hparams['N_samples_train'] = 1
+hparams['N_samples_val'] = 1
+label = 'L1.2'
 hparams['label'] = label
 
 model = NeuralOperator

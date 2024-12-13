@@ -24,13 +24,13 @@ class DataModule(pl.LightningDataModule):
     def __init__(self, data_dir, hparams):
         super().__init__()
         self.hparams.update(hparams)
-        self.device = self.hparams['used_device']
+        self.hparams['used_device'] = self.hparams['assembly_device']
         self.data_dir = data_dir
         self.N_samples = self.hparams['N_samples_train'] + self.hparams['N_samples_val']
         dummymodel = NeuralOperator(self.hparams)
         # Generate input and output functions
         print('Generating functions...')
-        dataset = ManufacturedSolutionsSet(N_samples=self.N_samples, variables=self.hparams['variables'], l_min=self.hparams['l_min'], l_max=self.hparams['l_max'], device=self.device)
+        dataset = ManufacturedSolutionsSet(N_samples=self.N_samples, variables=self.hparams['variables'], l_min=self.hparams['l_min'], l_max=self.hparams['l_max'], device=hparams['assembly_device'])
         theta = dataset.theta
         f = dataset.f
         eta_y0 = dataset.etab

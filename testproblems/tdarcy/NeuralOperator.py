@@ -48,19 +48,19 @@ class NeuralOperator(pl.LightningModule):
         self = self.to(self.hparams['dtype'])
 
     def discretize_input_functions(self, theta, f, eta_y0, eta_yL, g_x0, g_xL, u0):
-        theta_d = discretize_functions(theta, self.xi_OmegaT, device=self.used_device)
-        theta_x0_d = discretize_functions(theta, self.xi_Gamma_x0, device=self.used_device)
-        theta_xL_d = discretize_functions(theta, self.xi_Gamma_xL, device=self.used_device)
-        f_d = discretize_functions(f, self.xi_OmegaT, device=self.used_device)
-        eta_y0_d = discretize_functions(eta_y0, self.xi_Gamma_y0, device=self.used_device)
-        eta_yL_d = discretize_functions(eta_yL, self.xi_Gamma_yL, device=self.used_device)
-        g_x0_d = discretize_functions(g_x0, self.xi_Gamma_x0, device=self.used_device)
-        g_xL_d = discretize_functions(g_xL, self.xi_Gamma_xL, device=self.used_device)
-        u0_d = discretize_functions(u0, self.xi_Gamma_t0, device=self.used_device)
+        theta_d = discretize_functions(theta, self.xi_OmegaT, dtype=self.hparams['dtype'], device=self.used_device)
+        theta_x0_d = discretize_functions(theta, self.xi_Gamma_x0, dtype=self.hparams['dtype'], device=self.used_device)
+        theta_xL_d = discretize_functions(theta, self.xi_Gamma_xL, dtype=self.hparams['dtype'], device=self.used_device)
+        f_d = discretize_functions(f, self.xi_OmegaT, dtype=self.hparams['dtype'], device=self.used_device)
+        eta_y0_d = discretize_functions(eta_y0, self.xi_Gamma_y0, dtype=self.hparams['dtype'], device=self.used_device)
+        eta_yL_d = discretize_functions(eta_yL, self.xi_Gamma_yL, dtype=self.hparams['dtype'], device=self.used_device)
+        g_x0_d = discretize_functions(g_x0, self.xi_Gamma_x0, dtype=self.hparams['dtype'], device=self.used_device)
+        g_xL_d = discretize_functions(g_xL, self.xi_Gamma_xL, dtype=self.hparams['dtype'], device=self.used_device)
+        u0_d = discretize_functions(u0, self.xi_Gamma_t0, dtype=self.hparams['dtype'], device=self.used_device)
         return theta_d, theta_x0_d, theta_xL_d, f_d, eta_y0_d, eta_yL_d, g_x0_d, g_xL_d, u0_d
     
     def discretize_output_function(self, u):
-        u_d = discretize_functions(u, self.xi_OmegaT_L, device=self.used_device)
+        u_d = discretize_functions(u, self.xi_OmegaT_L, dtype=self.hparams['dtype'], device=self.used_device)
         return u_d
 
     def compute_F(self, theta, theta_x0, theta_xL):
@@ -239,7 +239,7 @@ class NeuralOperator(pl.LightningModule):
         return u_hat
     
     def projection_forward(self, u):
-        u_q = torch.tensor(discretize_functions(u, self.xi_OmegaT, device=self.used_device), dtype=self.hparams['dtype'])
+        u_q = torch.tensor(discretize_functions(u, self.xi_OmegaT, dtype=self.hparams['dtype'], device=self.used_device), dtype=self.hparams['dtype'])
         basis_test = torch.tensor(self.basis_test.forward(self.xi_OmegaT.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
         basis_trial = torch.tensor(self.basis_trial.forward(self.xi_OmegaT.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
         u_w = opt_einsum.contract('q,qm,Nq->Nm', self.w_OmegaT, basis_test, u_q)

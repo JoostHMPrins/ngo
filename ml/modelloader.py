@@ -7,9 +7,9 @@ def loadmodelfromlabel(model, label, logdir, sublogdir, device):
         if file.endswith('.ckpt'):
             ckpt = torch.load(logdir + '/' + sublogdir + '/' + label + '/' + file,  map_location=device)
             hparams = ckpt['hparams']
-            hparams['train_device'] = device
+            hparams['used_device'] = device
             Model = model(hparams)
             statedict = ckpt['state_dict']
             Model.load_state_dict(statedict)
-            Model = Model.to(Model.device)
+            Model = Model.to(device)
     return Model

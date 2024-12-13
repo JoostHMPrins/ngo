@@ -51,6 +51,12 @@ class DataModule(pl.LightningDataModule):
         #Discretize input functions
         print('Discretizing functions...')
         self.theta, self.theta_g, self.f, self.etab, self.etat, self.gl, self.gr = dummymodel.discretize_input_functions(theta, f, etab, etat, gl, gr)
+        if self.hparams['project_inputs']==True:
+            theta_n = dummymodel.compute_projection_coeffs(theta)
+            psi_Omega = torch.tensor(dummymodel.basis_trial.forward(dummymodel.xi_Omega.cpu().numpy()), dtype=self.hparams['dtype'], device=self.hparams['assembly_device'])
+            self.theta = opt_einsum.contract('Nn,qn->Nq', theta_n, psi_Omega)
+            psi_Gamma_g = torch.tensor(dummymodel.basis_trial.forward(dummymodel.xi_Gamma_g.cpu().numpy()), dtype=self.hparams['dtype'], device=self.hparams['assembly_device'])
+            self.theta_g = opt_einsum.contract('Nn,qn->Nq', theta_n, psi_Gamma_g)
         self.theta_bar = torch.sum(dummymodel.w_Omega[None,:]*self.theta, axis=-1)
         self.u = dummymodel.discretize_output_function(u)
         print('Assembling system...')
