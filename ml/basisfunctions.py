@@ -159,7 +159,7 @@ class SincBasis1D:
         self.h = h
         self.Dx = 1/(h-1)
         self.grid = np.linspace(0,1,self.h)
-        self.tol = 1e-7
+        self.tol = 1e-10
 
     def sinc(self, x):
         output = np.sin(x)/x
@@ -170,7 +170,7 @@ class SincBasis1D:
     def dsincdx(self, x):
         output = np.cos(x)/x - np.sin(x)/x**2
         # output[np.abs(x)<self.tol] = 0
-        output[x==0] = 1
+        output[x==0] = 0
         return output
     
     def forward(self, x):
@@ -223,6 +223,124 @@ class SincBasis1D:
         # plt.savefig("BSplinegrad1D.svg", bbox_inches='tight', transparent=True)
         plt.show()
 
+
+class PolynomialBasis1D:
+    def __init__(self, h):
+        self.h = h
+        self.exponents = np.arange(0,self.h)
+    
+    def forward(self, x):
+        basis_values = x[:,None]**self.exponents[None,:]
+        return basis_values
+    
+    def grad(self, x):
+        basis_gradients = self.exponents[None,:]*x[:,None]**(self.exponents-1)
+        basis_gradients[:,0] = 0
+        return basis_gradients
+
+    def plot_1d_basis(self):
+        resolution = 1000
+        x_values = np.linspace(0, 1, resolution)  # Adjusted range for x_values
+        basis_matrix = self.forward(x_values)
+        plt.figure(figsize=(8, 6))
+        for i in range(self.h):
+            plt.plot(x_values, basis_matrix[:,i], label=f'Basis {i}')
+        plt.title(f'1D Basis Functions')
+        plt.xlabel('x')
+        plt.ylabel('Basis Values')
+        plt.legend()
+        plt.grid(True)
+        # plt.savefig("BSpline1D.svg", bbox_inches='tight', transparent=True)
+        plt.show()
+        
+    def plot_1d_basis_gradients(self):
+        """
+        Plot the gradients of the 1D B-spline basis functions for a specified dimension.
+
+        Args:
+        dim_idx (int): Index of the dimension for which to plot the basis function gradients.
+        """
+        resolution = 1000
+        x_values = np.linspace(0, 1, resolution)  # Use full knot span for x_values
+        basis_gradients_matrix = self.grad(x_values)
+        plt.figure(figsize=(8, 6))
+        for i in range(self.h):
+            plt.plot(x_values, basis_gradients_matrix[:, i], label=f'Gradient {i}')
+        plt.title(f'Gradients of 1D Basis Functions')
+        plt.xlabel('x')
+        plt.ylabel('Gradient Values')
+        plt.legend()
+        plt.grid(True)
+        # plt.savefig("BSplinegrad1D.svg", bbox_inches='tight', transparent=True)
+        plt.show()
+
+
+class FourierBasis1D:
+    def __init__(self, h):
+        self.h = h
+        self.n = np.arange(0,self.h)
+        self.L = 1.2
+        self.k_n = 2*np.pi*self.n/self.L
+    
+    def forward(self, x):
+        basis_values = np.zeros((x.shape[0],self.h))
+        n = 0
+        for i in np.arange(0,self.h,2):
+            basis_values[:,i] = np.cos(self.k_n[n]*x)
+            n+=1
+        n = 1
+        for i in np.arange(1,self.h,2):
+            basis_values[:,i] = np.sin(self.k_n[n]*x)
+            n+=1
+        return basis_values
+    
+    def grad(self, x):
+        basis_gradients = np.zeros((x.shape[0],self.h))
+        n = 0
+        for i in np.arange(0,self.h,2):
+            basis_gradients[:,i] = -self.k_n[n]*np.sin(self.k_n[n]*x)
+            n+=1
+        n = 1
+        for i in np.arange(1,self.h,2):
+            basis_gradients[:,i] = self.k_n[n]*np.cos(self.k_n[n]*x)
+            n+=1
+        return basis_gradients
+
+    def plot_1d_basis(self):
+        resolution = 1000
+        x_values = np.linspace(0, 1, resolution)  # Adjusted range for x_values
+        basis_matrix = self.forward(x_values)
+        plt.figure(figsize=(8, 6))
+        for i in range(self.h):
+            plt.plot(x_values, basis_matrix[:,i], label=f'Basis {i}')
+        plt.title(f'1D Basis Functions')
+        plt.xlabel('x')
+        plt.ylabel('Basis Values')
+        plt.legend()
+        plt.grid(True)
+        # plt.savefig("BSpline1D.svg", bbox_inches='tight', transparent=True)
+        plt.show()
+        
+    def plot_1d_basis_gradients(self):
+        """
+        Plot the gradients of the 1D B-spline basis functions for a specified dimension.
+
+        Args:
+        dim_idx (int): Index of the dimension for which to plot the basis function gradients.
+        """
+        resolution = 1000
+        x_values = np.linspace(0, 1, resolution)  # Use full knot span for x_values
+        basis_gradients_matrix = self.grad(x_values)
+        plt.figure(figsize=(8, 6))
+        for i in range(self.h):
+            plt.plot(x_values, basis_gradients_matrix[:, i], label=f'Gradient {i}')
+        plt.title(f'Gradients of 1D Basis Functions')
+        plt.xlabel('x')
+        plt.ylabel('Gradient Values')
+        plt.legend()
+        plt.grid(True)
+        # plt.savefig("BSplinegrad1D.svg", bbox_inches='tight', transparent=True)
+        plt.show()
 
 class TensorizedBasis:
     def __init__(self, bases):
