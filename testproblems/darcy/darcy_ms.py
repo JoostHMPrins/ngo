@@ -3,7 +3,7 @@ import torch
 import opt_einsum
 
 import sys
-sys.path.insert(0,'/home/prins/st8/prins/phd/gitlab/ngo-pde-gk/trainingdata')
+sys.path.insert(0,'/home/prins/st8/prins/phd/git/ngo-pde-gk/trainingdata')
 from GRF import *
 
 
@@ -45,7 +45,7 @@ class DirichletBC:
     
 
 class ManufacturedSolutionsSetDarcy_ctheta:
-    def __init__(self, N_samples, variables, l_min, l_max, c_theta, device):
+    def __init__(self, N_samples, variables, l_min, l_max, c_theta_min, c_theta_max, device):
         super().__init__()
         self.device = device
         self.N_samples = N_samples #Number of samples
@@ -53,7 +53,8 @@ class ManufacturedSolutionsSetDarcy_ctheta:
         self.d = len(l_min) #Dimensionality of problem
         self.l_min = l_min #Minimum GRF length scale
         self.l_max = l_max #Maximum GRF length scale
-        self.c_theta = c_theta
+        self.c_theta_min = c_theta_min
+        self.c_theta_max = c_theta_max
         self.generate_manufactured_solutions()
         # self.sensornodes = np.random.uniform(0,1,size=(10000,self.d))
         # self.evaluate_functions_at_sensors()
@@ -69,7 +70,7 @@ class ManufacturedSolutionsSetDarcy_ctheta:
         grs = []
         #Lists of length scales l, scaling factors c and offsets b
         l_theta = np.random.uniform(self.l_min/np.sqrt(2),self.l_max/np.sqrt(2), size=(self.N_samples,self.d))
-        c_theta = np.random.uniform(self.c_theta,self.c_theta,size=self.N_samples)
+        c_theta = np.random.uniform(self.c_theta_min,self.c_theta_max,size=self.N_samples)
         b_theta = np.ones(self.N_samples)
         l_u = np.random.uniform(self.l_min/np.sqrt(2),self.l_max/np.sqrt(2), size=(self.N_samples,self.d))
         c_u = np.random.uniform(0,1, size=self.N_samples)

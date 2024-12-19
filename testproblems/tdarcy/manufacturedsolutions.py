@@ -3,7 +3,7 @@ import torch
 import opt_einsum
 
 import sys
-sys.path.insert(0,'/home/prins/st8/prins/phd/gitlab/ngo-pde-gk/trainingdata')
+sys.path.insert(0,'/home/prins/st8/prins/phd/git/ngo-pde-gk/trainingdata')
 from GRF import *
 
 

@@ -6,7 +6,7 @@ import numpy as np
 import opt_einsum
 
 import sys
-sys.path.insert(0, '/home/prins/st8/prins/phd/gitlab/ngo-pde-gk/ml')
+sys.path.insert(0, '/home/prins/st8/prins/phd/git/ngo-pde-gk/ml')
 from systemnets import MLP, CNN, FNO, LBranchNet
 from basisfunctions import *
 from quadrature import *
@@ -248,6 +248,16 @@ class NeuralOperator(pl.LightningModule):
         u_n = opt_einsum.contract('mn,Nm->Nn', M_inv, u_w)
         u_hat = opt_einsum.contract('Nn,qn->Nq', u_n, self.psix)
         return u_hat
+    
+    def compute_projection_coeffs(self, u):
+        u_q = torch.tensor(discretize_functions(u, self.xi_OmegaT, dtype=self.hparams['dtype'], device=self.used_device), dtype=self.hparams['dtype'])
+        basis_test = torch.tensor(self.basis_test.forward(self.xi_Omega.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
+        # basis_trial = torch.tensor(self.basis_trial.forward(self.xi_Omega.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
+        u_w = opt_einsum.contract('q,qm,Nq->Nm', self.w_Omega, basis_test, u_q)
+        M = opt_einsum.contract('q,qm,qn->mn', self.w_Omega, basis_test, basis_test)
+        M_inv = torch.linalg.pinv(M)
+        u_n = opt_einsum.contract('mn,Nm->Nn', M_inv, u_w)
+        return u_n
     
     def init_modeltype(self):
         if self.hparams['modeltype']=='NN':

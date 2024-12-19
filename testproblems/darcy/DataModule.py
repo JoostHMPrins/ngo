@@ -57,13 +57,18 @@ class DataModule(pl.LightningDataModule):
             self.theta = opt_einsum.contract('Nn,qn->Nq', theta_n, psi_Omega)
             psi_Gamma_g = torch.tensor(dummymodel.basis_trial.forward(dummymodel.xi_Gamma_g.cpu().numpy()), dtype=self.hparams['dtype'], device=self.hparams['assembly_device'])
             self.theta_g = opt_einsum.contract('Nn,qn->Nq', theta_n, psi_Gamma_g)
-        self.theta_bar = torch.sum(dummymodel.w_Omega[None,:]*self.theta, axis=-1)
         self.u = dummymodel.discretize_output_function(u)
         print('Assembling system...')
         if dummymodel.hparams['modeltype']=='model NGO' or dummymodel.hparams['modeltype']=='data NGO':
                 self.F = dummymodel.compute_F(self.theta, self.theta_g)
                 self.d = dummymodel.compute_d(self.f, self.etab, self.etat, self.gl, self.gr)
-
+        self.scaling = torch.abs(torch.sum(dummymodel.w_Omega[None,:]*self.theta, axis=-1))
+        # lambdas = torch.linalg.eigvals(self.F)
+        # lambdas_abs = torch.real((lambdas*torch.conj(lambdas))**(1/2))
+        # lambda_max = torch.amax(lambdas_abs, axis=-1)
+        # self.scaling = lambda_max
+        # print(self.scaling)
+        # print(torch.mean(self.scaling))
     def setup(self, stage=None):
         if self.hparams['modeltype']=='NN' or self.hparams['modeltype']=='DeepONet' or self.hparams['modeltype']=='VarMiON':
             self.theta = torch.tensor(self.theta, dtype=self.hparams['dtype'])
@@ -77,13 +82,13 @@ class DataModule(pl.LightningDataModule):
             # self.trainingset = torch.utils.data.TensorDataset(self.theta[:self.hparams['N_samples_train']], self.f[:self.hparams['N_samples_train']], self.etab[:self.hparams['N_samples_train']], self.etat[:self.hparams['N_samples_train']], self.gl[:self.hparams['N_samples_train']], self.gr[:self.hparams['N_samples_train']], self.u[:self.hparams['N_samples_train']])
             # self.validationset = torch.utils.data.TensorDataset(self.theta[self.hparams['N_samples_train']:], self.f[self.hparams['N_samples_train']:], self.etab[self.hparams['N_samples_train']:], self.etat[self.hparams['N_samples_train']:], self.gl[self.hparams['N_samples_train']:], self.gr[self.hparams['N_samples_train']:], self.u[self.hparams['N_samples_train']:])
         if self.hparams['modeltype']=='model NGO' or self.hparams['modeltype']=='data NGO' or self.hparams['modeltype']=='matrix data NGO':
-            self.theta_bar = torch.tensor(self.theta_bar, dtype=self.hparams['dtype'])            
+            self.scaling = torch.tensor(self.scaling, dtype=self.hparams['dtype'])            
             self.F = torch.tensor(self.F, dtype=self.hparams['dtype'])
             self.d = torch.tensor(self.d, dtype=self.hparams['dtype'])
             self.u = torch.tensor(self.u, dtype=self.hparams['dtype'])   
-            dataset = torch.utils.data.TensorDataset(self.theta_bar, self.F, self.d, self.u)
-            # self.trainingset = torch.utils.data.TensorDataset(self.theta_bar[:self.hparams['N_samples_train']], self.F[:self.hparams['N_samples_train']], self.d[:self.hparams['N_samples_train']], self.u[:self.hparams['N_samples_train']])
-            # self.validationset = torch.utils.data.TensorDataset(self.theta_bar[self.hparams['N_samples_train']:], self.F[self.hparams['N_samples_train']:], self.d[self.hparams['N_samples_train']:], self.u[self.hparams['N_samples_train']:])
+            dataset = torch.utils.data.TensorDataset(self.scaling, self.F, self.d, self.u)
+            # self.trainingset = torch.utils.data.TensorDataset(self.scaling[:self.hparams['N_samples_train']], self.F[:self.hparams['N_samples_train']], self.d[:self.hparams['N_samples_train']], self.u[:self.hparams['N_samples_train']])
+            # self.validationset = torch.utils.data.TensorDataset(self.scaling[self.hparams['N_samples_train']:], self.F[self.hparams['N_samples_train']:], self.d[self.hparams['N_samples_train']:], self.u[self.hparams['N_samples_train']:])
         self.trainingset, self.validationset = random_split(dataset, [self.hparams['N_samples_train'], self.hparams['N_samples_val']])
 
     def train_dataloader(self):
