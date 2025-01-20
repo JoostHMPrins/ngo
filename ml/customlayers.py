@@ -107,10 +107,15 @@ def balance_num_trainable_params(model, N_w):
 
 
 def discretize_functions(f_list, x, dtype, device):
-    f_discretized = torch.zeros((len(f_list),x.shape[0]), dtype=dtype, device=device)
-    for i in range(len(f_list)):
-        print(i)
-        f_discretized[i] = f_list[i](x)
+    with torch.no_grad():
+        x = torch.tensor(x, dtype=dtype, device=device)
+        f_discretized = torch.zeros((len(f_list),x.shape[0]), dtype=dtype, device=device)
+        for i in range(len(f_list)):
+            print(i)
+            f_discretized[i] = f_list[i](x)
+        f_discretized = f_discretized.detach().cpu().numpy()
+        x = x.detach().cpu()
+    torch.cuda.empty_cache()
     return f_discretized
 
 
