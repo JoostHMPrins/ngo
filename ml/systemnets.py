@@ -200,7 +200,7 @@ class FNO(nn.Module):
         for layer in self.layers:
             x = layer(x)
         y = x
-        return y
+        return y    
     
 
 class InvNet(nn.Module):

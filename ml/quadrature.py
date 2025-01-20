@@ -208,26 +208,3 @@ class UnitSquareOutwardNormal:
         self.n_Gamma_g = np.zeros((2*self.Q,self.d))
         self.n_Gamma_g[:self.Q] = self.n_l
         self.n_Gamma_g[self.Q:] = self.n_r
-
-
-class UnitSquareOutwardNormal2D:
-    def __init__(self, Q):
-        self.d = 2
-        self.Q = Q
-        self.compute_outwardnormal()
-        
-    def compute_outwardnormal(self):
-        n_b = np.array([0,-1])
-        self.n_b = np.tile(n_b,(self.Q[0],1))
-        n_t = np.array([0,1])
-        self.n_t = np.tile(n_t,(self.Q[0],1))
-        n_l = np.array([-1,0])
-        self.n_l = np.tile(n_l,(self.Q[1],1))
-        n_r = np.array([1,0])
-        self.n_r = np.tile(n_r,(self.Q[1],1))
-        self.n_Gamma_eta = np.zeros((2*self.Q[0],self.d))
-        self.n_Gamma_eta[:self.Q[0]] = self.n_b
-        self.n_Gamma_eta[self.Q[0]:] = self.n_t
-        self.n_Gamma_g = np.zeros((2*self.Q[1],self.d))
-        self.n_Gamma_g[:self.Q[1]] = self.n_l
-        self.n_Gamma_g[self.Q[1]:] = self.n_r

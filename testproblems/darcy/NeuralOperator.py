@@ -41,8 +41,8 @@ class NeuralOperator(pl.LightningModule):
         #Basis evaluation at quadrature points
         self.psix = torch.tensor(self.basis_trial.forward(self.xi_Omega_L.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
         #A_0 (K inverse for constant theta)
-        if self.hparams['Neumannseries']==True:
-            self.F_0, self.A_0 = self.compute_F_0_A_0()
+        # if self.hparams['Neumannseries']==True:
+        self.F_0, self.A_0 = self.compute_F_0_A_0()
         #Identity
         self.Identity = torch.eye(self.hparams['N'], dtype=self.hparams['dtype'], device=self.used_device)
         self = self.to(self.hparams['dtype'])
@@ -75,45 +75,7 @@ class NeuralOperator(pl.LightningModule):
             basis_test = torch.tensor(self.basis_test.forward(self.xi_Omega.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
             basis_trial = torch.tensor(self.basis_trial.forward(self.xi_Omega.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
             F = opt_einsum.contract('q,q,qm,qn->mn', self.w_Omega, theta, basis_test, basis_trial)
-        if  self.hparams['modeltype']=='model NGO' or self.hparams['modeltype']=='FEM':
-            gradbasis_test = torch.tensor(self.basis_test.grad(self.xi_Omega.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
-            gradbasis_trial = torch.tensor(self.basis_trial.grad(self.xi_Omega.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
-            basis_test_g = torch.tensor(self.basis_test.forward(self.xi_Gamma_g.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
-            gradbasis_test_g = torch.tensor(self.basis_test.grad(self.xi_Gamma_g.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
-            basis_trial_g = torch.tensor(self.basis_trial.forward(self.xi_Gamma_g.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
-            gradbasis_trial_g = torch.tensor(self.basis_trial.grad(self.xi_Gamma_g.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
-            F = torch.zeros((theta.shape[0],self.hparams['N'],self.hparams['N']), dtype=self.hparams['dtype'], device=self.used_device)
-            if self.hparams.get('Assembly_mode','parallel')=='parallel':
-                F = opt_einsum.contract('q,Nq,qmx,qnx->Nmn', self.w_Omega, theta, gradbasis_test, gradbasis_trial)
-                F += -opt_einsum.contract('q,qm,qx,Nq,qnx->Nmn', self.w_Gamma_g, basis_test_g, self.n_Gamma_g, theta_g, gradbasis_trial_g)
-                F += -opt_einsum.contract('q,qn,qx,Nq,qmx->Nmn', self.w_Gamma_g, basis_trial_g, self.n_Gamma_g, theta_g, gradbasis_test_g)
-            if self.hparams.get('gamma_stabilization',0)!=0:
-                F += self.hparams['gamma_stabilization']*opt_einsum.contract('q,qm,Nq,qn->Nmn', self.w_Gamma_g, basis_test_g, theta_g, basis_trial_g)
-            if self.hparams.get('Assembly_mode','parallel')=='series':
-                for i in range(theta.shape[0]):
-                    print(i)
-                    F[i] = opt_einsum.contract('q,q,qmx,qnx->mn', self.w_Omega, theta[i], gradbasis_test, gradbasis_trial)
-                    F[i] += -opt_einsum.contract('q,qm,qx,q,qnx->mn', self.w_Gamma_g, basis_test_g, self.n_Gamma_g, theta_g[i], gradbasis_trial_g)
-                    F[i] += -opt_einsum.contract('q,qn,qx,q,qmx->mn', self.w_Gamma_g, basis_trial_g, self.n_Gamma_g, theta_g[i], gradbasis_test_g)
-                if self.hparams.get('gamma_stabilization',0)!=0:
-                    F[i] += self.hparams['gamma_stabilization']*opt_einsum.contract('q,qm,q,qn->mn', self.w_Gamma_g, basis_test_g, theta_g[i], basis_trial_g)
-        return F
-
-    def compute_F_tensorized(self, theta, theta_g):
-        if  self.hparams['modeltype']=='data NGO':
-            basis_test = torch.tensor(self.basis_test.forward(self.xi_Omega.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
-            F = torch.zeros((theta.shape[0],self.hparams['N']), dtype=self.hparams['dtype'], device=self.used_device)
-            if self.hparams.get('Assembly_mode','parallel')=='parallel':
-                F = opt_einsum.contract('q,qm,Nq->Nm', self.w_Omega, basis_test, theta)
-            if self.hparams.get('Assembly_mode','parallel')=='series':
-                for i in range(theta.shape[0]):
-                    F[i] = opt_einsum.contract('q,qm,q->m', self.w_Omega, basis_test, theta[i])
-            F = F.reshape((theta.shape[0],self.hparams['h'][0],self.hparams['h'][1]))
-        if  self.hparams['modeltype']=='matrix data NGO':
-            basis_test = torch.tensor(self.basis_test.forward(self.xi_Omega.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
-            basis_trial = torch.tensor(self.basis_trial.forward(self.xi_Omega.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
-            F = opt_einsum.contract('q,q,qm,qn->mn', self.w_Omega, theta, basis_test, basis_trial)
-        if  self.hparams['modeltype']=='model NGO' or self.hparams['modeltype']=='FEM':
+        if  self.hparams['modeltype']=='model NGO' or self.hparams['modeltype']=='FEM' or self.hparams['modeltype']=='projection':
             gradbasis_test = torch.tensor(self.basis_test.grad(self.xi_Omega.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
             gradbasis_trial = torch.tensor(self.basis_trial.grad(self.xi_Omega.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
             basis_test_g = torch.tensor(self.basis_test.forward(self.xi_Gamma_g.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
@@ -402,45 +364,6 @@ class NeuralOperator(pl.LightningModule):
         self.w_Gamma_r =torch.tensor( quadrature.w_Gamma_r, dtype=self.hparams['dtype'], device=self.used_device)
         self.w_Gamma_eta = torch.tensor(quadrature.w_Gamma_eta, dtype=self.hparams['dtype'], device=self.used_device)
         self.w_Gamma_g = torch.tensor(quadrature.w_Gamma_g, dtype=self.hparams['dtype'], device=self.used_device)
-        # if self.hparams['quadrature']=='Gauss-Legendre':
-            # Q = np.array(self.hparams['Q'])
-            # n_elements = np.array(self.hparams['n_elements'])
-            # Q_per_element = Q/n_elements
-            # quad_Omega = GaussLegendreQuadrature(Q=[int(Q_per_element[0]),int(Q_per_element[1])], n_elements=n_elements)
-            # quad_Gamma_x = GaussLegendreQuadrature(Q=[int(Q[1]/n_elements[1])], n_elements=[n_elements[1]])
-            # quad_Gamma_y = GaussLegendreQuadrature(Q=[int(Q[0]/n_elements[0])], n_elements=[n_elements[0]])
-            # self.w_Omega = quad_Omega.w
-            # self.xi_Omega = quad_Omega.xi
-            # self.w_Gamma_b = quad_Gamma_y.w
-            # self.xi_Gamma_b = np.zeros((Q[0],self.hparams['d']))
-            # self.xi_Gamma_b[:,0] = quad_Gamma_y.xi[:,0]
-            # self.w_Gamma_t = quad_Gamma_y.w
-            # self.xi_Gamma_t = np.ones((Q[0],self.hparams['d']))
-            # self.xi_Gamma_t[:,0] = quad_Gamma_y.xi[:,0]
-            # self.w_Gamma_l = quad_Gamma_x.w
-            # self.xi_Gamma_l = np.zeros((Q[1],self.hparams['d']))
-            # self.xi_Gamma_l[:,1] = quad_Gamma_x.xi[:,0]
-            # self.w_Gamma_r = quad_Gamma_x.w
-            # self.xi_Gamma_r = np.ones((Q[1],self.hparams['d']))
-            # self.xi_Gamma_r[:,1] = quad_Gamma_x.xi[:,0]
-            # self.w_Gamma_eta = np.append(self.w_Gamma_b, self.w_Gamma_t, axis=0)
-            # self.xi_Gamma_eta = np.append(self.xi_Gamma_b, self.xi_Gamma_t, axis=0)
-            # self.w_Gamma_g = np.append(self.w_Gamma_l, self.w_Gamma_r, axis=0)
-            # self.xi_Gamma_g = np.append(self.xi_Gamma_l, self.xi_Gamma_r, axis=0)
-            # self.xi_Omega = torch.tensor(self.xi_Omega, dtype=self.hparams['dtype'], device=self.used_device)
-            # self.xi_Gamma_b = torch.tensor(self.xi_Gamma_b, dtype=self.hparams['dtype'], device=self.used_device)
-            # self.xi_Gamma_t = torch.tensor(self.xi_Gamma_t, dtype=self.hparams['dtype'], device=self.used_device)
-            # self.xi_Gamma_l = torch.tensor(self.xi_Gamma_l, dtype=self.hparams['dtype'], device=self.used_device)
-            # self.xi_Gamma_r = torch.tensor(self.xi_Gamma_r, dtype=self.hparams['dtype'], device=self.used_device)
-            # self.xi_Gamma_eta = torch.tensor(self.xi_Gamma_eta, dtype=self.hparams['dtype'], device=self.used_device)
-            # self.xi_Gamma_g = torch.tensor(self.xi_Gamma_g, dtype=self.hparams['dtype'], device=self.used_device)
-            # self.w_Omega = torch.tensor(self.w_Omega, dtype=self.hparams['dtype'], device=self.used_device)
-            # self.w_Gamma_b = torch.tensor(self.w_Gamma_b, dtype=self.hparams['dtype'], device=self.used_device)
-            # self.w_Gamma_t = torch.tensor(self.w_Gamma_t, dtype=self.hparams['dtype'], device=self.used_device)
-            # self.w_Gamma_l = torch.tensor(self.w_Gamma_l, dtype=self.hparams['dtype'], device=self.used_device)
-            # self.w_Gamma_r =torch.tensor( self.w_Gamma_r, dtype=self.hparams['dtype'], device=self.used_device)
-            # self.w_Gamma_eta = torch.tensor(self.w_Gamma_eta, dtype=self.hparams['dtype'], device=self.used_device)
-            # self.w_Gamma_g = torch.tensor(self.w_Gamma_g, dtype=self.hparams['dtype'], device=self.used_device)
 
         #Outward normal
         # if self.hparams['Q'][0]!=self.hparams['Q'][1]:
