@@ -1,6 +1,7 @@
 import torch
 from torch.nn import functional as F
 import numpy as np
+import opt_einsum
 
 def L2_scaled(u_hat, u):
     L2 = torch.norm(u_hat - u, p=2, dim=-1)
@@ -51,3 +52,19 @@ def vectornorm(A_hat, A):
     p = 'fro'
     Frobenius = torch.norm(A_hat - A, dim=(-1), p=p)
     return torch.mean(Frobenius)
+
+def relativeL2_coefficients(M, u_m_hat, u_m):
+    Du_m = u_m_hat - u_m
+    numerator = opt_einsum.contract('Nm,mn,Nn', Du_m, M, Du_m)
+    denominator = opt_einsum.contract('Nm,mn,Nn', u_m, M, u_m)
+    relativeL2 = (numerator/torch.maximum(denominator, 1e-7*torch.ones_like(denominator)))**(1/2)
+    return torch.mean(relativeL2)
+
+def relativeMSE_coefficients(M, u_m_hat, u_m):
+    Du_m = u_m_hat - u_m
+    numerator = opt_einsum.contract('Nm,mn,Nn', Du_m, M, Du_m)
+    denominator = opt_einsum.contract('Nm,mn,Nn', u_m, M, u_m)
+    relativeL2 = (numerator/torch.maximum(denominator, 1e-7*torch.ones_like(denominator)))**(1/2)
+    return torch.mean(relativeL2)
+
+
