@@ -52,9 +52,6 @@ class UniformQuadrature2D:
         # plt.savefig("U_Q"+str(self.Q)+".svg", bbox_inches='tight')#, transparent=True)
 
 
-import numpy as np
-from itertools import product
-
 class GaussLegendreQuadrature:
     def __init__(self, Q, n_elements):
         self.Q = np.array(Q)

@@ -136,7 +136,7 @@ class CNNNd(nn.Module):
         self.layers.append(ReshapeLayer(output_shape=(int(self.bottleneck_size),)))
         self.layers.append(nn.Linear(in_features=int(self.bottleneck_size), out_features=int(self.bottleneck_size)))
         self.layers.append(nn.ReLU())
-        self.layers.append(ReshapeLayer(output_shape=(self.bottleneck_size,1,1)))
+        self.layers.append(ReshapeLayer(output_shape=(int(self.bottleneck_size),1,1)))
         self.layers.append(nn.ConvTranspose2d(self.bottleneck_size, self.free_parameter, kernel_size=self.kernel_sizes[4], stride=self.kernel_sizes[4], bias=False))
         self.layers.append(nn.ReLU())
         self.layers.append(nn.ConvTranspose2d(self.free_parameter, self.free_parameter, kernel_size=self.kernel_sizes[5], stride=self.kernel_sizes[5], bias=False))
