@@ -82,6 +82,102 @@ class ConvNd(nn.Module):
             out += self.bias.view(1, -1, *[1] * ndim)
 
         return out
+    
+
+class ConvTransposeNd(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size, stride, bias, padding=0, output_padding=0, dilation=1):
+        """
+        Generalized N-dimensional transposed convolution module.
+
+        Args:
+            in_channels (int): Number of input channels.
+            out_channels (int): Number of output channels.
+            kernel_size (int or tuple): Size of the transposing kernel.
+            stride (int or tuple, optional): Stride of the transposed convolution. Default: 1.
+            padding (int or tuple, optional): Zero-padding added to all sides of the input. Default: 0.
+            output_padding (int or tuple, optional): Additional size added to one side of the output. Default: 0.
+            dilation (int or tuple, optional): Spacing between kernel elements. Default: 1.
+            bias (bool, optional): If True, adds a learnable bias to the output. Default: True.
+        """
+        super().__init__()
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+
+        # Ensure kernel_size, stride, padding, output_padding, and dilation are tuples matching spatial dimensions
+        self.kernel_size = kernel_size if isinstance(kernel_size, tuple) else (kernel_size,)
+        self.stride = stride if isinstance(stride, tuple) else (stride,) * len(self.kernel_size)
+        self.padding = padding if isinstance(padding, tuple) else (padding,) * len(self.kernel_size)
+        self.output_padding = output_padding if isinstance(output_padding, tuple) else (output_padding,) * len(self.kernel_size)
+        self.dilation = dilation if isinstance(dilation, tuple) else (dilation,) * len(self.kernel_size)
+
+        # Initialize weights and bias
+        self.weight = nn.Parameter(
+            torch.randn(in_channels, out_channels, *self.kernel_size)
+        )
+        if bias:
+            self.bias = nn.Parameter(torch.randn(out_channels))
+        else:
+            self.register_parameter("bias", None)
+
+    def forward(self, x):
+        """
+        Forward pass for the generalized N-dimensional transposed convolution.
+
+        Args:
+            x (torch.Tensor): Input tensor of shape (batch_size, in_channels, *spatial_dims).
+
+        Returns:
+            torch.Tensor: Output tensor of shape (batch_size, out_channels, *spatial_dims_out).
+        """
+        batch_size, in_channels, *spatial_dims = x.shape
+        ndim = len(spatial_dims)
+
+        # Adjust padding, stride, dilation, and output_padding to match the number of dimensions
+        assert len(self.kernel_size) == ndim, "Kernel size dimensions must match input dimensions"
+
+        # Compute output spatial dimensions
+        out_dims = [
+            (spatial_dims[i] - 1) * self.stride[i]
+            - 2 * self.padding[i]
+            + self.dilation[i] * (self.kernel_size[i] - 1)
+            + self.output_padding[i]
+            + 1
+            for i in range(ndim)
+        ]
+
+        # Initialize an empty output tensor with the computed dimensions
+        out = torch.zeros(
+            (batch_size, self.out_channels, *out_dims),
+            dtype=x.dtype,
+            device=x.device
+        )
+
+        # Perform the transposed convolution
+        for b in range(batch_size):
+            for ic in range(in_channels):
+                for oc in range(self.out_channels):
+                    kernel = self.weight[ic, oc]
+                    for i in range(spatial_dims[0]):
+                        for j in range(spatial_dims[1]):
+                            start_pos = [
+                                i * self.stride[0] - self.padding[0],
+                                j * self.stride[1] - self.padding[1],
+                            ]
+                            for kx in range(self.kernel_size[0]):
+                                for ky in range(self.kernel_size[1]):
+                                    out_pos_x = start_pos[0] + kx * self.dilation[0]
+                                    out_pos_y = start_pos[1] + ky * self.dilation[1]
+                                    if 0 <= out_pos_x < out_dims[0] and 0 <= out_pos_y < out_dims[1]:
+                                        out[b, oc, out_pos_x, out_pos_y] += (
+                                            x[b, ic, i, j] * kernel[kx, ky]
+                                        )
+
+        # Add bias if applicable
+        if self.bias is not None:
+            out += self.bias.view(1, -1, *[1] * ndim)
+
+        return out
+
 
 
 def balance_num_trainable_params(model, N_w):
@@ -106,14 +202,30 @@ def balance_num_trainable_params(model, N_w):
     return model  
 
 
+# def discretize_functions(f_list, x, dtype, device):
+#     with torch.no_grad():
+#         x = torch.tensor(x, dtype=dtype, device=device)
+#         f_discretized = torch.zeros((len(f_list),x.shape[0]), dtype=dtype, device=device)
+#         for i in range(len(f_list)):
+#             print(i)
+#             f_discretized[i] = f_list[i](x)
+#         f_discretized = f_discretized.detach().cpu().numpy()
+#         x = x.detach().cpu()
+#     torch.cuda.empty_cache()
+#     return f_discretized
+
+
 def discretize_functions(f_list, x, dtype, device):
+    discretization_batch_size = int(len(f_list)/10)
     with torch.no_grad():
         x = torch.tensor(x, dtype=dtype, device=device)
-        f_discretized = torch.zeros((len(f_list),x.shape[0]), dtype=dtype, device=device)
-        for i in range(len(f_list)):
-            print(i)
-            f_discretized[i] = f_list[i](x)
-        f_discretized = f_discretized.detach().cpu().numpy()
+        f_discretized = np.zeros((len(f_list),x.shape[0]))
+        for b in range(int(len(f_list)/discretization_batch_size)):
+            f_d_temp = torch.zeros((discretization_batch_size,x.shape[0]), dtype=dtype, device=device)
+            f_list_temp = f_list[discretization_batch_size*b:discretization_batch_size*(b+1)]
+            for i in range(discretization_batch_size):
+                f_d_temp[i] = f_list_temp[i](x)
+            f_discretized[discretization_batch_size*b:discretization_batch_size*(b+1)] = f_d_temp.detach().cpu().numpy()
         x = x.detach().cpu()
     torch.cuda.empty_cache()
     return f_discretized
