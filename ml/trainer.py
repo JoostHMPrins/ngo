@@ -17,7 +17,7 @@ def train(model, datamodule, hparams, loaddir, logdir, sublogdir, label):
     data = datamodule(loaddir, hparams)
 
     #Model
-    hparams['used_device'] = hparams['train_device']
+    # hparams['used_device'] = hparams['train_device']
     MLmodel = model(hparams)
     MLmodel = MLmodel.to(hparams['dtype'])
 

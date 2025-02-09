@@ -8,7 +8,7 @@ from numba import jit
 import opt_einsum
 
 from NeuralOperator import NeuralOperator
-from darcy_ms import *
+from manufacturedsolutions import *
 
 import sys
 sys.path.insert(0, '../../ml') 

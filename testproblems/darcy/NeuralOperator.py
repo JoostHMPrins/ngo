@@ -41,24 +41,24 @@ class NeuralOperator(pl.LightningModule):
         #Basis evaluation at quadrature points
         self.psix = torch.tensor(self.basis_trial.forward(self.xi_Omega_L.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
         #A_0 (K inverse for constant theta)
-        # if self.hparams['Neumannseries']==True:
-        self.F_0, self.A_0 = self.compute_F_0_A_0()
+        if self.hparams['Neumannseries']==True:
+            self.F_0, self.A_0 = self.compute_F_0_A_0()
         #Identity
         self.Identity = torch.eye(self.hparams['N'], dtype=self.hparams['dtype'], device=self.used_device)
         self = self.to(self.hparams['dtype'])
 
     def discretize_input_functions(self, theta, f, etab, etat, gl, gr):
-        theta_d = discretize_functions(theta, self.xi_Omega, dtype=self.hparams['dtype'], device=self.used_device)
-        theta_g_d = discretize_functions(theta, self.xi_Gamma_g, dtype=self.hparams['dtype'], device=self.used_device)
-        f_d = discretize_functions(f, self.xi_Omega, dtype=self.hparams['dtype'], device=self.used_device)
-        etab_d = discretize_functions(etab, self.xi_Gamma_b, dtype=self.hparams['dtype'], device=self.used_device)
-        etat_d = discretize_functions(etat, self.xi_Gamma_t, dtype=self.hparams['dtype'], device=self.used_device)
-        gl_d = discretize_functions(gl, self.xi_Gamma_l, dtype=self.hparams['dtype'], device=self.used_device)
-        gr_d = discretize_functions(gr, self.xi_Gamma_r, dtype=self.hparams['dtype'], device=self.used_device)
+        theta_d = torch.tensor(discretize_functions(theta, self.xi_Omega, dtype=self.hparams['dtype'], device=self.used_device), dtype=self.hparams['dtype'], device=self.used_device)
+        theta_g_d = torch.tensor(discretize_functions(theta, self.xi_Gamma_g, dtype=self.hparams['dtype'], device=self.used_device), dtype=self.hparams['dtype'], device=self.used_device)
+        f_d = torch.tensor(discretize_functions(f, self.xi_Omega, dtype=self.hparams['dtype'], device=self.used_device), dtype=self.hparams['dtype'], device=self.used_device)
+        etab_d = torch.tensor(discretize_functions(etab, self.xi_Gamma_b, dtype=self.hparams['dtype'], device=self.used_device), dtype=self.hparams['dtype'], device=self.used_device)
+        etat_d = torch.tensor(discretize_functions(etat, self.xi_Gamma_t, dtype=self.hparams['dtype'], device=self.used_device), dtype=self.hparams['dtype'], device=self.used_device)
+        gl_d = torch.tensor(discretize_functions(gl, self.xi_Gamma_l, dtype=self.hparams['dtype'], device=self.used_device), dtype=self.hparams['dtype'], device=self.used_device)
+        gr_d = torch.tensor(discretize_functions(gr, self.xi_Gamma_r, dtype=self.hparams['dtype'], device=self.used_device), dtype=self.hparams['dtype'], device=self.used_device)
         return theta_d, theta_g_d, f_d, etab_d, etat_d, gl_d, gr_d
     
     def discretize_output_function(self, u):
-        u_d = discretize_functions(u, self.xi_Omega_L, dtype=self.hparams['dtype'], device=self.used_device)
+        u_d = torch.tensor(discretize_functions(u, self.xi_Omega_L, dtype=self.hparams['dtype'], device=self.used_device), dtype=self.hparams['dtype'], device=self.used_device)
         return u_d
 
     def compute_F(self, theta, theta_g):
