@@ -11,5 +11,4 @@ def loadmodelfromlabel(model, label, logdir, sublogdir, device):
             Model = model(hparams)
             statedict = ckpt['state_dict']
             Model.load_state_dict(statedict)
-            Model = Model.to(device)
     return Model
