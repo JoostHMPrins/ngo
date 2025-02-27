@@ -23,25 +23,25 @@ from DataModule import DataModule
 hparams = {}
 hparams['N_samples_train'] = 10000
 hparams['N_samples_val'] = 1000
-hparams['assembly_batch_size'] = 1100
+hparams['assembly_batch_size'] = 100
 hparams['variables'] = ['t','x','x']
 hparams['d'] = len(hparams['variables'])
 hparams['l_min'] = [0.5,0.5,0.5]
 hparams['l_max'] = [1,1,1]
 loaddir = None #'../../../trainingdata/darcy_mfs_l1e-2to1e0'
-hparams['project_materialparameters'] = False
+hparams['project_materialparameters'] = True
 hparams['project_rhs'] = False
-hparams['output_coefficients'] = False
+hparams['output_coefficients'] = True
 
 #Training settings
 hparams['dtype'] = torch.float32
 hparams['precision'] = 32
-hparams['discretization_device'] = 'cuda:0'
-hparams['used_device'] = 'cuda:0'
-hparams['devices'] = [0]
-hparams['solution_loss'] = weightedrelativeL2
+hparams['discretization_device'] = 'cuda:2'
+hparams['used_device'] = 'cuda:2'
+hparams['devices'] = [2]
+hparams['solution_loss'] = relativeL2_coefficients
 hparams['matrix_loss'] = None #relativematrixnorm
-hparams['metric'] = weightedrelativeL2
+hparams['metric'] = relativeL2_coefficients
 hparams['optimizer1'] = torch.optim.Adam
 hparams['optimizer2'] = torch.optim.LBFGS
 hparams['switch_threshold'] = None
@@ -50,7 +50,7 @@ hparams['batch_size'] = 100
 hparams['epochs'] = 20000
 
 #Bases
-hparams['h'] = (10,10,10)
+hparams['h'] = (4,10,10)
 hparams['p'] = (3,3,3)
 hparams['C'] = (2,2,2)
 hparams['N'] = np.prod(hparams['h'])
@@ -69,52 +69,53 @@ hparams['POD'] = False
 
 #Quadrature
 hparams['quadrature'] = 'Gauss-Legendre'
-hparams['n_elements'] = (3,3,3)
-hparams['Q'] = (99,99,99)
+hparams['n_elements'] = (1,3,3)
+hparams['Q'] = (33,99,99)
 hparams['quadrature_L'] = 'Gauss-Legendre'
-hparams['n_elements_L'] = (3,3,3) #max(int((hparams['h'][0] - 1)/hparams['p']), 1)
-hparams['Q_L'] = (99,99,99) #33*hparams['n_elements_L']
+hparams['n_elements_L'] = (1,3,3) #max(int((hparams['h'][0] - 1)/hparams['p']), 1)
+hparams['Q_L'] = (33,99,99) #33*hparams['n_elements_L']
+hparams['Dt'] = 0.1
 
 # hparams['Dt'] = 1/3
 # hparams['n_timesteps'] = 1/hparams['Dt']
 
 #System net'
-hparams['modeltype'] = 'data NGO'
-hparams['systemnet'] = CNN_3dto2d
+hparams['modeltype'] = 'model NGO'
+hparams['systemnet'] = CNN
 # hparams['input_shape'] = (5,)+(hparams['Q'])
-# hparams['input_shape'] = (1,hparams['N'],hparams['N'])
-hparams['input_shape'] = (1,)+hparams['h']
+hparams['input_shape'] = (1,hparams['N'],hparams['N'])
+# hparams['input_shape'] = (1,)+hparams['h']
 # hparams['output_shape'] = hparams['h']
 # hparams['output_shape'] = (hparams['Q_L'])
 # hparams['output_shape'] = (hparams['Q_L'])
 # hparams['output_shape'] = (hparams['h'][0],hparams['h'][1])
 hparams['output_shape'] = (hparams['N'],hparams['N'])
 hparams['N_w'] = 30000
-hparams['Neumannseries'] = False
-hparams['Neumannseries_order'] = None 
-hparams['skipconnections'] = False
+hparams['Neumannseries'] = True
+hparams['Neumannseries_order'] = 1
+hparams['skipconnections'] = True
 # hparams['kernel_sizes'] = [(1,1,1),(1,1,1),(2,2,2),(5,5,5),10,10,5,2]
 # hparams['kernel_sizes'] = [(1,1,1),(1,1,1),(2,2,2),(5,5,5),5,2,1,1]
 # hparams['kernel_sizes'] = [2,5,10,10,10,10,5,2]
 # hparams['kernel_sizes'] = [10,1,2,5,5,2,1,1]
-# hparams['kernel_sizes'] = [2,4,5,10,10,5,4,2]
-hparams['kernel_sizes'] = [1,1,2,5,10,10,5,2]
+hparams['kernel_sizes'] = [2,4,5,10,10,5,4,2]
+# hparams['kernel_sizes'] = [(2,2,2),(2,2,2),(2,5,5),(5,5,5),(5,5,5),(2,5,5),(2,2,2),(2,2,2)]
 hparams['gamma_stabilization'] = 0
 hparams['bottleneck_size'] = 20
-# hparams['outputactivation'] = nn.Tanhshrink()
+hparams['outputactivation'] = nn.Tanhshrink()
 
 #Physics
-hparams['scaling_equivariance'] = False
+hparams['scaling_equivariance'] = True
 hparams['permutation_equivariance'] = False
 hparams['massconservation'] = True
 
 logdir = '../../../../nnlogs'
-sublogdir = 'neuraloperators_tdarcy'
-# sublogdir = 'test'
-# hparams['N_samples_train'] = 1
-# hparams['N_samples_val'] = 1
-# hparams['assembly_batch_size'] = 1
-label = 'dataNGO'
+sublogdir = 'SE'
+sublogdir = 'test'
+hparams['N_samples_train'] = 10
+hparams['N_samples_val'] = 10
+hparams['assembly_batch_size'] = 10
+label = 'fro_new'
 hparams['label'] = label
 
 model = NeuralOperator

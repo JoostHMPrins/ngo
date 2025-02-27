@@ -23,12 +23,12 @@ class NeuralOperator(pl.LightningModule):
         self.init_modeltype()
         #Linear branches
         if self.hparams['modeltype']=='VarMiON':
-            self.LBranch_f = LBranchNet(hparams, input_dim=self.hparams['Q']**self.hparams['d'], output_dim=self.hparams['N'])
-            self.LBranch_eta = LBranchNet(hparams, input_dim=2*self.hparams['Q'], output_dim=self.hparams['N'])
-            self.LBranch_g = LBranchNet(hparams, input_dim=2*self.hparams['Q'], output_dim=self.hparams['N'])
+            self.LBranch_f = LBranchNet(hparams, input_dim=self.hparams['Q']**self.hparams['d'], output_dim=self.hparams['N']).to(self.used_device)
+            self.LBranch_eta = LBranchNet(hparams, input_dim=2*self.hparams['Q'], output_dim=self.hparams['N']).to(self.used_device)
+            self.LBranch_g = LBranchNet(hparams, input_dim=2*self.hparams['Q'], output_dim=self.hparams['N']).to(self.used_device)
         self.hparams['N_w_real'] = sum(p.numel() for p in self.parameters())
         #System net
-        self.systemnet = self.hparams['systemnet'](self.hparams)
+        self.systemnet = self.hparams['systemnet'](self.hparams).to(self.used_device)
         #Geometry and quadrature
         self.geometry()
         #Bases
@@ -41,8 +41,8 @@ class NeuralOperator(pl.LightningModule):
         #Basis evaluation at quadrature points
         self.psix = torch.tensor(self.basis_trial.forward(self.xi_Omega_L.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
         #A_0 (K inverse for constant theta)
-        if self.hparams['Neumannseries']==True:
-            self.F_0, self.A_0 = self.compute_F_0_A_0()
+        # if self.hparams['Neumannseries']==True:
+        self.F_0, self.A_0 = self.compute_F_0_A_0()
         #Identity
         self.Identity = torch.eye(self.hparams['N'], dtype=self.hparams['dtype'], device=self.used_device)
         self = self.to(self.hparams['dtype'])
@@ -76,27 +76,27 @@ class NeuralOperator(pl.LightningModule):
             basis_trial = torch.tensor(self.basis_trial.forward(self.xi_Omega.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
             F = opt_einsum.contract('q,q,qm,qn->mn', self.w_Omega, theta, basis_test, basis_trial)
         if  self.hparams['modeltype']=='model NGO' or self.hparams['modeltype']=='FEM' or self.hparams['modeltype']=='projection':
-            gradbasis_test = torch.tensor(self.basis_test.grad(self.xi_Omega.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
-            gradbasis_trial = torch.tensor(self.basis_trial.grad(self.xi_Omega.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
-            basis_test_g = torch.tensor(self.basis_test.forward(self.xi_Gamma_g.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
-            gradbasis_test_g = torch.tensor(self.basis_test.grad(self.xi_Gamma_g.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
-            basis_trial_g = torch.tensor(self.basis_trial.forward(self.xi_Gamma_g.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
-            gradbasis_trial_g = torch.tensor(self.basis_trial.grad(self.xi_Gamma_g.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
-            F = torch.zeros((theta.shape[0],self.hparams['N'],self.hparams['N']), dtype=self.hparams['dtype'], device=self.used_device)
+            gradbasis_test = self.basis_test.grad(self.xi_Omega.cpu().numpy())
+            gradbasis_trial = self.basis_trial.grad(self.xi_Omega.cpu().numpy())
+            basis_test_g = self.basis_test.forward(self.xi_Gamma_g.cpu().numpy())
+            gradbasis_test_g = self.basis_test.grad(self.xi_Gamma_g.cpu().numpy())
+            basis_trial_g = self.basis_trial.forward(self.xi_Gamma_g.cpu().numpy())
+            gradbasis_trial_g = self.basis_trial.grad(self.xi_Gamma_g.cpu().numpy())
+            F = np.zeros((theta.shape[0],self.hparams['N'],self.hparams['N']))
             if self.hparams.get('Assembly_mode','parallel')=='parallel':
-                F = opt_einsum.contract('q,Nq,qmx,qnx->Nmn', self.w_Omega, theta, gradbasis_test, gradbasis_trial)
-                F += -opt_einsum.contract('q,qm,qx,Nq,qnx->Nmn', self.w_Gamma_g, basis_test_g, self.n_Gamma_g, theta_g, gradbasis_trial_g)
-                F += -opt_einsum.contract('q,qn,qx,Nq,qmx->Nmn', self.w_Gamma_g, basis_trial_g, self.n_Gamma_g, theta_g, gradbasis_test_g)
+                F = opt_einsum.contract('q,Nq,qmx,qnx->Nmn', self.w_Omega.detach().cpu().numpy(), theta.detach().cpu().numpy(), gradbasis_test, gradbasis_trial)
+                F += -opt_einsum.contract('q,qm,qx,Nq,qnx->Nmn', self.w_Gamma_g.detach().cpu().numpy(), basis_test_g, self.n_Gamma_g.detach().cpu().numpy(), theta_g.detach().cpu().numpy(), gradbasis_trial_g)
+                F += -opt_einsum.contract('q,qn,qx,Nq,qmx->Nmn', self.w_Gamma_g.detach().cpu().numpy(), basis_trial_g, self.n_Gamma_g.detach().cpu().numpy(), theta_g.detach().cpu().numpy(), gradbasis_test_g)
             if self.hparams.get('gamma_stabilization',0)!=0:
-                F += self.hparams['gamma_stabilization']*opt_einsum.contract('q,qm,Nq,qn->Nmn', self.w_Gamma_g, basis_test_g, theta_g, basis_trial_g)
+                F += self.hparams['gamma_stabilization']*opt_einsum.contract('q,qm,Nq,qn->Nmn', self.w_Gamma_g.cpu().numpy(), basis_test_g, theta_g.detach().cpu().numpy(), basis_trial_g)
             if self.hparams.get('Assembly_mode','parallel')=='series':
                 for i in range(theta.shape[0]):
                     print(i)
-                    F[i] = opt_einsum.contract('q,q,qmx,qnx->mn', self.w_Omega, theta[i], gradbasis_test, gradbasis_trial)
-                    F[i] += -opt_einsum.contract('q,qm,qx,q,qnx->mn', self.w_Gamma_g, basis_test_g, self.n_Gamma_g, theta_g[i], gradbasis_trial_g)
-                    F[i] += -opt_einsum.contract('q,qn,qx,q,qmx->mn', self.w_Gamma_g, basis_trial_g, self.n_Gamma_g, theta_g[i], gradbasis_test_g)
+                    F[i] = opt_einsum.contract('q,q,qmx,qnx->mn', self.w_Omega.detach().cpu().numpy(), theta[i], gradbasis_test, gradbasis_trial)
+                    F[i] += -opt_einsum.contract('q,qm,qx,q,qnx->mn', self.w_Gamma_g.detach().cpu().numpy(), basis_test_g, self.n_Gamma_g, theta_g[i], gradbasis_trial_g)
+                    F[i] += -opt_einsum.contract('q,qn,qx,q,qmx->mn', self.w_Gamma_g.detach().cpu().numpy(), basis_trial_g, self.n_Gamma_g, theta_g[i], gradbasis_test_g)
                 if self.hparams.get('gamma_stabilization',0)!=0:
-                    F[i] += self.hparams['gamma_stabilization']*opt_einsum.contract('q,qm,q,qn->mn', self.w_Gamma_g, basis_test_g, theta_g[i], basis_trial_g)
+                    F[i] += self.hparams['gamma_stabilization']*opt_einsum.contract('q,qm,q,qn->mn', self.w_Gamma_g.detach().cpu().numpy(), basis_test_g, theta_g[i], basis_trial_g)
         return F
     
     def compute_F_0_A_0(self):
@@ -108,7 +108,7 @@ class NeuralOperator(pl.LightningModule):
         gradbasis_test_g = torch.tensor(self.basis_test.grad(self.xi_Gamma_g.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
         basis_trial_g = torch.tensor(self.basis_trial.forward(self.xi_Gamma_g.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
         gradbasis_trial_g = torch.tensor(self.basis_trial.grad(self.xi_Gamma_g.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
-        F_0 = torch.zeros((theta.shape[0],self.hparams['N'],self.hparams['N']), dtype=self.hparams['dtype'], device=self.used_device)
+        # F_0 = torch.zeros((theta.shape[0],self.hparams['N'],self.hparams['N']), dtype=self.hparams['dtype'], device=self.used_device)
         F_0 = opt_einsum.contract('q,q,qmx,qnx->mn', self.w_Omega, theta, gradbasis_test, gradbasis_trial)
         F_0 += -opt_einsum.contract('q,qm,qx,q,qnx->mn', self.w_Gamma_g, basis_test_g, self.n_Gamma_g, theta_g, gradbasis_trial_g)
         F_0 += -opt_einsum.contract('q,qn,qx,q,qmx->mn', self.w_Gamma_g, basis_trial_g, self.n_Gamma_g, theta_g, gradbasis_test_g)
@@ -118,7 +118,7 @@ class NeuralOperator(pl.LightningModule):
         A_0 = torch.tensor(A_0, dtype=self.hparams['dtype'], device=self.used_device)
         if  self.hparams['modeltype']=='data NGO':
             basis_test = torch.tensor(self.basis_test.forward(self.xi_Omega.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
-            F = opt_einsum.contract('q,qm,Nq->Nm', self.w_Omega, basis_test, theta).reshape((theta.shape[0],self.hparams['h'][0],self.hparams['h'][1]))
+            F = opt_einsum.contract('q,qm,q->m', self.w_Omega, basis_test, theta).reshape((theta.shape[0],self.hparams['h'][0],self.hparams['h'][1]))
             F_0 = torch.tensor(F, dtype=self.hparams['dtype'], device=self.used_device)
         return F_0, A_0
     
@@ -233,7 +233,7 @@ class NeuralOperator(pl.LightningModule):
         return u_hat
     
     def projection_forward(self, u):
-        u_q = torch.tensor(discretize_functions(u, self.xi_Omega, dtype=self.hparams['dtype'], device=self.used_device), dtype=self.hparams['dtype'])
+        u_q = torch.tensor(discretize_functions(u, self.xi_Omega, dtype=self.hparams['dtype'], device=self.used_device), dtype=self.hparams['dtype'], device=self.used_device)
         basis_test = torch.tensor(self.basis_test.forward(self.xi_Omega.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
         basis_trial = torch.tensor(self.basis_trial.forward(self.xi_Omega.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
         u_w = opt_einsum.contract('q,qm,Nq->Nm', self.w_Omega, basis_test, u_q)
@@ -266,7 +266,7 @@ class NeuralOperator(pl.LightningModule):
         return G
     
     def compute_projection_coeffs(self, u):
-        u_q = torch.tensor(discretize_functions(u, self.xi_Omega, dtype=self.hparams['dtype'], device=self.used_device), dtype=self.hparams['dtype'])
+        u_q = torch.tensor(discretize_functions(u, self.xi_Omega, dtype=self.hparams['dtype'], device=self.used_device), dtype=self.hparams['dtype'], device=self.used_device)
         basis_test = torch.tensor(self.basis_test.forward(self.xi_Omega.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
         basis_trial = torch.tensor(self.basis_trial.forward(self.xi_Omega.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
         u_w = opt_einsum.contract('q,qm,Nq->Nm', self.w_Omega, basis_test, u_q)
@@ -276,8 +276,8 @@ class NeuralOperator(pl.LightningModule):
         return u_n
 
     def Neumann_criterion(self, theta):
-        theta_d = discretize_functions(theta, self.xi_Omega, dtype=self.hparams['dtype'], device=self.used_device)
-        theta_g_d = discretize_functions(theta, self.xi_Gamma_g, dtype=self.hparams['dtype'], device=self.used_device)
+        theta_d = torch.tensor(discretize_functions(theta, self.xi_Omega, dtype=self.hparams['dtype'], device=self.used_device), dtype=self.hparams['dtype'], device=self.used_device)
+        theta_g_d = torch.tensor(discretize_functions(theta, self.xi_Gamma_g, dtype=self.hparams['dtype'], device=self.used_device), dtype=self.hparams['dtype'], device=self.used_device)
         F = torch.tensor(self.compute_F(theta_d, theta_g_d), dtype=self.hparams['dtype'], device=self.used_device)
         if self.hparams.get('scaling_equivariance',False)==True:
             scaling = torch.tensor(torch.sum(self.w_Omega[None,:]*theta_d, axis=-1), dtype=self.hparams['dtype'], device=self.used_device)
@@ -323,25 +323,28 @@ class NeuralOperator(pl.LightningModule):
         etab = torch.tensor(etab, dtype=self.hparams['dtype'], device=self.used_device)
         etat = torch.tensor(etat, dtype=self.hparams['dtype'], device=self.used_device)
         gl = torch.tensor(gl, dtype=self.hparams['dtype'], device=self.used_device)
-        gr = torch.tensor(gr, dtype=self.hparams['dtype'], device=self.used_device)    
-        self.psix = torch.tensor(self.basis_trial.forward(x.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
+        gr = torch.tensor(gr, dtype=self.hparams['dtype'], device=self.used_device)
+        if self.hparams['modeltype']!='NN':
+            self.psix = torch.tensor(self.basis_trial.forward(x.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
         if self.hparams['modeltype']=='NN':
             u_hat = self.NN_forward(theta, f, etab, etat, gl, gr)
+            if self.hparams['systemnet']!=FNO:
+                u_hat=u_hat.detach().cpu().numpy()
         if self.hparams['modeltype']=='DeepONet':
-            u_hat = self.DeepONet_forward(theta, f, etab, etat, gl, gr)
+            u_hat = self.DeepONet_forward(theta, f, etab, etat, gl, gr).detach().cpu().numpy()
         if self.hparams['modeltype']=='VarMiON':
-            u_hat = self.VarMiON_forward(theta, f, etab, etat, gl, gr)
+            u_hat = self.VarMiON_forward(theta, f, etab, etat, gl, gr).detach().cpu().numpy()
         if self.hparams['modeltype']=='model NGO' or self.hparams['modeltype']=='data NGO':
             scaling = torch.tensor(torch.sum(self.w_Omega[None,:]*theta, axis=-1), dtype=self.hparams['dtype'], device=self.used_device)
             # lambdas = torch.linalg.eigvals(F)
             # lambdas_abs = torch.real((lambdas*torch.conj(lambdas))**(1/2))
             # lambda_max = torch.amax(lambdas_abs, axis=-1)
             # scaling = lambda_max
-            u_hat = self.NGO_forward(scaling, F, d)
+            u_hat = self.NGO_forward(scaling, F, d).detach().cpu().numpy()
         if self.hparams['modeltype']=='FEM':
-            u_hat = self.FEM_forward(F, d)
+            u_hat = self.FEM_forward(F, d).detach().cpu().numpy()
         if self.hparams['modeltype']=='projection':
-            u_hat = self.projection_forward(u)
+            u_hat = self.projection_forward(u).detach().cpu().numpy()
         return u_hat
     
     def geometry(self):
@@ -462,6 +465,8 @@ class NeuralOperator(pl.LightningModule):
     def on_fit_start(self):
         self.used_device = self.used_device
         torch.set_num_threads(2)
+        #Basis evaluation at quadrature points
+        self.psix = torch.tensor(self.basis_trial.forward(self.xi_Omega_L.cpu().numpy()), dtype=self.hparams['dtype'], device=self.used_device)
         self.psix = self.psix.to(self.used_device)
         self.w_Omega_L = torch.tensor(self.w_Omega_L).to(self.used_device)
         self.systemnet.device = self.used_device

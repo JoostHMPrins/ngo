@@ -15,10 +15,6 @@ sys.path.insert(0, '../../ml')
 from quadrature import *
 from basisfunctions import *
 
-sys.path.insert(0, '../../trainingdata')
-from datasaver import load_function_list
-
-
 class DataModule(pl.LightningDataModule):
 
     def __init__(self, data_dir, hparams):
@@ -44,14 +40,14 @@ class DataModule(pl.LightningDataModule):
         self.theta_q, self.theta_x0_q, self.theta_xL_q, self.f_q, self.eta_y0_q, self.eta_yL_q, self.g_x0_q, self.g_xL_q, self.u0_t0_q = dummymodel.discretize_input_functions(theta, f, eta_y0, eta_yL, g_x0, g_xL, u0)
         if dummymodel.hparams['modeltype']=='model NGO':
             print('Assembling F...')
-            print('Assembling d...')
-            print('Calculating conserved quantity...')
+            # print('Assembling d...')
+            # print('Calculating conserved quantity...')
             bs = self.hparams['assembly_batch_size']
             n_batches = int(self.N_samples/bs)
             self.F = np.zeros((len(theta),self.hparams['N'],self.hparams['N']))
-            self.d = np.zeros((len(f),self.hparams['N']))
-            self.C = np.zeros(len(f))
-            self.C_m = np.zeros((len(theta),self.hparams['N']))
+            # self.d = np.zeros((len(f),self.hparams['N']))
+            # self.C = np.zeros(len(f))
+            # self.C_m = np.zeros((len(theta),self.hparams['N']))
             for i in range(n_batches):
                 print('batch: '+str(i))
                 self.F[bs*i:bs*(i+1)] = dummymodel.compute_F(self.theta_q[bs*i:bs*(i+1)], self.theta_x0_q[bs*i:bs*(i+1)], self.theta_xL_q[bs*i:bs*(i+1)])
@@ -68,12 +64,12 @@ class DataModule(pl.LightningDataModule):
             self.C = dummymodel.compute_C(self.f_q, self.eta_y0_q, self.eta_yL_q, self.u0_t0_q)
             self.C_m = dummymodel.compute_C_m(self.theta_x0_q, self.theta_xL_q)
         print('Discretizing output function...')
+        self.u = dummymodel.discretize_output_function(u)    
         if dummymodel.hparams['output_coefficients']==True:
-            self.u_q = dummymodel.project_output_function(u)
-        if dummymodel.hparams['output_coefficients']==False:
-            self.u_q = dummymodel.discretize_output_function(u)    
+            self.u = dummymodel.project_output_function(self.u)
         
     def setup(self, stage=None):
+        torch.cuda.empty_cache()
         if self.hparams['modeltype']=='NN' or self.hparams['modeltype']=='DeepONet' or self.hparams['modeltype']=='VarMiON':
             self.theta_q = torch.tensor(self.theta_q, dtype=self.hparams['dtype'])
             self.f_q = torch.tensor(self.f_q, dtype=self.hparams['dtype'])
@@ -82,15 +78,15 @@ class DataModule(pl.LightningDataModule):
             self.gl_q = torch.tensor(self.g_x0_q, dtype=self.hparams['dtype'])
             self.gr_q = torch.tensor(self.g_xL_q, dtype=self.hparams['dtype']) 
             self.u0_t0_q = torch.tensor(self.u0_t0_q, dtype=self.hparams['dtype'])             
-            self.u_q = torch.tensor(self.u_q, dtype=self.hparams['dtype'])             
-            dataset = torch.utils.data.TensorDataset(self.theta_q, self.f_q, self.etab_q, self.etat_q, self.gl_q, self.gr_q, self.u0_t0_q, self.u_q)
+            self.u = torch.tensor(self.u, dtype=self.hparams['dtype'])             
+            dataset = torch.utils.data.TensorDataset(self.theta_q, self.f_q, self.etab_q, self.etat_q, self.gl_q, self.gr_q, self.u0_t0_q, self.u)
         if self.hparams['modeltype']=='model NGO' or self.hparams['modeltype']=='data NGO' or self.hparams['modeltype']=='matrix data NGO':
             self.F = torch.tensor(self.F, dtype=self.hparams['dtype'])
             self.d = torch.tensor(self.d, dtype=self.hparams['dtype'])
             self.C = torch.tensor(self.C, dtype=self.hparams['dtype'])
             self.C_m = torch.tensor(self.C_m, dtype=self.hparams['dtype'])
-            self.u_q = torch.tensor(self.u_q, dtype=self.hparams['dtype'])   
-            dataset = torch.utils.data.TensorDataset(self.F, self.d, self.C, self.C_m, self.u_q)
+            self.u = torch.tensor(self.u, dtype=self.hparams['dtype'])   
+            dataset = torch.utils.data.TensorDataset(self.F, self.d, self.C, self.C_m, self.u)
         self.trainingset, self.validationset = random_split(dataset, [self.hparams['N_samples_train'], self.hparams['N_samples_val']])
 
     def train_dataloader(self):
