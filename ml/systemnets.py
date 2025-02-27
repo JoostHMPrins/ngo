@@ -249,8 +249,10 @@ class CNN_3dto2d(nn.Module):
         #     y = self.layers[20](y)
         if self.hparams.get('NLB_outputactivation',None) is not None:
             y = self.layers[20](y)
+            print('test1')
         if self.hparams.get('outputactivation',None) is not None:
             y = self.layers[20](y)
+            print('test2')
         return y
     
 
@@ -337,9 +339,18 @@ class FNO(nn.Module):
         self.layers.append(ReshapeLayer(output_shape=self.hparams['output_shape']))
 
     def forward(self, x):
-        for layer in self.layers:
-            x = layer(x)
-        y = x
+        bs = 1
+        if x.shape[0]>bs:
+            y = np.zeros((x.shape[0],)+self.hparams['output_shape'])
+            for i in range(int(x.shape[0]/bs)):
+                x_temp = x[bs*i:bs*(i+1)]
+                for layer in self.layers:
+                    x_temp = layer(x_temp)
+                y[bs*i:bs*(i+1)] = x_temp.detach().cpu().numpy()
+        if x.shape[0]<=int(self.hparams['batch_size']):
+            for layer in self.layers:
+                x = layer(x)
+            y = x.detach().cpu().numpy()
         return y    
     
 
