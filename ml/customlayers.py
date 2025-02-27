@@ -120,7 +120,7 @@ def balance_num_trainable_params(model, N_w):
 
 
 def discretize_functions(f_list, x, dtype, device):
-    discretization_batch_size = len(f_list) if len(f_list)<1000 else int(len(f_list)/10)
+    discretization_batch_size = len(f_list) if len(f_list)<100 else 100# int(len(f_list)/100)
     with torch.no_grad():
         x = torch.tensor(x, dtype=dtype, device=device)
         f_discretized = np.zeros((len(f_list),x.shape[0]))
