@@ -2,55 +2,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 from itertools import product
 
-class UniformQuadrature2D:
-    def __init__(self, Q):
-        self.d = 2
-        self.Q = Q
-        self.compute_interiorquadrature()
-        self.compute_boundaryquadrature()
-        
-    def compute_interiorquadrature(self):
-        x_0_Q, x_1_Q = np.mgrid[0:1:self.Q*1j, 0:1:self.Q*1j]
-        self.xi_Omega = np.vstack([x_0_Q.ravel(), x_1_Q.ravel()]).T
-        self.w_Omega = 1/(self.Q**self.d)*np.ones((self.Q**self.d))
-        
-    def compute_boundaryquadrature(self):
-        xi_Gamma_i = np.linspace(0,1, self.Q)
-        self.xi_Gamma_b = np.zeros((self.Q,self.d))
-        self.xi_Gamma_b[:,0] = xi_Gamma_i
-        self.xi_Gamma_t = np.ones((self.Q,self.d))
-        self.xi_Gamma_t[:,0] = xi_Gamma_i
-        self.xi_Gamma_l = np.zeros((self.Q,self.d))
-        self.xi_Gamma_l[:,1] = xi_Gamma_i
-        self.xi_Gamma_r = np.ones((self.Q,self.d))
-        self.xi_Gamma_r[:,1] = xi_Gamma_i
-        self.xi_Gamma_eta = np.zeros((2*self.Q,self.d))
-        self.xi_Gamma_eta[:self.Q] = self.xi_Gamma_b
-        self.xi_Gamma_eta[self.Q:] = self.xi_Gamma_t        
-        self.xi_Gamma_g = np.zeros((2*self.Q,self.d))
-        self.xi_Gamma_g[:self.Q] = self.xi_Gamma_l
-        self.xi_Gamma_g[self.Q:] = self.xi_Gamma_r        
-        self.w_Gamma_b = 1/(self.Q)*np.ones((self.Q))
-        self.w_Gamma_t = 1/(self.Q)*np.ones((self.Q))
-        self.w_Gamma_l = 1/(self.Q)*np.ones((self.Q))
-        self.w_Gamma_r = 1/(self.Q)*np.ones((self.Q))
-        self.w_Gamma_eta = 1/(self.Q)*np.ones((2*self.Q))
-        self.w_Gamma_g = 1/(self.Q)*np.ones((2*self.Q))
-        self.xi_Gamma = np.zeros((4,self.Q,2))
-        self.xi_Gamma[0] = self.xi_Gamma_l
-        self.xi_Gamma[1] = self.xi_Gamma_r
-        self.xi_Gamma[2] = self.xi_Gamma_b
-        self.xi_Gamma[3] = self.xi_Gamma_t
-        self.xi_Gamma = self.xi_Gamma.reshape(self.xi_Gamma.shape[0]*self.xi_Gamma.shape[1],self.xi_Gamma.shape[2])
-        self.w_Gamma = np.array([self.w_Gamma_l,self.w_Gamma_r,self.w_Gamma_b,self.w_Gamma_t]).flatten()
-        
-    def plot_quadraturegrid(self):
-        plt.scatter(self.xi_Omega[:,0], self.xi_Omega[:,1], c=self.w_Omega, s=10)
-        plt.scatter(self.xi_Gamma[:,0], self.xi_Gamma[:,1], c=self.w_Gamma, s=10)
-        plt.axis('square')
-        plt.colorbar()
-        # plt.savefig("U_Q"+str(self.Q)+".svg", bbox_inches='tight')#, transparent=True)
-
 
 class GaussLegendreQuadrature:
     def __init__(self, Q, n_elements):
@@ -94,6 +45,42 @@ class GaussLegendreQuadrature:
         ax = fig.add_subplot(111, projection='3d')
         # Scatter plot with weights determining the color
         sc = ax.scatter(quad.xi[:, 0], self.xi[:, 1], self.xi[:, 2], c=quad.w, cmap='viridis', s=50)
+        # Add colorbar and labels
+        cbar = plt.colorbar(sc, ax=ax, pad=0.1)
+        cbar.set_label('Quadrature Weights')
+        ax.set_xlabel('X')
+        ax.set_ylabel('Y')
+        ax.set_zlabel('Z')
+        ax.set_title('3D Scatter Plot of Quadrature Points')
+        # plt.savefig("ndquadrature.svg", bbox_inches='tight')#, transparent=True)
+        plt.show()
+
+
+class UniformQuadrature:
+    def __init__(self, Q):
+        self.Q = np.array(Q)
+        self.d = len(self.Q)
+        self.w, self.xi = self.compute_quadrature()
+
+    def compute_quadrature(self):
+        grid = np.mgrid[[slice(0, 1, q * 1j) for q in self.Q]]
+        xis = np.vstack(map(np.ravel, grid)).T
+        ws = 1/np.prod(self.Q)*np.ones((np.prod(self.Q)))
+        return ws, xis
+    
+    def plot_2dquadraturegrid(self):
+        fig, ax = plt.subplots(1,1, figsize=(6, 4))
+        fig.subplots_adjust(left=None, bottom=None, right=None, top=None, wspace=0.4, hspace=0.4)
+        sc = ax.scatter(self.xi[:,0], self.xi[:,1], c=self.w, s=50)
+        plt.axis('square')
+        cbar = plt.colorbar(sc, ax=ax, pad=0.1)
+        # plt.savefig("GL_Q"+str(self.Q)+".svg", bbox_inches='tight')#, transparent=True)
+    
+    def plot_3dquadraturegrid(self):
+        fig = plt.figure(figsize=(10, 8))
+        ax = fig.add_subplot(111, projection='3d')
+        # Scatter plot with weights determining the color
+        sc = ax.scatter(self.xi[:, 0], self.xi[:, 1], self.xi[:, 2], c=self.w, cmap='viridis', s=50)
         # Add colorbar and labels
         cbar = plt.colorbar(sc, ax=ax, pad=0.1)
         cbar.set_label('Quadrature Weights')
@@ -182,6 +169,56 @@ class GaussLegendreQuadrature2D:
         plt.axis('square')
         plt.colorbar()
         # plt.savefig("GL_Q"+str(self.Q)+".svg", bbox_inches='tight')#, transparent=True)
+
+
+class UniformQuadrature2D:
+    def __init__(self, Q):
+        self.d = 2
+        self.Q = Q
+        self.compute_interiorquadrature()
+        self.compute_boundaryquadrature()
+        
+    def compute_interiorquadrature(self):
+        x_0_Q, x_1_Q = np.mgrid[0:1:self.Q*1j, 0:1:self.Q*1j]
+        self.xi_Omega = np.vstack([x_0_Q.ravel(), x_1_Q.ravel()]).T
+        self.w_Omega = 1/(self.Q**self.d)*np.ones((self.Q**self.d))
+        
+    def compute_boundaryquadrature(self):
+        xi_Gamma_i = np.linspace(0,1, self.Q)
+        self.xi_Gamma_b = np.zeros((self.Q,self.d))
+        self.xi_Gamma_b[:,0] = xi_Gamma_i
+        self.xi_Gamma_t = np.ones((self.Q,self.d))
+        self.xi_Gamma_t[:,0] = xi_Gamma_i
+        self.xi_Gamma_l = np.zeros((self.Q,self.d))
+        self.xi_Gamma_l[:,1] = xi_Gamma_i
+        self.xi_Gamma_r = np.ones((self.Q,self.d))
+        self.xi_Gamma_r[:,1] = xi_Gamma_i
+        self.xi_Gamma_eta = np.zeros((2*self.Q,self.d))
+        self.xi_Gamma_eta[:self.Q] = self.xi_Gamma_b
+        self.xi_Gamma_eta[self.Q:] = self.xi_Gamma_t        
+        self.xi_Gamma_g = np.zeros((2*self.Q,self.d))
+        self.xi_Gamma_g[:self.Q] = self.xi_Gamma_l
+        self.xi_Gamma_g[self.Q:] = self.xi_Gamma_r        
+        self.w_Gamma_b = 1/(self.Q)*np.ones((self.Q))
+        self.w_Gamma_t = 1/(self.Q)*np.ones((self.Q))
+        self.w_Gamma_l = 1/(self.Q)*np.ones((self.Q))
+        self.w_Gamma_r = 1/(self.Q)*np.ones((self.Q))
+        self.w_Gamma_eta = 1/(self.Q)*np.ones((2*self.Q))
+        self.w_Gamma_g = 1/(self.Q)*np.ones((2*self.Q))
+        self.xi_Gamma = np.zeros((4,self.Q,2))
+        self.xi_Gamma[0] = self.xi_Gamma_l
+        self.xi_Gamma[1] = self.xi_Gamma_r
+        self.xi_Gamma[2] = self.xi_Gamma_b
+        self.xi_Gamma[3] = self.xi_Gamma_t
+        self.xi_Gamma = self.xi_Gamma.reshape(self.xi_Gamma.shape[0]*self.xi_Gamma.shape[1],self.xi_Gamma.shape[2])
+        self.w_Gamma = np.array([self.w_Gamma_l,self.w_Gamma_r,self.w_Gamma_b,self.w_Gamma_t]).flatten()
+        
+    def plot_quadraturegrid(self):
+        plt.scatter(self.xi_Omega[:,0], self.xi_Omega[:,1], c=self.w_Omega, s=10)
+        plt.scatter(self.xi_Gamma[:,0], self.xi_Gamma[:,1], c=self.w_Gamma, s=10)
+        plt.axis('square')
+        plt.colorbar()
+        # plt.savefig("U_Q"+str(self.Q)+".svg", bbox_inches='tight')#, transparent=True)
 
           
 class UnitSquareOutwardNormal:
