@@ -25,7 +25,7 @@ class DataModule(pl.LightningDataModule):
         dummymodel = NeuralOperator(self.hparams)
         # Generate input and output functions
         print('Generating functions...')
-        dataset = ManufacturedSolutionsSet(N_samples=self.N_samples, variables=self.hparams['variables'], l_min=self.hparams['l_min'], l_max=self.hparams['l_max'], device=hparams['discretization_device'])
+        dataset = ManufacturedSolutionsSet(N_samples=self.N_samples, variables=self.hparams['variables'], l_min=self.hparams['l_min'], l_max=self.hparams['l_max'])
         theta = dataset.theta
         f = dataset.f
         eta_y0 = dataset.etab
@@ -40,20 +40,12 @@ class DataModule(pl.LightningDataModule):
         self.theta_q, self.theta_x0_q, self.theta_xL_q, self.f_q, self.eta_y0_q, self.eta_yL_q, self.g_x0_q, self.g_xL_q, self.u0_t0_q = dummymodel.discretize_input_functions(theta, f, eta_y0, eta_yL, g_x0, g_xL, u0)
         if dummymodel.hparams['modeltype']=='model NGO':
             print('Assembling F...')
-            # print('Assembling d...')
-            # print('Calculating conserved quantity...')
             bs = self.hparams['assembly_batch_size']
             n_batches = int(self.N_samples/bs)
             self.F = np.zeros((len(theta),self.hparams['N'],self.hparams['N']))
-            # self.d = np.zeros((len(f),self.hparams['N']))
-            # self.C = np.zeros(len(f))
-            # self.C_m = np.zeros((len(theta),self.hparams['N']))
             for i in range(n_batches):
                 print('batch: '+str(i))
                 self.F[bs*i:bs*(i+1)] = dummymodel.compute_F(self.theta_q[bs*i:bs*(i+1)], self.theta_x0_q[bs*i:bs*(i+1)], self.theta_xL_q[bs*i:bs*(i+1)])
-                # self.d[bs*i:bs*(i+1)] = dummymodel.compute_d(self.f_q[bs*i:bs*(i+1)], self.eta_y0_q[bs*i:bs*(i+1)], self.eta_yL_q[bs*i:bs*(i+1)], self.g_x0_q[bs*i:bs*(i+1)], self.g_xL_q[bs*i:bs*(i+1)], self.u0_t0_q[bs*i:bs*(i+1)])
-                # self.C[bs*i:bs*(i+1)] = dummymodel.compute_C(self.f_q[bs*i:bs*(i+1)], self.eta_y0_q[bs*i:bs*(i+1)], self.eta_yL_q[bs*i:bs*(i+1)], self.u0_t0_q[bs*i:bs*(i+1)])
-                # self.C_m[bs*i:bs*(i+1)] = dummymodel.compute_C_m(self.theta_x0_q[bs*i:bs*(i+1)], self.theta_xL_q[bs*i:bs*(i+1)])
         if dummymodel.hparams['modeltype']=='data NGO':
             print('Assembling F...')
             self.F = dummymodel.compute_F(self.theta_q, self.theta_x0_q, self.theta_xL_q)
