@@ -6,10 +6,6 @@ import torch
 
 from customlayers import discretize_functions
 
-# import sys
-# sys.path.insert(0, '../testproblems/darcy')
-# from darcy_ms import ManufacturedSolutionsSetDarcy
-
 class BSplineBasis1D:
     def __init__(self, h, p, C):
         self.h = h #Number of basis functions (should equal n_el p + 1, where n_el is the number of elements)
@@ -18,37 +14,21 @@ class BSplineBasis1D:
         self.knot_vector = np.zeros(self.p+1)
         self.knot_vector = np.append(self.knot_vector, np.repeat(np.linspace(0, 1, int((self.h - self.p - 1)/(self.p - self.C)) + 2)[1:-1], self.p - self.C))
         self.knot_vector = np.append(self.knot_vector, np.ones(self.p+1))
-
-    def basis_function(self, n, p, x, knots):
-        c = np.zeros(self.h)
-        c[n] = 1
-        bspline = BSpline(knots, c, p)
-        return bspline(x)
     
     def forward(self, x):
-        basis_values = np.zeros((x.shape[0],self.h))
-        for n in range(self.h):
-            basis_values[:, n] = self.basis_function(n, self.p, x, self.knot_vector)
+        basis_values = BSpline.design_matrix(x, self.knot_vector, self.p).toarray()
         return basis_values
     
-    def basis_gradient(self, n, p, x, knots):
-        c = np.zeros(self.h)
-        c[n] = 1
-        bspline = BSpline(knots, c, p)
-        bspline_derivative = bspline.derivative(1)
-        return bspline_derivative(x)
-    
     def grad(self, x):
-        basis_gradients = np.zeros((x.shape[0],self.h))
-        for n in range(self.h):
-            basis_grad = self.basis_gradient(n, self.p, x, self.knot_vector)
-            basis_gradients[:, n] = basis_grad
+        coeffs = np.eye(self.h)
+        derivative_basis_functions = [BSpline(self.knot_vector, coeffs[i], self.p).derivative() for i in range(self.h)]
+        basis_gradients = np.vstack([dbf(x) for dbf in derivative_basis_functions]).T
         return basis_gradients
 
     def plot_1d_basis(self):
         knots = self.knot_vector
         resolution = 1000
-        x_values = np.linspace(knots[self.p], knots[-self.p-1], resolution)  # Adjusted range for x_values
+        x_values = np.linspace(knots[self.p], knots[-self.p-1], resolution) # Adjusted range for x_values
         basis_matrix = self.forward(x_values)
         plt.figure(figsize=(8, 6))
         for i in range(self.h):
@@ -56,6 +36,7 @@ class BSplineBasis1D:
         plt.title(f'1D B-spline Basis Functions')
         plt.xlabel('x')
         plt.ylabel('Basis Values')
+        plt.xticks(np.array([0,1,2,3,4])/4)
         plt.legend()
         plt.grid(True)
         # plt.savefig("BSpline1D.svg", bbox_inches='tight', transparent=True)
