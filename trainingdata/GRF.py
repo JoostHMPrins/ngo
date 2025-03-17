@@ -1,20 +1,18 @@
 import numpy as np
-import torch
 from scipy.spatial import distance_matrix
 import opt_einsum
 
 
 class GRF:
-    def __init__(self, N_samples, l, device):
+    def __init__(self, N_samples, l):
         super().__init__()
-        self.device = device
         self.N_samples = N_samples #Number of GRF samples
-        self.l = torch.tensor(l, device=self.device) #Length scale of GRF
-        self.d = len(l) #Dimensionality of GRF
-        self.n_mus = int(max(10,1/torch.prod(self.l))) #Number of GRF sample locations per volume element 1/l^d
+        self.l = np.array(l) #Length scale of GRF
+        self.d = len(l) #axisensionality of GRF
+        self.n_mus = int(max(10,1/np.prod(self.l))) #Number of GRF sample locations per volume element 1/l^d
         self.mus = self.compute_mus()
         self.f_hat = self.compute_RBFintcoeffs()
-        self.mus = torch.tensor(self.mus, device=self.device)
+        self.mus = np.array(self.mus)
 
     #Sample n_samples_per_l/l^d random points on the unit square
     def compute_mus(self):
@@ -26,7 +24,7 @@ class GRF:
         # cov = np.ones((self.n_mus,self.n_mus))
         # for i in range(self.d):
         #     cov *= np.exp(-distance_matrix(self.mus[:,i], self.mus[:,i], p=2)**2/(2*self.l[i]**2))
-        l = self.l.detach().cpu().numpy()
+        l = self.l
         cov = np.exp(-1/2*distance_matrix(self.mus/l[None,:], self.mus/l[None,:], p=2)**2)
         return cov
     
@@ -39,21 +37,21 @@ class GRF:
     def compute_RBFintcoeffs(self):
         cov = self.compute_cov()
         f = self.compute_GRFpoints(cov)
-        cov = torch.tensor(cov, device=self.device)
-        cov_inv = torch.linalg.inv(cov)
-        f = torch.tensor(f, device=self.device)
+        cov = np.array(cov)
+        cov_inv = np.linalg.inv(cov)
+        f = np.array(f)
         f_hat = opt_einsum.contract('ij,nj->ni', cov_inv, f)
         return f_hat
     
     def phi_n(self, i, x):
-        output = self.f_hat[i,None,:]*torch.exp(-1/2*torch.sum(((x[:,None,:] - self.mus[None,:,:])/self.l[None,None,:])**2, dim=-1))
+        output = self.f_hat[i,None,:]*np.exp(-1/2*np.sum(((x[:,None,:] - self.mus[None,:,:])/self.l[None,None,:])**2, axis=-1))
         return output
     
     #Forward evaluation of RBF interpolated GRF
     def forward(self, i):
         def function(x):
             phi_n = self.phi_n(i, x)
-            return torch.sum(phi_n, dim=1)
+            return np.sum(phi_n, axis=1)
         return function
 
     #Pointwise forward evaluation of RBF interpolated GRF (required for Nutils)
@@ -68,7 +66,7 @@ class GRF:
         def function(x):
             phi_n = self.phi_n(i, x)
             prefactor = -1/(self.l[None,None,:]**2)*(x[:,None,:] - self.mus[None,:,:])
-            return torch.sum(prefactor*phi_n[:,:,None], dim=1)
+            return np.sum(prefactor*phi_n[:,:,None], axis=1)
         return function
 
     #Laplacian of RBF interpolated GRF
@@ -76,15 +74,14 @@ class GRF:
         def function(x):
             phi_n = self.phi_n(i, x)
             prefactor = (x[:,None,:] - self.mus[None,:,:])**2/self.l[None,None,:]**4 - 1/self.l[None,None,:]**2
-            return torch.sum(prefactor*phi_n[:,:,None], dim=1)
+            return np.sum(prefactor*phi_n[:,:,None], axis=1)
         return function
         
 
 class ScaledGRF:
-    def __init__(self, N_samples, l, c, b, device):
+    def __init__(self, N_samples, l, c, b):
         super().__init__()
-        self.device = device
-        self.grf = GRF(N_samples, l, device)
+        self.grf = GRF(N_samples, l)
         #Scaling and translation of GRF f'(x) = c f(x) + b
         self.c = c
         self.b = b
