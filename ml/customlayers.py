@@ -2,6 +2,7 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 import numpy as np
+from joblib import Parallel, delayed
 
 
 class ConvNd(nn.Module):
@@ -119,19 +120,21 @@ def balance_num_trainable_params(model, N_w):
 #     return f_discretized
 
 
-def discretize_functions(f_list, x, dtype, device):
-    discretization_batch_size = len(f_list) if len(f_list)<100 else 100# int(len(f_list)/100)
-    with torch.no_grad():
-        x = torch.tensor(x, dtype=dtype, device=device)
-        f_discretized = np.zeros((len(f_list),x.shape[0]))
-        for b in range(int(len(f_list)/discretization_batch_size)):
-            f_d_temp = torch.zeros((discretization_batch_size,x.shape[0]), dtype=dtype, device=device)
-            f_list_temp = f_list[discretization_batch_size*b:discretization_batch_size*(b+1)]
-            for i in range(discretization_batch_size):
-                f_d_temp[i] = f_list_temp[i](x)
-            f_discretized[discretization_batch_size*b:discretization_batch_size*(b+1)] = f_d_temp.detach().cpu().numpy()
-        x = x.detach().cpu()
-    torch.cuda.empty_cache()
+def discretize_functions(f_list, x):#, dtype, device):
+    # discretization_batch_size = len(f_list) if len(f_list)<100 else 100# int(len(f_list)/100)
+    # with torch.no_grad():
+    # x = torch.tensor(x, dtype=dtype, device=device)
+    #     f_discretized = np.zeros((len(f_list),x.shape[0]))
+    #     for b in range(int(len(f_list)/discretization_batch_size)):
+    #         f_d_temp = torch.zeros((discretization_batch_size,x.shape[0]), dtype=dtype, device=device)
+    #         f_list_temp = f_list[discretization_batch_size*b:discretization_batch_size*(b+1)]
+    #         for i in range(discretization_batch_size):
+    #             f_d_temp[i] = f_list_temp[i](x)
+    #         f_discretized[discretization_batch_size*b:discretization_batch_size*(b+1)] = f_d_temp.detach().cpu().numpy()
+    #     x = x.detach().cpu()
+    # torch.cuda.empty_cache()
+    f_discretized = Parallel(n_jobs=28)(delayed(f)(x) for f in f_list)
+    f_discretized = np.array(f_discretized)
     return f_discretized
 
 
