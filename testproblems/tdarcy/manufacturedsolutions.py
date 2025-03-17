@@ -1,5 +1,4 @@
 import numpy as np
-import torch
 import opt_einsum
 
 import sys
@@ -15,7 +14,7 @@ class Forcing:
     
     def forward(self, i):
         def function(x):
-            return self.u.grad(i)(x)[:,0] -self.theta.forward(i)(x)*torch.sum(self.u.d2dxi2(i)(x)[:,1:], axis=-1) - torch.sum(self.theta.grad(i)(x)[:,1:]*self.u.grad(i)(x)[:,1:], dim=-1)
+            return self.u.grad(i)(x)[:,0] -self.theta.forward(i)(x)*np.sum(self.u.d2dxi2(i)(x)[:,1:], axis=-1) - np.sum(self.theta.grad(i)(x)[:,1:]*self.u.grad(i)(x)[:,1:], axis=-1)
         return function
     
     
@@ -56,12 +55,11 @@ class IC:
     
 
 class ManufacturedSolutionsSet:
-    def __init__(self, N_samples, variables, l_min, l_max, device):
+    def __init__(self, N_samples, variables, l_min, l_max, xi):
         super().__init__()
-        self.device = device
         self.N_samples = N_samples #Number of samples
         self.variables = variables
-        self.d = len(l_min) #Dimensionality of problem
+        self.d = len(l_min) #axisensionality of problem
         self.l_min = l_min #Minimum GRF length scale
         self.l_max = l_max #Maximum GRF length scale
         self.generate_manufactured_solutions()
@@ -90,12 +88,12 @@ class ManufacturedSolutionsSet:
                 l_theta[:,i] = l_theta[:,i-1]
                 l_u[:,i] = l_u[:,i-1]
         #Neumann boundary normals
-        n_b = torch.tensor([0,-1], device=self.device, dtype=torch.float64)
-        n_t = torch.tensor([0,1], device=self.device, dtype=torch.float64)
+        n_b = np.array([0,-1])
+        n_t = np.array([0,1])
         if self.l_min==self.l_max:
             #Generate batches of GRFs with the same length scale
-            theta = ScaledGRF(N_samples=self.N_samples, l=self.l_min, c=c_theta, b=b_theta, device=self.device)
-            u = ScaledGRF(N_samples=self.N_samples, l=self.l_min, c=c_u, b=b_u, device=self.device)
+            theta = ScaledGRF(N_samples=self.N_samples, l=self.l_min, c=c_theta, b=b_theta)
+            u = ScaledGRF(N_samples=self.N_samples, l=self.l_min, c=c_u, b=b_u)
             f = Forcing(theta, u)
             etab = NeumannBC(n_b, theta, u)
             etat = NeumannBC(n_t, theta, u)
@@ -116,8 +114,8 @@ class ManufacturedSolutionsSet:
             for i in range(self.N_samples):
                 print(i)
                 #Define functions
-                theta = ScaledGRF(N_samples=1, l=l_theta[i], c=[c_theta[i]], b=[b_theta[i]], device=self.device)
-                u = ScaledGRF(N_samples=1, l=l_u[i], c=[c_u[i]], b=[b_u[i]], device=self.device)
+                theta = ScaledGRF(N_samples=1, l=l_theta[i], c=[c_theta[i]], b=[b_theta[i]])
+                u = ScaledGRF(N_samples=1, l=l_u[i], c=[c_u[i]], b=[b_u[i]])
                 f = Forcing(theta, u)
                 etab = NeumannBC(n_b, theta, u)
                 etat = NeumannBC(n_t, theta, u)
