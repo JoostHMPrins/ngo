@@ -107,33 +107,8 @@ def balance_num_trainable_params(model, N_w):
     return model  
 
 
-# def discretize_functions(f_list, x, dtype, device):
-#     with torch.no_grad():
-#         x = torch.tensor(x, dtype=dtype, device=device)
-#         f_discretized = torch.zeros((len(f_list),x.shape[0]), dtype=dtype, device=device)
-#         for i in range(len(f_list)):
-#             print(i)
-#             f_discretized[i] = f_list[i](x)
-#         f_discretized = f_discretized.detach().cpu().numpy()
-#         x = x.detach().cpu()
-#     torch.cuda.empty_cache()
-#     return f_discretized
-
-
-def discretize_functions(f_list, x):#, dtype, device):
-    # discretization_batch_size = len(f_list) if len(f_list)<100 else 100# int(len(f_list)/100)
-    # with torch.no_grad():
-    # x = torch.tensor(x, dtype=dtype, device=device)
-    #     f_discretized = np.zeros((len(f_list),x.shape[0]))
-    #     for b in range(int(len(f_list)/discretization_batch_size)):
-    #         f_d_temp = torch.zeros((discretization_batch_size,x.shape[0]), dtype=dtype, device=device)
-    #         f_list_temp = f_list[discretization_batch_size*b:discretization_batch_size*(b+1)]
-    #         for i in range(discretization_batch_size):
-    #             f_d_temp[i] = f_list_temp[i](x)
-    #         f_discretized[discretization_batch_size*b:discretization_batch_size*(b+1)] = f_d_temp.detach().cpu().numpy()
-    #     x = x.detach().cpu()
-    # torch.cuda.empty_cache()
-    f_discretized = Parallel(n_jobs=28)(delayed(f)(x) for f in f_list)
+def discretize_functions(f_list, x):
+    f_discretized = Parallel(n_jobs=-1)(delayed(f)(x) for f in f_list)
     f_discretized = np.array(f_discretized)
     return f_discretized
 

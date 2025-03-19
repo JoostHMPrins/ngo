@@ -27,10 +27,10 @@ hparams['variables'] = ['t','x','x']
 hparams['d'] = len(hparams['variables'])
 hparams['l_min'] = [0.5,0.5,0.5]
 hparams['l_max'] = [1,1,1]
-loaddir = None #'../../../trainingdata/darcy_mfs_l1e-2to1e0'
 hparams['project_materialparameters'] = True
 hparams['project_rhs'] = False
 hparams['project_u'] = True
+
 #Training settings
 hparams['dtype'] = torch.float32
 hparams['precision'] = 32
@@ -111,4 +111,4 @@ hparams['label'] = label
 
 model = NeuralOperator
 datamodule = DataModule
-train(model, datamodule, hparams, loaddir, logdir, sublogdir, label)
+train(model, datamodule, hparams, logdir, sublogdir, label)

@@ -17,7 +17,7 @@ from basisfunctions import *
 
 class DataModule(pl.LightningDataModule):
 
-    def __init__(self, data_dir, hparams):
+    def __init__(self, hparams):
         super().__init__()
         self.hparams.update(hparams)
         self.data_dir = data_dir

@@ -55,7 +55,7 @@ class IC:
     
 
 class ManufacturedSolutionsSet:
-    def __init__(self, N_samples, variables, l_min, l_max, xi):
+    def __init__(self, N_samples, variables, l_min, l_max):
         super().__init__()
         self.N_samples = N_samples #Number of samples
         self.variables = variables

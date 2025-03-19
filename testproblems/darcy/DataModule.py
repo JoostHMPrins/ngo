@@ -21,7 +21,7 @@ from datasaver import load_function_list
 
 class DataModule(pl.LightningDataModule):
 
-    def __init__(self, data_dir, hparams):
+    def __init__(self, hparams):
         super().__init__()
         self.hparams.update(hparams)
         self.hparams['used_device'] = self.hparams['assembly_device']
@@ -50,17 +50,17 @@ class DataModule(pl.LightningDataModule):
             u = dataset.u
         #Discretize input functions
         print('Discretizing functions...')
-        self.theta, self.theta_g, self.f, self.etab, self.etat, self.gl, self.gr = dummymodel.discretize_input_functions(theta, f, etab, etat, gl, gr)
+        self.theta, self.theta_x0, self.theta_xL, self.f, self.etab, self.etat, self.gl, self.gr = dummymodel.discretize_input_functions(theta, f, etab, etat, gl, gr)
         if self.hparams['project_inputs']==True:
             theta_n = dummymodel.compute_projection_coeffs(theta)
             psi_Omega = torch.tensor(dummymodel.basis_trial.forward(dummymodel.xi_Omega.cpu().numpy()), dtype=self.hparams['dtype'], device=self.hparams['assembly_device'])
             self.theta = opt_einsum.contract('Nn,qn->Nq', theta_n, psi_Omega)
             psi_Gamma_g = torch.tensor(dummymodel.basis_trial.forward(dummymodel.xi_Gamma_g.cpu().numpy()), dtype=self.hparams['dtype'], device=self.hparams['assembly_device'])
-            self.theta_g = opt_einsum.contract('Nn,qn->Nq', theta_n, psi_Gamma_g)
+            self.theta_x0, self.theta_xL = opt_einsum.contract('Nn,qn->Nq', theta_n, psi_Gamma_g)
         self.u = dummymodel.discretize_output_function(u)
         print('Assembling system...')
         if dummymodel.hparams['modeltype']=='model NGO' or dummymodel.hparams['modeltype']=='data NGO':
-                self.F = dummymodel.compute_F(self.theta, self.theta_g)
+                self.F = dummymodel.compute_F(self.theta, self.theta_x0, self.theta_xL)
                 self.d = dummymodel.compute_d(self.f, self.etab, self.etat, self.gl, self.gr)
         self.scaling = torch.abs(torch.sum(dummymodel.w_Omega[None,:]*self.theta, axis=-1))
         # lambdas = torch.linalg.eigvals(self.F)

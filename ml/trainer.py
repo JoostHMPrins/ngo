@@ -2,24 +2,19 @@ import pytorch_lightning as pl
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 from tqdm.auto import tqdm, trange
 from ipywidgets import IntProgress
-import json
 import time
-# from DataModule import *
-
 from logger import *
 
-def train(model, datamodule, hparams, loaddir, logdir, sublogdir, label):
+def train(model, datamodule, hparams, logdir, sublogdir, label):
     
     #Initialize logger and checkpointer
     logger, checkpoint_callback = initialize_logger(logdir, sublogdir, label)
     
     #Load data
-    data = datamodule(loaddir, hparams)
+    data = datamodule(hparams)
 
     #Model
-    # hparams['used_device'] = hparams['train_device']
     MLmodel = model(hparams)
-    MLmodel = MLmodel.to(hparams['dtype'])
 
     #Training
     start = time.time() 
