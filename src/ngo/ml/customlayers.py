@@ -1,7 +1,9 @@
+# Copyricht 2025 Joost Prins
+
+# 3rd Party
 import torch
-from torch import nn
-import torch.nn.functional as F
 import numpy as np
+from torch import nn
 from joblib import Parallel, delayed
 
 

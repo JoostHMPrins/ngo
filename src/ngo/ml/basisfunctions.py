@@ -1,10 +1,13 @@
+# Copyright 2025 Joost Prins
+
+# 3rd Party
 import matplotlib.pyplot as plt
 import numpy as np
 import opt_einsum
 from scipy.interpolate import BSpline
-import torch
 
-from customlayers import discretize_functions
+# Local
+from ngo.ml.customlayers import discretize_functions
 
 class BSplineBasis1D:
     def __init__(self, h, p, C):
