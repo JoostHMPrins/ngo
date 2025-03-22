@@ -1,11 +1,11 @@
-import sys
-sys.path.insert(0, '../../ml')
-from trainer import train
-from customlosses import *
-from systemnets import *
-from basisfunctions import *
-from NeuralOperator import NeuralOperator
-from DataModule import DataModule
+# Copyright 2025 Joost Prins
+
+from ngo.ml.trainer import train
+from ngo.ml.customlosses import *
+from ngo.ml.systemnets import *
+from ngo.ml.basisfunctions import *
+from ngo.testproblems.steadydiffusion.NeuralOperator import NeuralOperator
+from ngo.testproblems.steadydiffusion.DataModule import DataModule
 
 #Training data
 hparams = {}
@@ -61,7 +61,7 @@ hparams['outputactivation'] = nn.Tanhshrink() #For the systemnet
 #Physics
 hparams['scale_equivariance'] = True 
 
-logdir = '../../../../nnlogs' #Location for the tensorboard log files
+logdir = './nnlogs' #Location for the tensorboard log files
 sublogdir = 'test' #Folder name in the "logs" directory
 label = 'steadydiffusion_new' #Give your model a name
 hparams['label'] = label
