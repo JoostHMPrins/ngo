@@ -1,5 +1,8 @@
+# Copyright 2025 Joost Prins
+
+# 3rd Party
 import numpy as np
-from scipy.spatial import distance_matrix
+import scipy.spatial as spsp
 import opt_einsum
 
 
@@ -25,7 +28,7 @@ class GRF:
         # for i in range(self.d):
         #     cov *= np.exp(-distance_matrix(self.mus[:,i], self.mus[:,i], p=2)**2/(2*self.l[i]**2))
         l = self.l
-        cov = np.exp(-1/2*distance_matrix(self.mus/l[None,:], self.mus/l[None,:], p=2)**2)
+        cov = np.exp(-1/2*spsp.distance_matrix(self.mus/l[None,:], self.mus/l[None,:], p=2)**2)
         return cov
     
     #Sample from a multivariate Gaussian with covariance cov

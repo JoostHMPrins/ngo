@@ -1,18 +1,19 @@
+# Copyright 2025 Joost Prins
+
+# 3rd Party
 import torch
 import numpy as np
-from torch import nn
 import pytorch_lightning as pl
 import numpy as np
 import opt_einsum
 
-import sys
-sys.path.insert(0, '../../ml')
-from systemnets import MLP, CNN, FNO, LBranchNet
-from basisfunctions import *
-from quadrature import *
-from customlayers import *
-from customlosses import *
-from modelloader import *
+# Local
+from ngo.ml.systemnets import MLP, FNO, LBranchNet #,CNN
+from ngo.ml.basisfunctions import TensorizedBasis, BSplineInterpolatedPOD2D
+from ngo.ml.customlayers import discretize_functions
+from ngo.ml.quadrature import UniformQuadrature2D, GaussLegendreQuadrature2D, UnitSquareOutwardNormal
+from ngo.ml.modelloader import loadmodelfromlabel
+
 
 class NeuralOperator(pl.LightningModule):
     def __init__(self, hparams):

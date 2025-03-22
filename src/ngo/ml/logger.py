@@ -1,4 +1,9 @@
+# Copyright 2025 Joost Prins
+
+# Standard
 import os
+
+# 3rd party
 from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.callbacks import ModelCheckpoint
 

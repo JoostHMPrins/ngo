@@ -1,8 +1,13 @@
+# Copyright 2025 Joost Prins
+
+# 3rd Party
+
 from nutils import mesh, function, solver
 from nutils.expression_v2 import Namespace
 import numpy as np
 
-from GRF import *
+# Local
+from ngo.trainingdata.GRF import ScaledGRF
 
 
 def Darcy_Nutils(theta, f, etat, etab, gl, gr):

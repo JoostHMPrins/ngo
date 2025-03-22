@@ -1,7 +1,10 @@
+# Copyright 2025 Joost Prins
+
+# 3rd Party
 import torch
-from torch.nn import functional as F
 import numpy as np
 import opt_einsum
+from torch.nn import functional as F
 
 def L2_scaled(u_hat, u):
     L2 = torch.norm(u_hat - u, p=2, dim=-1)

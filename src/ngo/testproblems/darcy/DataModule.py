@@ -1,22 +1,16 @@
-import numpy as np
-import json
+# Copyright 2025 Joost Prins
+
+# 3rd Party
 import torch
-from torch.utils.data import DataLoader
-from torch.utils.data import random_split
 import pytorch_lightning as pl
-from numba import jit
 import opt_einsum
+from torch.utils.data import DataLoader, random_split
 
-from NeuralOperator import NeuralOperator
-from manufacturedsolutions import *
+# Local
+from ngo.testproblems.darcy.NeuralOperator import NeuralOperator
+from ngo.testproblems.darcy.manufacturedsolutions import ManufacturedSolutionsSetDarcy
+from ngo.trainingdata.datasaver import load_function_list
 
-import sys
-sys.path.insert(0, '../../ml') 
-from quadrature import *
-from basisfunctions import *
-
-sys.path.insert(0, '../../trainingdata')
-from datasaver import load_function_list
 
 
 class DataModule(pl.LightningDataModule):
@@ -25,7 +19,7 @@ class DataModule(pl.LightningDataModule):
         super().__init__()
         self.hparams.update(hparams)
         self.hparams['used_device'] = self.hparams['assembly_device']
-        self.data_dir = data_dir
+        # self.data_dir = data_dir
         self.N_samples = self.hparams['N_samples_train'] + self.hparams['N_samples_val']
         dummymodel = NeuralOperator(self.hparams)
         if self.data_dir!=None:

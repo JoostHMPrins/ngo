@@ -1,4 +1,9 @@
+# Copyright 2025 Joost Prins
+
+# Local
 import os
+
+# 3rd Party
 import torch
 
 def loadmodelfromlabel(model, label, logdir, sublogdir, device):

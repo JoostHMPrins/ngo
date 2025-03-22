@@ -1,26 +1,28 @@
+# Copyright 2025 Joost Prins
 
+# Standard
+# import json
+
+# 3rd Party
+# import opt_einsum
 import numpy as np
-import json
 import torch
-from torch.utils.data import DataLoader
-from torch.utils.data import random_split
+import torch.utils.data as torch_data
 import pytorch_lightning as pl
-import opt_einsum
 
-from NeuralOperator import NeuralOperator
-from manufacturedsolutions import *
-
-import sys
-sys.path.insert(0, '../../ml') 
-from quadrature import *
-from basisfunctions import *
+# Local
+from ngo.testproblems.tdarcy.NeuralOperator import NeuralOperator
+from ngo.testproblems.tdarcy.manufacturedsolutions import ManufacturedSolutionsSet
+# import ngo.ml.quadrature as quadrature
+# from quadrature import *
+# from basisfunctions import *
 
 class DataModule(pl.LightningDataModule):
 
     def __init__(self, hparams):
         super().__init__()
         self.hparams.update(hparams)
-        self.data_dir = data_dir
+        # self.data_dir = data_dir
         self.N_samples = self.hparams['N_samples_train'] + self.hparams['N_samples_val']
         dummymodel = NeuralOperator(self.hparams)
         # Generate input and output functions
@@ -79,10 +81,10 @@ class DataModule(pl.LightningDataModule):
             self.C_m = torch.tensor(self.C_m, dtype=self.hparams['dtype'])
             self.u = torch.tensor(self.u, dtype=self.hparams['dtype'])   
             dataset = torch.utils.data.TensorDataset(self.F, self.d, self.C, self.C_m, self.u)
-        self.trainingset, self.validationset = random_split(dataset, [self.hparams['N_samples_train'], self.hparams['N_samples_val']])
+        self.trainingset, self.validationset = torch_data.random_split(dataset, [self.hparams['N_samples_train'], self.hparams['N_samples_val']])
 
     def train_dataloader(self):
-        return DataLoader(self.trainingset, batch_size=self.hparams['batch_size'], shuffle=True, num_workers=0, pin_memory=False)
+        return torch_data.DataLoader(self.trainingset, batch_size=self.hparams['batch_size'], shuffle=True, num_workers=0, pin_memory=False)
 
     def val_dataloader(self):
-        return DataLoader(self.validationset, batch_size=self.hparams['batch_size'], shuffle=False, num_workers=0, pin_memory=False)
+        return torch_data.DataLoader(self.validationset, batch_size=self.hparams['batch_size'], shuffle=False, num_workers=0, pin_memory=False)

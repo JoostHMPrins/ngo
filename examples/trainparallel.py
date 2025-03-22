@@ -1,3 +1,5 @@
+# Copyright 2025 Joost Prins
+
 #Argparser
 import argparse
 parser = argparse.ArgumentParser(description='this program does this and that')

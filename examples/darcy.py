@@ -1,28 +1,23 @@
-#Standard libraries
-import pytorch_lightning as pl
-from tqdm.auto import tqdm, trange
-from ipywidgets import IntProgress
-import time
+# Copyright 2025 Joost Prins
+
+# 3rd Party
 from torch import nn
-from torch.nn import functional as F
 
-#Personal ML stuff
-import sys
-sys.path.insert(0, '../../ml')
-from logger import *
-from trainer import train
-from customlosses import *
-from systemnets import *
-from basisfunctions import *
+# Local Utilities
+from ngo.ml.logger import *
+from ngo.ml.trainer import *
+from ngo.ml.customlosses import *
+from ngo.ml.systemnets import *
+from ngo.ml.basisfunctions import *
 
-#Test problem
-from NeuralOperator import NeuralOperator
-from DataModule import DataModule
+# Local Problem-Specific
+from ngo.testproblems.darcy.NeuralOperator import NeuralOperator
+from ngo.testproblems.darcy.DataModule import DataModule
 
 #Training data
 hparams = {}
-hparams['N_samples_train'] = 10000
-hparams['N_samples_val'] = 1000
+hparams['N_samples_train'] = 100#10000
+hparams['N_samples_val'] = 10#1000
 hparams['variables'] = ['t','x','x']
 hparams['d'] = len(hparams['variables'])
 hparams['l_min'] = [0.5,0.5,0.5]
@@ -45,8 +40,8 @@ hparams['optimizer1'] = torch.optim.Adam
 hparams['optimizer2'] = torch.optim.LBFGS
 hparams['switch_threshold'] = None
 hparams['learning_rate'] = 1e-3
-hparams['batch_size'] = 100
-hparams['epochs'] = 5000
+hparams['batch_size'] = 10#100
+hparams['epochs'] = 5#5000
 
 #Bases
 hparams['h'] = [10,10,10]

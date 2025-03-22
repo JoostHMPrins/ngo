@@ -1,6 +1,11 @@
-import numpy as np
+# Copyright 2025 Joost Prins
+
+# Standard
 import os
 import json
+
+# 3rd Party
+import numpy as np
 import dill
 
 

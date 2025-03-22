@@ -1,22 +1,15 @@
+# Copyright 2025 Joost Prins
+
+# 3rd Party
 import numpy as np
-import json
 import torch
-from torch.utils.data import DataLoader
-from torch.utils.data import random_split
 import pytorch_lightning as pl
-from numba import jit
-import opt_einsum
+from torch.utils.data import DataLoader, random_split
 
-from NeuralOperator import NeuralOperator
-from manufacturedsolutions import *
-
-import sys
-sys.path.insert(0, '../../ml') 
-from quadrature import *
-from basisfunctions import *
-
-sys.path.insert(0, '../../trainingdata')
-from datasaver import load_function_list
+# Local
+from ngo.testproblems.steadydiffusion.NeuralOperator import NeuralOperator
+from ngo.testproblems.steadydiffusion.manufacturedsolutions import ManufacturedSolutionsSetDarcy
+# from ngo.ml.quadrature import UniformQuadrature, GaussLegendreQuadrature
 
 
 class DataModule(pl.LightningDataModule):

@@ -1,28 +1,20 @@
-#Standard libraries
-import pytorch_lightning as pl
-from tqdm.auto import tqdm, trange
-from ipywidgets import IntProgress
-import time
-from torch import nn
-from torch.nn import functional as F
+# Copyright 2025 Joost Prins
 
-#Personal ML stuff
-import sys
-sys.path.insert(0, '../../ml')
-from logger import *
-from trainer import train
-from customlosses import *
-from systemnets import *
-from basisfunctions import *
+# Local Utilities
+from ngo.ml.logger import *
+from ngo.ml.trainer import train
+from ngo.ml.customlosses import *
+from ngo.ml.systemnets import *
+from ngo.ml.basisfunctions import *
 
 #Test problem
-from NeuralOperator import NeuralOperator
-from DataModule import DataModule
+from ngo.testproblems.tdarcy.NeuralOperator import NeuralOperator
+from ngo.testproblems.tdarcy.DataModule import DataModule
 
 #Training data
 hparams = {}
-hparams['N_samples_train'] = 10000
-hparams['N_samples_val'] = 1000
+hparams['N_samples_train'] = 100#10000
+hparams['N_samples_val'] = 10#00
 hparams['assembly_batch_size'] = 1100
 hparams['variables'] = ['t','x','x']
 hparams['d'] = len(hparams['variables'])
@@ -44,8 +36,8 @@ hparams['optimizer1'] = torch.optim.Adam
 hparams['optimizer2'] = torch.optim.LBFGS
 hparams['switch_threshold'] = None
 hparams['learning_rate'] = 1e-3
-hparams['batch_size'] = 100
-hparams['epochs'] = 20000
+hparams['batch_size'] = 10#0
+hparams['epochs'] = 2#0000
 
 #Bases
 hparams['h'] = (2,10,10)
@@ -90,7 +82,7 @@ hparams['massconservation'] = False
 hparams['Neumannseries'] = False #True
 hparams['Neumannseries_order'] = None
 
-logdir = '../../../../nnlogs'
+logdir = './nnlogs'
 sublogdir = 'tdd'
 # sublogdir = 'test'
 # hparams['N_samples_train'] = 10
@@ -101,4 +93,4 @@ hparams['label'] = label
 
 model = NeuralOperator
 datamodule = DataModule
-train(model, datamodule, hparams, loaddir, logdir, sublogdir, label)
+train(model, datamodule, hparams, logdir, sublogdir, label)

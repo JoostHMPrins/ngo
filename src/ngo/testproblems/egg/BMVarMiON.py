@@ -1,9 +1,13 @@
+# Copyright 2025 Joost Prins
+
+# 3rd Party
 import torch
 from torch import nn
 import pytorch_lightning as pl
-import numpy as np
-from customlayers import GaussianRBF, expand_D8
-from customlosses import *
+
+# Local
+from ngo.ml.customlayers import GaussianRBF
+# from customlosses import *
     
 class NLBranchNet(nn.Module):
     def __init__(self, params):

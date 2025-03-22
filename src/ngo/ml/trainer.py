@@ -1,14 +1,18 @@
-import pytorch_lightning as pl
-from pytorch_lightning.callbacks.early_stopping import EarlyStopping
-from tqdm.auto import tqdm, trange
-from ipywidgets import IntProgress
+# Copyright 2025 Joost Prins
+
+# Standard
 import time
-from logger import *
+
+# 3rd Party
+import pytorch_lightning as pl
+
+# Local
+import ngo.ml.logger as logger_module
 
 def train(model, datamodule, hparams, logdir, sublogdir, label):
     
     #Initialize logger and checkpointer
-    logger, checkpoint_callback = initialize_logger(logdir, sublogdir, label)
+    logger, checkpoint_callback = logger_module.initialize_logger(logdir, sublogdir, label)
     
     #Load data
     data = datamodule(hparams)
