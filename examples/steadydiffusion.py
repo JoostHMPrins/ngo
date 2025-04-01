@@ -9,8 +9,8 @@ from ngo.testproblems.steadydiffusion.DataModule import DataModule
 
 #Training data
 hparams = {}
-hparams['N_samples_train'] = 10 #Number of training samples
-hparams['N_samples_val'] = 10 #Number of validation samples
+hparams['N_samples_train'] = 100 #Number of training samples, default is 10000
+hparams['N_samples_val'] = 10 #Number of validation samples, default is 1000
 hparams['variables'] = ['x','x'] #Variable types. 'x' for spatial variable, 't' for temporal variable
 hparams['d'] = len(hparams['variables']) #Dimensionality of solution
 hparams['l_min'] = [0.5,0.5] #Minimum GRF length scale per dimension
@@ -28,7 +28,7 @@ hparams['metric'] = weightedrelativeL2
 hparams['optimizer'] = torch.optim.Adam
 hparams['learning_rate'] = 1e-3
 hparams['batch_size'] = 100
-hparams['epochs'] = 5000
+hparams['epochs'] = 10 #Default for model NGO is 5000, for data NGO 20000
 
 #Bases
 hparams['h'] = (10,10) #Number of basis functions per dimension
@@ -52,7 +52,7 @@ hparams['modeltype'] = 'model NGO' #Options: "NN" for bare NN, "DeepONet", "VarM
 hparams['systemnet'] = CNN #See src/ngo/ml/systemnets.py for the options
 hparams['N_w'] = 30000 #Number of trainable parameters (upper bound, not exact)
 hparams['skipconnections'] = True #In case of a symmetric CNN -> U-Net
-hparams['kernel_sizes'] = [2,2,5,5,5,5,2,2] #In case of a CNN
+hparams['kernel_sizes'] = (2,2,5,5,5,5,2,2) #In case of a CNN
 hparams['bottleneck_size'] = 20 #MLP bottleneck size in case of a CNN (uses an MLP connection in the bottleneck)
 hparams['outputactivation'] = nn.Tanhshrink() #For the systemnet. Hidden layer activations are ReLU by default
 
@@ -63,11 +63,11 @@ hparams['Neumannseries_order'] = 1
 
 logdir = './nnlogs' #Location for the tensorboard log files
 sublogdir = 'test' #Folder name in the "nnlogs" directory
-label = 'steadydiffusion_new' #Give your model a name
+label = 'steadydiffusion' #Give your model a name
 hparams['label'] = label
 
 #Train the model
 train(NeuralOperator, DataModule, hparams, logdir, sublogdir, label)
 
 
-#Analysis of results
+#Analysis
