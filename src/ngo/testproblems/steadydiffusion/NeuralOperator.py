@@ -5,15 +5,12 @@ import torch
 import numpy as np
 import pytorch_lightning as pl
 import opt_einsum
-# from torch import nn
 
 # Local
 from ngo.ml.systemnets import MLP, LBranchNet # , CNN, FNO
-from ngo.ml.basisfunctions import TensorizedBasis, BSplineInterpolatedPOD2D
+from ngo.ml.basisfunctions import TensorizedBasis
 from ngo.ml.customlayers import discretize_functions
 from ngo.ml.quadrature import GaussLegendreQuadrature, UniformQuadrature
-# from customlosses import *
-# from modelloader import *
 
 class NeuralOperator(pl.LightningModule):
     def __init__(self, hparams):
