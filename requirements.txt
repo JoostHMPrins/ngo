@@ -13,5 +13,5 @@ opt-einsum~=3.3.0
 wandb~=0.19.4
 torch_harmonics~=0.7.3
 neuraloperator~=0.3.0
-dill~=0.3.6g
+dill~=0.3.6
 ipywidgets
