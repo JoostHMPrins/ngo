@@ -16,11 +16,9 @@ from quadrature import *
 from basisfunctions import *
 
 class DataModule(pl.LightningDataModule):
-
     def __init__(self, hparams):
         super().__init__()
         self.hparams.update(hparams)
-        self.data_dir = data_dir
         self.N_samples = self.hparams['N_samples_train'] + self.hparams['N_samples_val']
         dummymodel = NeuralOperator(self.hparams)
         # Generate input and output functions
