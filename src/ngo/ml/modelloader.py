@@ -10,7 +10,7 @@ def loadmodelfromlabel(model, label, logdir, sublogdir, device):
     
     for file in os.listdir(logdir + '/' + sublogdir + '/' + label):
         if file.endswith('.ckpt'):
-            ckpt = torch.load(logdir + '/' + sublogdir + '/' + label + '/' + file,  map_location=device)
+            ckpt = torch.load(logdir + '/' + sublogdir + '/' + label + '/' + file, weights_only=False,  map_location=device)
             hparams = ckpt['hparams']
             hparams['used_device'] = device
             Model = model(hparams)
