@@ -4,6 +4,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import opt_einsum
+from scipy.interpolate import BSpline
 
 # Local
 from ngo.ml.customlayers import discretize_functions
@@ -19,12 +20,12 @@ class BSplineBasis1D:
         self.knot_vector = np.append(self.knot_vector, np.ones(self.p+1))
     
     def forward(self, x):
-        basis_values = .design_matrix(x, self.knot_vector, self.p).toarray()
+        basis_values = BSpline.design_matrix(x, self.knot_vector, self.p).toarray()
         return basis_values
     
     def grad(self, x):
         coeffs = np.eye(self.h)
-        derivative_basis_functions = 0 if self.p==0 else [(self.knot_vector, coeffs[i], self.p).derivative() for i in range(self.h)]
+        derivative_basis_functions = 0 if self.p==0 else [BSpline(self.knot_vector, coeffs[i], self.p).derivative() for i in range(self.h)]
         basis_gradients = np.zeros((len(x),self.h)) if self.p==0 else np.vstack([dbf(x) for dbf in derivative_basis_functions]).T
         return basis_gradients
 
