@@ -4,10 +4,10 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import opt_einsum
-from scipy.interpolate import BSpline
 
 # Local
 from ngo.ml.customlayers import discretize_functions
+
 
 class BSplineBasis1D:
     def __init__(self, h, p, C):
@@ -19,12 +19,12 @@ class BSplineBasis1D:
         self.knot_vector = np.append(self.knot_vector, np.ones(self.p+1))
     
     def forward(self, x):
-        basis_values = BSpline.design_matrix(x, self.knot_vector, self.p).toarray()
+        basis_values = .design_matrix(x, self.knot_vector, self.p).toarray()
         return basis_values
     
     def grad(self, x):
         coeffs = np.eye(self.h)
-        derivative_basis_functions = 0 if self.p==0 else [BSpline(self.knot_vector, coeffs[i], self.p).derivative() for i in range(self.h)]
+        derivative_basis_functions = 0 if self.p==0 else [(self.knot_vector, coeffs[i], self.p).derivative() for i in range(self.h)]
         basis_gradients = np.zeros((len(x),self.h)) if self.p==0 else np.vstack([dbf(x) for dbf in derivative_basis_functions]).T
         return basis_gradients
 
@@ -42,7 +42,6 @@ class BSplineBasis1D:
         plt.xticks(np.array([0,1,2,3,4])/4)
         plt.legend()
         plt.grid(True)
-        # plt.savefig("BSpline1D.svg", bbox_inches='tight', transparent=True)
         plt.show()
         
     def plot_1d_basis_gradients(self):
@@ -55,12 +54,11 @@ class BSplineBasis1D:
         plt.figure(figsize=(8, 6))
         for i in range(self.h):
             plt.plot(x_values, basis_gradients_matrix[:, i], label=f'Gradient {i}')
-        plt.title(f'Gradients of 1D B-spline Basis Functions')
+        plt.title(f'Gradients of 1D Basis Functions')
         plt.xlabel('x')
         plt.ylabel('Gradient Values')
         plt.legend()
         plt.grid(True)
-        # plt.savefig("BSplinegrad1D.svg", bbox_inches='tight', transparent=True)
         plt.show()
 
 
@@ -104,12 +102,11 @@ class ChebyshevTBasis1D:
         plt.ylabel('Basis Values')
         plt.legend()
         plt.grid(True)
-        # plt.savefig("BSpline1D.svg", bbox_inches='tight', transparent=True)
         plt.show()
         
     def plot_1d_basis_gradients(self):
         """
-        Plot the gradients of the 1D B-spline basis functions for a specified dimension.
+        Plot the gradients of the 1D basis functions for a specified dimension.
 
         Args:
         dim_idx (int): Index of the dimension for which to plot the basis function gradients.
@@ -125,17 +122,16 @@ class ChebyshevTBasis1D:
         plt.ylabel('Gradient Values')
         plt.legend()
         plt.grid(True)
-        # plt.savefig("BSplinegrad1D.svg", bbox_inches='tight', transparent=True)
         plt.show()
 
-# Example usage for 1D B-spline basis functions
+# Example usage for 1D basis functions
 # basis_1d = ChebyshevTBasis1D(h=8)
 
-# # Plot the 1D B-spline basis functions for dimension 0
-# basis_1d.plot_1d_bspline_basis()
+# # Plot the 1D basis functions for dimension 0
+# basis_1d.plot_1d_basis()
 
-# # Plot the gradients of the 1D B-spline basis functions for dimension 0
-# basis_1d.plot_1d_bspline_basis_gradients()
+# # Plot the gradients of the 1D basis functions for dimension 0
+# basis_1d.plot_1d_basis_gradients()
 
 
 class SincBasis1D:
@@ -147,13 +143,11 @@ class SincBasis1D:
 
     def sinc(self, x):
         output = np.sin(x)/x
-        # output[np.abs(x)<self.tol] = 1
         output[x==0] = 1
         return output
     
     def dsincdx(self, x):
         output = np.cos(x)/x - np.sin(x)/x**2
-        # output[np.abs(x)<self.tol] = 0
         output[x==0] = 0
         return output
     
@@ -183,12 +177,11 @@ class SincBasis1D:
         plt.ylabel('Basis Values')
         plt.legend()
         plt.grid(True)
-        # plt.savefig("BSpline1D.svg", bbox_inches='tight', transparent=True)
         plt.show()
         
     def plot_1d_basis_gradients(self):
         """
-        Plot the gradients of the 1D B-spline basis functions for a specified dimension.
+        Plot the gradients of the 1D basis functions for a specified dimension.
 
         Args:
         dim_idx (int): Index of the dimension for which to plot the basis function gradients.
@@ -204,7 +197,6 @@ class SincBasis1D:
         plt.ylabel('Gradient Values')
         plt.legend()
         plt.grid(True)
-        # plt.savefig("BSplinegrad1D.svg", bbox_inches='tight', transparent=True)
         plt.show()
 
 
@@ -234,12 +226,11 @@ class PolynomialBasis1D:
         plt.ylabel('Basis Values')
         plt.legend()
         plt.grid(True)
-        # plt.savefig("BSpline1D.svg", bbox_inches='tight', transparent=True)
         plt.show()
         
     def plot_1d_basis_gradients(self):
         """
-        Plot the gradients of the 1D B-spline basis functions for a specified dimension.
+        Plot the gradients of the 1D basis functions for a specified dimension.
 
         Args:
         dim_idx (int): Index of the dimension for which to plot the basis function gradients.
@@ -255,7 +246,6 @@ class PolynomialBasis1D:
         plt.ylabel('Gradient Values')
         plt.legend()
         plt.grid(True)
-        # plt.savefig("BSplinegrad1D.svg", bbox_inches='tight', transparent=True)
         plt.show()
 
 
@@ -302,12 +292,11 @@ class FourierBasis1D:
         plt.ylabel('Basis Values')
         plt.legend()
         plt.grid(True)
-        # plt.savefig("BSpline1D.svg", bbox_inches='tight', transparent=True)
         plt.show()
         
     def plot_1d_basis_gradients(self):
         """
-        Plot the gradients of the 1D B-spline basis functions for a specified dimension.
+        Plot the gradients of the 1D basis functions for a specified dimension.
 
         Args:
         dim_idx (int): Index of the dimension for which to plot the basis function gradients.
@@ -323,8 +312,8 @@ class FourierBasis1D:
         plt.ylabel('Gradient Values')
         plt.legend()
         plt.grid(True)
-        # plt.savefig("BSplinegrad1D.svg", bbox_inches='tight', transparent=True)
         plt.show()
+
 
 class TensorizedBasis:
     def __init__(self, bases):
@@ -378,7 +367,6 @@ class TensorizedBasis:
                 ax.set_xlabel('x')
                 ax.set_ylabel('y')
         plt.tight_layout()
-        # plt.savefig("BSpline2D.svg", bbox_inches='tight', transparent=True)
         plt.show()
         
     def plot_2d_basis_gradients(self):
@@ -394,88 +382,10 @@ class TensorizedBasis:
                 ax = axes[i, j] if h_x > 1 and h_y > 1 else axes[max(i, j)]
                 idx = i * h_y + j
                 z = np.sum(basis_gradients_2d[:, idx, :]**2, axis=-1)**(1/2)
-                # z = basis_gradients_2d[:, idx]
                 c = ax.tripcolor(x[:,0], x[:,1], z)
                 fig.colorbar(c, ax=ax)
                 ax.set_title(f'Gradient ({i},{j})')
                 ax.set_xlabel('x')
                 ax.set_ylabel('y')
         plt.tight_layout()
-        # plt.savefig("BSplinegrad2D.svg", bbox_inches='tight', transparent=True)
         plt.show()
-
-
-class BSplineInterpolator2D:
-    def __init__(self, x_data, u_data, knots_x, knots_y, polynomial_order):
-        self.basis_2d = BSplineBasis2D(knots_x, knots_y, polynomial_order)
-        self.coeffs = self.compute_coeffs(x_data, u_data)
-        
-    def compute_X(self, x_data):
-        return self.basis_2d.forward(x_data)
-    
-    def compute_coeffs(self, x_data, u_data):
-        X = self.compute_X(x_data)
-        coeffs = np.linalg.lstsq(X, u_data)[0]
-        return coeffs
-        
-    def forward(self, x):
-        psi = self.basis_2d.forward(x)
-        output = opt_einsum.contract('n,Nn->N', self.coeffs, psi)
-        return output
-    
-    def grad(self, x):
-        gradpsi = self.basis_2d.grad(x)
-        output = opt_einsum.contract('n,Nni->Ni', self.coeffs, gradpsi)
-        return output
-    
-
-class BSplineInterpolatedPOD2D:
-    def __init__(self, N_samples, variables, l_min, l_max, w, xi, N, device):
-        self.basis_1d = BSplineBasis1D(h=31,p=3,C=2)
-        self.bsplinebasis = TensorizedBasis([self.basis_1d,self.basis_1d])
-        self.N = N
-        self.w = w
-        self.xi = xi
-        #self.u = ManufacturedSolutionsSetDarcy(N_samples=N_samples, variables=variables, l_min=l_min, l_max=l_max, device=device).u
-        #self.u_q = discretize_functions(self.u, torch.tensor(self.xi, device=device), device).detach().cpu().numpy()
-        self.device = device
-        # self.PODbasis = self.compute_PODbasis(self.u_q, self.N)
-        # self.PODcoeffs = self.compute_PODcoeffs(self.u_q, self.N)
-        self.PODcoeffs = np.load('../../../trainingdata/PODcoeffs.npy')[:self.N]
-        # self.errors = self.compute_projection_errors()
-        
-    def compute_PODbasis(self, u_q, N):
-        U, self.singularvalues, Vstar = np.linalg.svd(u_q.T, full_matrices=False)
-        PODbasis = U.T
-        PODbasis = PODbasis
-        return PODbasis
-    
-    def compute_PODcoeffs(self, u_q, N):
-        PODbasis_d = self.compute_PODbasis(u_q, N)
-        bsplinebasis_d = self.bsplinebasis.forward(self.xi)
-        d = opt_einsum.contract('q,nq,ql->nl', self.w, PODbasis_d, bsplinebasis_d)
-        M = opt_einsum.contract('q,ql,qm->lm', self.w, bsplinebasis_d, bsplinebasis_d)
-        M_inv = np.linalg.inv(M)
-        PODcoeffs = opt_einsum.contract('lm,nl->nm',M_inv, d)
-        np.save('../../../trainingdata/PODcoeffs.npy', PODcoeffs)
-        return PODcoeffs
-        
-    def forward(self, x):
-        psi = self.bsplinebasis.forward(x)
-        output = opt_einsum.contract('nm,Nm->Nn', self.PODcoeffs, psi)
-        return output
-    
-    def grad(self, x):
-        gradpsi = self.bsplinebasis.grad(x)
-        output = opt_einsum.contract('nm,Nmi->Nni', self.PODcoeffs, gradpsi)
-        return output
-    
-    def compute_projection_errors(self):
-        pi = self.PODbasis
-        pi_proj = self.forward(self.xi).T
-        L22_diff = np.sum(self.w*(pi - pi_proj)**2, axis=-1)
-        L2_diff = L22_diff**(1/2)
-        L22_norm = np.sum(self.w*(pi)**2, axis=-1)
-        L2_norm = L22_norm**(1/2)
-        L2_scaled_array = L2_diff/np.maximum(L2_norm, 1e-7*np.ones_like(L2_norm))
-        return L2_scaled_array
