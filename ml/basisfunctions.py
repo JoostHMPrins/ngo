@@ -21,8 +21,8 @@ class BSplineBasis1D:
     
     def grad(self, x):
         coeffs = np.eye(self.h)
-        derivative_basis_functions = [BSpline(self.knot_vector, coeffs[i], self.p).derivative() for i in range(self.h)]
-        basis_gradients = np.vstack([dbf(x) for dbf in derivative_basis_functions]).T
+        derivative_basis_functions = 0 if self.p==0 else [BSpline(self.knot_vector, coeffs[i], self.p).derivative() for i in range(self.h)]
+        basis_gradients = np.zeros((len(x),self.h)) if self.p==0 else np.vstack([dbf(x) for dbf in derivative_basis_functions]).T
         return basis_gradients
 
     def plot_1d_basis(self):
