@@ -23,7 +23,7 @@ def train(model, datamodule, hparams, logdir, sublogdir, label):
     #Training
     start = time.time() 
     trainer = pl.Trainer(logger=logger, 
-                         accelerator='gpu', 
+                         accelerator=hparams['accelerator'], 
                          devices=hparams['devices'],
                          strategy="ddp",
                          precision=hparams['precision'], 
