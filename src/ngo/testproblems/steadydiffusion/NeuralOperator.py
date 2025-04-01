@@ -290,7 +290,7 @@ class NeuralOperator(pl.LightningModule):
         u_w = opt_einsum.contract('q,qm,Nq->Nm', self.w_Omega, basis_trial, u_q)
         M = opt_einsum.contract('q,qm,qn->mn', self.w_Omega, basis_trial, basis_trial)
         M_inv = np.linalg.pinv(M)
-        u_n = torch.tensor(opt_einsum.contract('mn,Nm->Nn', M_inv, u_w), dtype=self.dtype, device=self.device)
+        u_n = opt_einsum.contract('mn,Nm->Nn', M_inv, u_w)
         u_hat = opt_einsum.contract('Nn,qn->Nq', u_n, self.psix)
         return u_hat
     
@@ -408,4 +408,4 @@ class NeuralOperator(pl.LightningModule):
         self.systemnet.device = self.device
 
     def on_validation_epoch_end(self):
-        print(self.metric)
+        print("Training metric: " +str(self.metric))
