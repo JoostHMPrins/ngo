@@ -135,8 +135,8 @@ class NeuralOperator(pl.LightningModule):
         F_0 += -opt_einsum.contract('q,qn,x,q,qmx->mn', self.w_Gamma_x0, basis_trial_x0, self.n_x0, theta_x0, gradbasis_test_x0)
         F_0 += -opt_einsum.contract('q,qn,x,q,qmx->mn', self.w_Gamma_xL, basis_trial_xL, self.n_xL, theta_xL, gradbasis_test_xL)
         if self.hparams.get('gamma_stabilization',0)!=0:
-            F_0 += self.hparams['gamma_stabilization']*opt_einsum.contract('q,qm,q,qn->mn', self.w_Gamma_x0, basis_test_x0, theta_x0, basis_trial_x0)
-            F_0 += self.hparams['gamma_stabilization']*opt_einsum.contract('q,qm,q,qn->mn', self.w_Gamma_xL, basis_test_xL, theta_xL, basis_trial_xL)
+            F_0 += -self.hparams['gamma_stabilization']*opt_einsum.contract('q,qm,q,qn->mn', self.w_Gamma_x0, basis_test_x0, theta_x0, basis_trial_x0)
+            F_0 += -self.hparams['gamma_stabilization']*opt_einsum.contract('q,qm,q,qn->mn', self.w_Gamma_xL, basis_test_xL, theta_xL, basis_trial_xL)
         self.F_0 = torch.tensor(F_0, dtype=self.dtype, device=self.device)
         self.A_0 = torch.linalg.inv(self.F_0)
     
@@ -154,8 +154,8 @@ class NeuralOperator(pl.LightningModule):
         d -= opt_einsum.contract('q,x,qmx,Nq->Nm', self.w_Gamma_x0, self.n_x0, gradbasis_test_l, g_x0)
         d -= opt_einsum.contract('q,x,qmx,Nq->Nm', self.w_Gamma_xL, self.n_xL, gradbasis_test_r, gr)
         if self.hparams.get('gamma_stabilization',0)!=0:
-            d += self.hparams['gamma_stabilization']*opt_einsum.contract('q,qm,Nq->Nm', self.w_Gamma_x0, basis_test_l, g_x0)
-            d += self.hparams['gamma_stabilization']*opt_einsum.contract('q,qm,Nq->Nm', self.w_Gamma_xL, basis_test_r, gr)                 
+            d += -self.hparams['gamma_stabilization']*opt_einsum.contract('q,qm,Nq->Nm', self.w_Gamma_x0, basis_test_l, g_x0)
+            d += -self.hparams['gamma_stabilization']*opt_einsum.contract('q,qm,Nq->Nm', self.w_Gamma_xL, basis_test_r, gr)                 
         return d
     
     def NN_forward(self, theta, f, eta_y0, eta_yL, g_x0, gr):

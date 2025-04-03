@@ -19,13 +19,13 @@ def train(model, datamodule, hparams, logdir, sublogdir, label):
 
     #Model
     MLmodel = model(hparams)
-
+    
     #Training
     start = time.time() 
     trainer = pl.Trainer(logger=logger, 
                          accelerator=hparams['accelerator'], 
                          devices=hparams['devices'],
-                         strategy="ddp",
+                        #  strategy="ddp",
                          precision=hparams['precision'], 
                          max_epochs=hparams['epochs'], 
                          check_val_every_n_epoch=1,

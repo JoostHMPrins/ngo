@@ -8,7 +8,7 @@ from torch.utils.data import DataLoader, random_split
 
 # Local
 from ngo.testproblems.steadydiffusion.NeuralOperator import NeuralOperator
-from ngo.testproblems.steadydiffusion.manufacturedsolutions import ManufacturedSolutionsSetDarcy
+from ngo.testproblems.steadydiffusion.manufacturedsolutions import ManufacturedSolutionsSet
 # from ngo.ml.quadrature import UniformQuadrature, GaussLegendreQuadrature
 
 
@@ -20,7 +20,7 @@ class DataModule(pl.LightningDataModule):
         dummymodel = NeuralOperator(self.hparams)
         # Generate input and output functions
         print('Generating functions...')
-        dataset = ManufacturedSolutionsSetDarcy(N_samples=self.N_samples, variables=self.hparams['variables'], l_min=self.hparams['l_min'], l_max=self.hparams['l_max'])
+        dataset = ManufacturedSolutionsSet(N_samples=self.N_samples, variables=self.hparams['variables'], l_min=self.hparams['l_min'], l_max=self.hparams['l_max'])
         theta = dataset.theta
         f = dataset.f
         eta_y0 = dataset.eta_y0

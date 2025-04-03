@@ -46,7 +46,7 @@ class DirichletBC:
         return function
 
 
-class ManufacturedSolutionsSetDarcy:
+class ManufacturedSolutionsSet:
     def __init__(self, N_samples, variables, l_min, l_max):
         super().__init__()
         self.N_samples = N_samples #Number of samples
