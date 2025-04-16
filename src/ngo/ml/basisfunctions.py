@@ -11,25 +11,64 @@ from ngo.ml.customlayers import discretize_functions
 
 
 class BSplineBasis1D:
+    """
+    A class to represent 1D B-spline basis functions.
+
+    Attributes:
+        h (int): Number of basis functions.
+        p (int): Polynomial degree.
+        C (int): Continuity.
+        knot_vector (np.ndarray): Knot vector for the B-spline basis.
+    """
+
     def __init__(self, h, p, C):
-        self.h = h #Number of basis functions (should equal n_el p + 1, where n_el is the number of elements)
-        self.p = p  #Polynomial degree
-        self.C = C #Continuity
+        """
+        Initialize the B-spline basis.
+        
+        Args:
+            h (int): Number of basis functions.
+            p (int): Polynomial degree.
+            C (int): Continuity.
+        """
+        self.h = h
+        self.p = p  
+        self.C = C 
         self.knot_vector = np.zeros(self.p+1)
         self.knot_vector = np.append(self.knot_vector, np.repeat(np.linspace(0, 1, int((self.h - self.p - 1)/(self.p - self.C)) + 2)[1:-1], self.p - self.C))
         self.knot_vector = np.append(self.knot_vector, np.ones(self.p+1))
     
     def forward(self, x):
+        """
+        Compute the B-spline basis values at given points.
+
+        Args:
+            x (np.ndarray): Input points. Shape: (n_points,).
+
+        Returns:
+            np.ndarray: Basis values at the input points. Shape: (n_points, h).
+        """
         basis_values = BSpline.design_matrix(x, self.knot_vector, self.p).toarray()
         return basis_values
     
     def grad(self, x):
+        """
+        Compute the gradients of the B-spline basis functions.
+
+        Args:
+            x (np.ndarray): Input points. Shape: (n_points,).
+
+        Returns:
+            np.ndarray: Gradients of the basis functions at the input points. Shape: (n_points, h).
+        """
         coeffs = np.eye(self.h)
         derivative_basis_functions = 0 if self.p==0 else [BSpline(self.knot_vector, coeffs[i], self.p).derivative() for i in range(self.h)]
         basis_gradients = np.zeros((len(x),self.h)) if self.p==0 else np.vstack([dbf(x) for dbf in derivative_basis_functions]).T
         return basis_gradients
 
     def plot_1d_basis(self):
+        """
+        Plot the 1D B-spline basis functions.
+        """
         knots = self.knot_vector
         resolution = 1000
         x_values = np.linspace(knots[self.p], knots[-self.p-1], resolution) # Adjusted range for x_values
@@ -37,7 +76,7 @@ class BSplineBasis1D:
         plt.figure(figsize=(8, 6))
         for i in range(self.h):
             plt.plot(x_values, basis_matrix[:,i], label=f'Basis {i}')
-        plt.title(f'1D B-spline Basis Functions')
+        plt.title(f'1D Basis Functions')
         plt.xlabel('x')
         plt.ylabel('Basis Values')
         plt.xticks(np.array([0,1,2,3,4])/4)
@@ -46,6 +85,9 @@ class BSplineBasis1D:
         plt.show()
         
     def plot_1d_basis_gradients(self):
+        """
+        Plot the gradients of the 1D B-spline basis functions.
+        """
         knots = self.knot_vector
         resolution = 1000
         min_knot = knots[self.p]
@@ -64,27 +106,75 @@ class BSplineBasis1D:
 
 
 class ChebyshevTBasis1D:
+    """
+    A class to represent 1D Chebyshev polynomial basis functions of the first kind.
+
+    Attributes:
+        h (int): Number of basis functions.
+    """
     def __init__(self, h):
-        self.h = h # Number of basis functions
+        """
+        Initialize the Chebyshev basis.
+
+        Args:
+            h (int): Number of basis functions.
+        """
+        self.h = h
 
     def basis_function(self, n):
+        """
+        Compute the nth Chebyshev basis function.
+
+        Args:
+            n (int): Index of the basis function.
+
+        Returns:
+            np.polynomial.chebyshev.Chebyshev: The nth Chebyshev basis function.
+        """
         c = np.zeros(self.h)
         c[n] = 1
         basisfunction = np.polynomial.chebyshev.Chebyshev(coef=c,domain=[0,1])
         return basisfunction
     
     def forward(self, x):
+        """
+        Compute the Chebyshev basis values at given points.
+
+        Args:
+            x (np.ndarray): Input points. Shape: (n_points,).
+
+        Returns:
+            np.ndarray: Basis values at the input points. Shape: (n_points, h).
+        """
         basis_values = np.zeros((x.shape[0],self.h))
         for n in range(self.h):
             basis_values[:, n] = self.basis_function(n)(x)
         return basis_values
     
     def basis_gradient(self, n):
+        """
+        Compute the gradient of the nth Chebyshev basis function.
+
+        Args:
+            n (int): Index of the basis function.
+
+        Returns:
+            np.polynomial.chebyshev.Chebyshev: Derivative of the nth basis function.
+        """
         basisfunction = self.basis_function(n)
         derivative = basisfunction.deriv(m=1)
         return derivative
     
     def grad(self, x):
+        """
+        Compute the gradients of the Chebyshev basis functions.
+
+        Args:
+            x (np.ndarray): Input points. Shape: (n_points,).
+
+        Returns:
+            np.ndarray: Gradients of the basis functions at the input points. Shape: (n_points, h).
+        """
         basis_gradients = np.zeros((x.shape[0],self.h))
         for n in range(self.h):
             basis_grad = self.basis_gradient(n)(x)
@@ -92,6 +182,9 @@ class ChebyshevTBasis1D:
         return basis_gradients
 
     def plot_1d_basis(self):
+        """
+        Plot the 1D Chebyshev basis functions.
+        """
         resolution = 1000
         x_values = np.linspace(0, 1, resolution)  # Adjusted range for x_values
         basis_matrix = self.forward(x_values)
@@ -107,10 +200,7 @@ class ChebyshevTBasis1D:
         
     def plot_1d_basis_gradients(self):
         """
-        Plot the gradients of the 1D basis functions for a specified dimension.
-
-        Args:
-        dim_idx (int): Index of the dimension for which to plot the basis function gradients.
+        Plot the gradients of the 1D Chebyshev basis functions.
         """
         resolution = 1000
         x_values = np.linspace(0, 1, resolution)  # Use full knot span for x_values
@@ -125,34 +215,66 @@ class ChebyshevTBasis1D:
         plt.grid(True)
         plt.show()
 
-# Example usage for 1D basis functions
-# basis_1d = ChebyshevTBasis1D(h=8)
-
-# # Plot the 1D basis functions for dimension 0
-# basis_1d.plot_1d_basis()
-
-# # Plot the gradients of the 1D basis functions for dimension 0
-# basis_1d.plot_1d_basis_gradients()
-
 
 class SincBasis1D:
+    """
+    A class to represent 1D sinc basis functions (sin(x)/x).
+
+    Attributes:
+        h (int): Number of basis functions.
+        Dx (float): Spacing between grid points.
+        grid (np.ndarray): Grid points for the basis functions. Shape: (h,).
+    """
+
     def __init__(self, h):
+        """
+        Initialize the sinc basis.
+
+        Args:
+            h (int): Number of basis functions.
+        """
         self.h = h
         self.Dx = 1/(h-1)
         self.grid = np.linspace(0,1,self.h)
-        self.tol = 1e-10
 
     def sinc(self, x):
+        """
+        Compute the sinc function values.
+
+        Args:
+            x (np.ndarray): Input points. Shape: (n_points,).
+
+        Returns:
+            np.ndarray: Sinc function values at the input points. Shape: (n_points,).
+        """
         output = np.sin(x)/x
         output[x==0] = 1
         return output
     
     def dsincdx(self, x):
+        """
+        Compute the derivative of the sinc function.
+
+        Args:
+            x (np.ndarray): Input points. Shape: (n_points,).
+
+        Returns:
+            np.ndarray: Derivative of the sinc function at the input points. Shape: (n_points,).
+        """
         output = np.cos(x)/x - np.sin(x)/x**2
         output[x==0] = 0
         return output
     
     def forward(self, x):
+        """
+        Compute the sinc basis values at given points.
+
+        Args:
+            x (np.ndarray): Input points. Shape: (n_points,).
+
+        Returns:
+            np.ndarray: Basis values at the input points. Shape: (n_points, h).
+        """
         basis_values = np.zeros((x.shape[0],self.h))
         for n in range(self.h):
             x_scaled = np.pi*(x - self.grid[n])/self.Dx
@@ -160,6 +282,15 @@ class SincBasis1D:
         return basis_values
     
     def grad(self, x):
+        """
+        Compute the gradients of the sinc basis functions.
+
+        Args:
+            x (np.ndarray): Input points. Shape: (n_points,).
+
+        Returns:
+            np.ndarray: Gradients of the basis functions at the input points. Shape: (n_points, h).
+        """
         basis_gradients = np.zeros((x.shape[0],self.h))
         for n in range(self.h):
             x_scaled = np.pi*(x - self.grid[n])/self.Dx
@@ -167,6 +298,9 @@ class SincBasis1D:
         return basis_gradients
 
     def plot_1d_basis(self):
+        """
+        Plot the 1D sinc basis functions.
+        """
         resolution = 1000
         x_values = np.linspace(0, 1, resolution)  # Adjusted range for x_values
         basis_matrix = self.forward(x_values)
@@ -182,10 +316,7 @@ class SincBasis1D:
         
     def plot_1d_basis_gradients(self):
         """
-        Plot the gradients of the 1D basis functions for a specified dimension.
-
-        Args:
-        dim_idx (int): Index of the dimension for which to plot the basis function gradients.
+        Plot the gradients of the 1D sinc basis functions.
         """
         resolution = 1000
         x_values = np.linspace(0, 1, resolution)  # Use full knot span for x_values
@@ -202,20 +333,56 @@ class SincBasis1D:
 
 
 class PolynomialBasis1D:
+    """
+    A class to represent 1D polynomial basis functions.
+    The basis functions are defined as:
+    phi_0 = c_0, phi_1 = c_1 * x, phi_2 = c_2 * x^2, ..., phi_h = c_h * x^h.
+
+    Attributes:
+        h (int): Number of basis functions.
+        exponents (np.ndarray): Array of the exponents of the individual basis functions.
+    """
     def __init__(self, h):
+        """
+        Initialize the polynomial basis.
+
+        Args:
+            h (int): Number of basis functions.
+        """
         self.h = h
         self.exponents = np.arange(0,self.h)
     
     def forward(self, x):
+        """
+        Compute the polynomial basis values at given points.
+
+        Args:
+            x (np.ndarray): Input points. Shape: (n_points,).
+
+        Returns:
+            np.ndarray: Basis values at the input points. Shape: (n_points, h).
+        """
         basis_values = x[:,None]**self.exponents[None,:]
         return basis_values
     
     def grad(self, x):
+        """
+        Compute the gradients of the polynomial basis functions.
+
+        Args:
+            x (np.ndarray): Input points. Shape: (n_points,).
+
+        Returns:
+            np.ndarray: Gradients of the basis functions at the input points. Shape: (n_points, h).
+        """
         basis_gradients = self.exponents[None,:]*x[:,None]**(self.exponents-1)
         basis_gradients[:,0] = 0
         return basis_gradients
 
     def plot_1d_basis(self):
+        """
+        Plot the 1D polynomial basis functions.
+        """
         resolution = 1000
         x_values = np.linspace(0, 1, resolution)  # Adjusted range for x_values
         basis_matrix = self.forward(x_values)
@@ -231,10 +398,7 @@ class PolynomialBasis1D:
         
     def plot_1d_basis_gradients(self):
         """
-        Plot the gradients of the 1D basis functions for a specified dimension.
-
-        Args:
-        dim_idx (int): Index of the dimension for which to plot the basis function gradients.
+        Plot the gradients of the 1D polynomial basis functions.
         """
         resolution = 1000
         x_values = np.linspace(0, 1, resolution)  # Use full knot span for x_values
@@ -251,13 +415,40 @@ class PolynomialBasis1D:
 
 
 class FourierBasis1D:
+    """
+    A class to represent 1D Fourier basis functions in sine-cosine form.
+    The Fourier basis functions are defined as:
+    phi_0 = 1, phi_1 = cos(k_1 * x), phi_2 = sin(k_1 * x), ..., 
+    alternating between cosine and sine terms.
+
+    Attributes:
+        h (int): Number of basis functions.
+        n (np.ndarray): Array of indices for the basis functions.
+        L (float): Length of the domain (should be unequal to 1 to allow for aperiodicity).
+        k_n (np.ndarray): Wave numbers for the basis functions.
+    """
     def __init__(self, h):
+        """
+        Initialize the Fourier basis.
+
+        Args:
+            h (int): Number of basis functions.
+        """
         self.h = h
         self.n = np.arange(0,self.h)
         self.L = 1.2
         self.k_n = 2*np.pi*self.n/self.L
     
     def forward(self, x):
+        """
+        Compute the Fourier basis values at given points.
+
+        Args:
+            x (np.ndarray): Input points. Shape: (n_points,).
+
+        Returns:
+            np.ndarray: Basis values at the input points. Shape: (n_points, h).
+        """
         basis_values = np.zeros((x.shape[0],self.h))
         n = 0
         for i in np.arange(0,self.h,2):
@@ -270,6 +461,15 @@ class FourierBasis1D:
         return basis_values
     
     def grad(self, x):
+        """
+        Compute the gradients of the Fourier basis functions.
+
+        Args:
+            x (np.ndarray): Input points. Shape: (n_points,).
+
+        Returns:
+            np.ndarray: Gradients of the basis functions at the input points. Shape: (n_points, h).
+        """
         basis_gradients = np.zeros((x.shape[0],self.h))
         n = 0
         for i in np.arange(0,self.h,2):
@@ -282,6 +482,9 @@ class FourierBasis1D:
         return basis_gradients
 
     def plot_1d_basis(self):
+        """
+        Plot the 1D Fourier basis functions.
+        """
         resolution = 1000
         x_values = np.linspace(0, 1, resolution)  # Adjusted range for x_values
         basis_matrix = self.forward(x_values)
@@ -297,10 +500,7 @@ class FourierBasis1D:
         
     def plot_1d_basis_gradients(self):
         """
-        Plot the gradients of the 1D basis functions for a specified dimension.
-
-        Args:
-        dim_idx (int): Index of the dimension for which to plot the basis function gradients.
+        Plot the gradients of the 1D Fourier basis functions.
         """
         resolution = 1000
         x_values = np.linspace(0, 1, resolution)  # Use full knot span for x_values
@@ -317,7 +517,22 @@ class FourierBasis1D:
 
 
 class TensorizedBasis:
+    """
+    A class to represent tensorized basis functions.
+    This class combines multiple 1D basis functions into a higher-dimensional tensorized/Kronecker product basis.
+
+    Attributes:
+        bases (list): A list of 1D basis objects.
+        d (int): Dimensionality of the tensorized basis (number of 1D bases).
+        n_basisfunctions (int): Total number of basis functions in the tensorized basis.
+    """
     def __init__(self, bases):
+        """
+        Initialize the tensorized basis.
+
+        Args:
+            bases (list): A list of 1D basis objects.
+        """
         self.bases = bases
         self.d = len(bases)
         self.n_basisfunctions = 1
@@ -325,6 +540,15 @@ class TensorizedBasis:
             self.n_basisfunctions *= bases[i].h
     
     def forward(self, x):
+        """
+        Compute the tensorized basis values at given points.
+
+        Args:
+            x (np.ndarray): Input points. Shape: (n_points, d).
+
+        Returns:
+            np.ndarray: Tensorized basis values at the input points. Shape: (n_points, n_basisfunctions).
+        """
         tensorproduct = self.bases[0].forward(x[:,0])
         newsize = self.bases[0].h
         for i in range(1,self.d):
@@ -333,6 +557,16 @@ class TensorizedBasis:
         return tensorproduct
     
     def grad(self, x):
+        """
+        Compute the gradients of the tensorized basis functions.
+
+        Args:
+            x (np.ndarray): Input points. Shape: (n_points, d).
+            
+        Returns:
+            np.ndarray: Gradients of the tensorized basis functions at the input points.
+                        Shape: (n_points, n_basisfunctions, d).
+        """
         tensorproduct = np.zeros((x.shape[0], self.n_basisfunctions, self.d))
         for i in range(self.d):
             if i==0:
@@ -350,6 +584,10 @@ class TensorizedBasis:
         return tensorproduct
     
     def plot_2d_basis(self):
+        """
+        Plot the 2D tensorized basis functions.
+        This method assumes the tensorized basis is 2D (d=2).
+        """
         resolution = 100
         x_0, x_1 = np.mgrid[0:1:resolution*1j, 0:1:resolution*1j]
         x = np.vstack([x_0.ravel(), x_1.ravel()]).T
@@ -371,6 +609,10 @@ class TensorizedBasis:
         plt.show()
         
     def plot_2d_basis_gradients(self):
+        """
+        Plot the gradients of the 2D tensorized basis functions.
+        This method assumes the tensorized basis is 2D (d=2).
+        """
         resolution = 100
         x_0, x_1 = np.mgrid[0:1:resolution*1j, 0:1:resolution*1j]
         x = np.vstack([x_0.ravel(), x_1.ravel()]).T

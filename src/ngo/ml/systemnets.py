@@ -12,12 +12,31 @@ import ngo.ml.customlayers as customlayers
 
 
 class MLP(nn.Module):
+    """
+    A Multi-Layer Perceptron (MLP) model.
+
+    Attributes:
+        hparams (dict): Hyperparameters for the MLP model.
+        layers (nn.ModuleList): List of layers in the MLP.
+        free_parameter (int): Free parameter (in this model, the number of neurons per hidden layer) 
+        to adjust the number of trainable parameters,
+        adjusted incrementally to 'N_w' by the function balance_num_trainable_params.
+    """
     def __init__(self, hparams):
+        """
+        Initialize the MLP model.
+
+        Args:
+            hparams (dict): Hyperparameters for the MLP model.
+        """
         super().__init__()
         self.hparams = hparams
         self = customlayers.balance_num_trainable_params(model=self, N_w=self.hparams['N_w'])
         
     def init_layers(self):
+        """
+        Initialize the layers of the MLP model.
+        """
         self.layers = nn.ModuleList()
         self.kernel_sizes = self.hparams['kernel_sizes']
         #Layers
@@ -34,6 +53,15 @@ class MLP(nn.Module):
             self.layers.append(self.hparams['outputactivation'])
 
     def forward(self, x):
+        """
+        Forward pass through the MLP model.
+
+        Args:
+            x (torch.Tensor): Input tensor. Shape: (batch_size, *input_shape).
+
+        Returns:
+            torch.Tensor: Output tensor. Shape: (batch_size, *output_shape).
+        """
         x0 = x
         x1 = self.layers[0](x0)
         x2 = self.layers[1](x1)
@@ -50,12 +78,31 @@ class MLP(nn.Module):
 
 
 class CNN(nn.Module):
+    """
+    A Convolutional Neural Network (CNN) model that maps a 2D tensor onto a 2D tensor.
+
+    Attributes:
+        hparams (dict): Hyperparameters for the CNN model.
+        layers (nn.ModuleList): List of layers in the CNN.
+        free_parameter (int): Free parameter (in this model, the number of channels) 
+        to adjust the number of trainable parameters,
+        adjusted incrementally to 'N_w' by the function balance_num_trainable_params.
+        bottleneck_size (int): Size of the bottleneck dense layer.
+    """
     def __init__(self, hparams):
+        """
+        Initialize the CNN model.
+        Args:
+            hparams (dict): Hyperparameters for the CNN model.
+        """
         super().__init__()
         self.hparams = hparams
         self = customlayers.balance_num_trainable_params(model=self, N_w=self.hparams['N_w'])
         
     def init_layers(self):
+        """
+        Initialize the layers of the CNN model.
+        """
         self.layers = nn.ModuleList()
         self.kernel_sizes = self.hparams['kernel_sizes']
         self.bottleneck_size = self.hparams['bottleneck_size']
@@ -84,6 +131,15 @@ class CNN(nn.Module):
             self.layers.append(self.hparams['outputactivation'])
 
     def forward(self, x):
+        """
+        Forward pass through the CNN model.
+
+        Args:
+            x (torch.Tensor): Input tensor. Shape: (batch_size, *input_shape).
+
+        Returns:
+            torch.Tensor: Output tensor. Shape: (batch_size, *output_shape).
+        """
         x0 = x
         x1 = self.layers[0](x0)
         x2 = self.layers[1](x1)
@@ -112,12 +168,32 @@ class CNN(nn.Module):
     
 
 class CNN_3dto2d(nn.Module):
+    """
+    A Convolutional Neural Network (CNN) model that maps a 3D tensor onto a 2D tensor.
+
+    Attributes:
+        hparams (dict): Hyperparameters for the CNN model.
+        layers (nn.ModuleList): List of layers in the CNN.
+        free_parameter (int): Free parameter (in this model, the number of channels) 
+        to adjust the number of trainable parameters,
+        adjusted incrementally to 'N_w' by the function balance_num_trainable_params.
+        bottleneck_size (int): Size of the bottleneck dense layer.
+    """
+
     def __init__(self, hparams):
+        """
+        Initialize the CNN model.
+        Args:
+            hparams (dict): Hyperparameters for the CNN model.
+        """
         super().__init__()
         self.hparams = hparams
         self = customlayers.balance_num_trainable_params(model=self, N_w=self.hparams['N_w'])
         
     def init_layers(self):
+        """
+        Initialize the layers of the CNN model.
+        """
         self.layers = nn.ModuleList()
         self.kernel_sizes = self.hparams['kernel_sizes']
         self.bottleneck_size = self.hparams['bottleneck_size']
@@ -146,6 +222,15 @@ class CNN_3dto2d(nn.Module):
             self.layers.append(self.hparams['outputactivation'])
 
     def forward(self, x):
+        """
+        Forward pass through the CNN model.
+
+        Args:
+            x (torch.Tensor): Input tensor. Shape: (batch_size, *input_shape).
+
+        Returns:
+            torch.Tensor: Output tensor. Shape: (batch_size, *output_shape).
+        """
         x0 = x
         x1 = self.layers[0](x0)
         x2 = self.layers[1](x1)
@@ -174,12 +259,31 @@ class CNN_3dto2d(nn.Module):
     
 
 class CNN_3dto3d(nn.Module):
+    """
+    A Convolutional Neural Network (CNN) model that maps a 3D tensor onto a 3D tensor.
+
+    Attributes:
+        hparams (dict): Hyperparameters for the CNN model.
+        layers (nn.ModuleList): List of layers in the CNN.
+        free_parameter (int): Free parameter (in this model, the number of channels) 
+        to adjust the number of trainable parameters,
+        adjusted incrementally to 'N_w' by the function balance_num_trainable_params.
+        bottleneck_size (int): Size of the bottleneck dense layer.
+    """
     def __init__(self, hparams):
+        """
+        Initialize the CNN model.
+        Args:
+            hparams (dict): Hyperparameters for the CNN model.
+        """
         super().__init__()
         self.hparams = hparams
         self = customlayers.balance_num_trainable_params(model=self, N_w=self.hparams['N_w'])
         
     def init_layers(self):
+        """
+        Initialize the layers of the CNN model.
+        """
         self.layers = nn.ModuleList()
         self.kernel_sizes = self.hparams['kernel_sizes']
         self.bottleneck_size = self.hparams['bottleneck_size']
@@ -208,6 +312,15 @@ class CNN_3dto3d(nn.Module):
             self.layers.append(self.hparams['outputactivation'])
 
     def forward(self, x):
+        """
+        Forward pass through the CNN model.
+
+        Args:
+            x (torch.Tensor): Input tensor. Shape: (batch_size, *input_shape).
+
+        Returns:
+            torch.Tensor: Output tensor. Shape: (batch_size, *output_shape).
+        """
         x0 = x
         x1 = self.layers[0](x0)
         x2 = self.layers[1](x1)
@@ -236,18 +349,50 @@ class CNN_3dto3d(nn.Module):
     
 
 class FNO(nn.Module):
+    """
+    A Fourier Neural Operator (FNO) model.
+
+    The FNO is a neural network architecture designed for learning operators, 
+    particularly in solving partial differential equations (PDEs).
+
+    Attributes:
+        hparams (dict): Hyperparameters for the FNO model.
+        layers (nn.ModuleList): List of layers in the FNO model.
+        free_parameter (int): Free parameter (in this model, the number of channels) 
+        to adjust the number of trainable parameters,
+        adjusted incrementally to 'N_w' by the function balance_num_trainable_params.
+    """
+
     def __init__(self, hparams):
+        """
+        Initialize the FNO model.
+
+        Args:
+            hparams (dict): Hyperparameters for the FNO model.
+        """
         super().__init__()
         self.hparams = hparams
         self = customlayers.balance_num_trainable_params(model=self, N_w=self.hparams['N_w'])
 
     def init_layers(self):
+        """
+        Initialize the layers of the FNO model.
+        """
         self.layers = nn.ModuleList()
         self.layers.append(customlayers.ReshapeLayer(output_shape=self.hparams['input_shape']))
         self.layers.append(neuralop.models.FNO(n_modes=self.hparams['h'], in_channels=self.hparams['input_shape'][0], out_channels=1, hidden_channels=self.free_parameter, domain_padding=0.2))
         self.layers.append(customlayers.ReshapeLayer(output_shape=self.hparams['output_shape']))
 
     def forward(self, x):
+        """
+        Forward pass through the FNO model.
+
+        Args:
+            x (torch.Tensor): Input tensor. Shape: (batch_size, *input_shape).
+
+        Returns:
+            torch.Tensor: Output tensor. Shape: (batch_size, *output_shape).
+        """
         for layer in self.layers:
             x = layer(x)
         y = x
@@ -255,19 +400,41 @@ class FNO(nn.Module):
 
 
 class LBranchNet(nn.Module):
+    """
+    A Linear Branch Network (LBranchNet) model.
+
+    This model applies a linear transformation to the input tensor.
+
+    Attributes:
+        hparams (dict): Hyperparameters for the LBranchNet model.
+        layers (nn.ModuleList): List of layers in the LBranchNet model.
+    """
+
     def __init__(self, hparams, input_dim, output_dim):
+        """
+        Initialize the LBranchNet model.
+
+        Args:
+            hparams (dict): Hyperparameters for the LBranchNet model.
+            input_dim (int): Dimensionality of the input tensor.
+            output_dim (int): Dimensionality of the output tensor.
+        """
         super().__init__()
         self.hparams = hparams
         self.layers = nn.ModuleList()
         self.layers.append(nn.Linear(input_dim, output_dim, bias=False))
 
     def forward(self, x):
-        if self.hparams.get('scaling_equivariance',False)==True:
-            x_norm = torch.amax(torch.abs(x), dim=(-1,-2))
-            x = x/x_norm[:,None,None]
+        """
+        Forward pass through the LBranchNet model.
+
+        Args:
+            x (torch.Tensor): Input tensor. Shape: (batch_size, input_dim).
+
+        Returns:
+            torch.Tensor: Output tensor. Shape: (batch_size, output_dim).
+        """
         for layer in self.layers:
             x = layer(x)
             y = x
-        if self.hparams.get('scaling_equivariance',False)==True:
-            y = y*x_norm[:,None]
         return y

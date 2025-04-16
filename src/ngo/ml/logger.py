@@ -9,13 +9,31 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 
 
 def initialize_logger(logdir, sublogdir, label):
-    
+    """
+    Initialize a logger and a model checkpoint callback for PyTorch Lightning.
+    This function creates the necessary directories for logging and checkpoints,
+    and sets up a TensorBoard logger and a model checkpoint callback.
+
+    Args:
+        logdir (str): The base directory for logging.
+        sublogdir (str): The subdirectory for the specific experiment.
+        label (str): A label to identify the experiment version.
+        
+    Returns:
+        tuple: A tuple containing:
+            - logger (TensorBoardLogger): The TensorBoard logger instance.
+            - checkpoint_callback (ModelCheckpoint): The model checkpoint callback.
+    """
     if not os.path.isdir(logdir + '/' + sublogdir):
         os.makedirs(logdir + '/' + sublogdir, exist_ok=True)
-        
     checkpoint_path = logdir + '/' + sublogdir + '/' + label
-
-    checkpoint_callback = ModelCheckpoint(dirpath=checkpoint_path, monitor='val_loss', mode='min', verbose=False, every_n_epochs=1, save_top_k=1)
+    checkpoint_callback = ModelCheckpoint(
+        dirpath=checkpoint_path, 
+        monitor='val_loss', 
+        mode='min', 
+        verbose=False, 
+        every_n_epochs=1, 
+        save_top_k=1)
     logger = TensorBoardLogger(logdir, name=sublogdir, version=label)
 
     return logger, checkpoint_callback

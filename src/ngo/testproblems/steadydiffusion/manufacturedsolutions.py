@@ -2,7 +2,6 @@
 
 # 3rd Party
 import numpy as np
-import numpy
 import opt_einsum
 
 #Local
@@ -10,44 +9,172 @@ from ngo.trainingdata.GRF import ScaledGRF
 
 
 class Forcing:
+    """
+    Class to compute the forcing term in the PDE.
+
+    Attributes:
+        theta (ScaledGRF): The theta function (diffusion coefficient).
+        u (ScaledGRF): The u function (solution).
+    """
+
     def __init__(self, theta, u):
+        """
+        Initialize the Forcing class.
+
+        Args:
+            theta (ScaledGRF): The theta function (diffusion coefficient).
+            u (ScaledGRF): The u function (solution).
+        """
         super().__init__()
         self.theta = theta
         self.u = u
     
     def forward(self, i):
+        """
+        Compute the forcing function for the i-th sample.
+
+        Args:
+            i (int): Index of the sample.
+
+        Returns:
+            function: A function that computes the forcing term at a given point x.
+        """
         def function(x):
-            return -self.theta.forward(i)(x)*numpy.sum(self.u.d2dxi2(i)(x), axis=-1) - numpy.sum(self.theta.grad(i)(x)*self.u.grad(i)(x), axis=-1)
+            """
+            Compute the forcing term at a given point x.
+
+            Args:
+                x (np.ndarray): Input point, shape (N_points,dimension).
+
+            Returns:
+                np.ndarray: Forcing term, shape (x.shape[0]).
+            """
+            return -self.theta.forward(i)(x)*np.sum(self.u.d2dxi2(i)(x), axis=-1) - np.sum(self.theta.grad(i)(x)*self.u.grad(i)(x), axis=-1)
         return function
     
     
 class NeumannBC:
+    """
+    Class to compute the Neumann boundary condition.
+
+    Attributes:
+        n (np.ndarray): Normal vector, shape (d,).
+        theta (ScaledGRF): The theta function (diffusion coefficient).
+        u (ScaledGRF): The u function (solution).
+    """
+
     def __init__(self, n, theta, u):
+        """
+        Initialize the NeumannBC class.
+
+        Args:
+            n (np.ndarray): Normal vector, shape (d,).
+            theta (ScaledGRF): The theta function (diffusion coefficient).
+            u (ScaledGRF): The u function (solution).
+        """
         super().__init__()
         self.n = n
         self.theta = theta
         self.u = u
 
     def forward(self, i):
+        """
+        Compute the Neumann boundary condition for the i-th sample.
+
+        Args:
+            i (int): Index of the sample.
+
+        Returns:
+            function: A function that computes the Neumann boundary condition at a given point x.
+        """
         def function(x):
+            """
+            Compute the Neumann boundary condition at a given point x.
+
+            Args:
+                x (np.ndarray): Input point, shape (N_points,dimension).
+
+            Returns:
+                np.ndarray: Neumann boundary condition, shape (x.shape[0]).
+            """
             return opt_einsum.contract('i,N,Ni->N', self.n, self.theta.forward(i)(x), self.u.grad(i)(x))
         return function
     
 
 class DirichletBC:
+    """
+    Class to compute the Dirichlet boundary condition.
+
+    Attributes:
+        theta (ScaledGRF): The theta function (diffusion coefficient).
+        u (ScaledGRF): The u function (solution).
+    """
     def __init__(self, theta, u):
+        """
+        Initialize the DirichletBC class.
+
+        Args:
+            theta (ScaledGRF): The theta function (diffusion coefficient).
+            u (ScaledGRF): The u function (solution).
+        """
         super().__init__()
         self.theta = theta
         self.u = u
 
     def forward(self, i):
+        """
+        Compute the Dirichlet boundary condition for the i-th sample.
+
+        Args:
+            i (int): Index of the sample.
+
+        Returns:
+            function: A function that computes the Neumann boundary condition at a given point x.
+        """
         def function(x):
+            """
+            Compute the Dirichlet boundary condition at a given point x.
+
+            Args:
+                x (np.ndarray): Input point, shape (N_points,dimension).
+
+            Returns:
+                np.ndarray: Neumann boundary condition, shape (x.shape[0]).
+            """
             return self.theta.forward(i)(x)*self.u.forward(i)(x)
         return function
 
 
 class ManufacturedSolutionsSet:
+    """
+    Class to generate a set of manufactured solutions for the PDE.
+
+    Attributes:
+        N_samples (int): Number of samples.
+        variables (list): List of variables ('t' for temporal variable, 'x' for spatial variable)
+        d (int): Dimensionality of the problem.
+        l_min (float): Minimum GRF length scale.
+        l_max (float): Maximum GRF length scale.
+        theta (list): List of theta functions.
+        u (list): List of u functions.
+        f (list): List of forcing functions.
+        eta_y0 (list): List of Neumann boundary conditions at y0.
+        eta_yL (list): List of Neumann boundary conditions at yL.
+        g_x0 (list): List of Dirichlet boundary conditions at x0.
+        g_xL (list): List of Dirichlet boundary conditions at xL.
+    """
+
     def __init__(self, N_samples, variables, l_min, l_max):
+        """
+        Initialize the ManufacturedSolutionsSet class.
+
+        Args:
+            N_samples (int): Number of samples.
+            variables (list): List of variables.
+            l_min (float): Minimum GRF length scale.
+            l_max (float): Maximum GRF length scale.
+        """
+
         super().__init__()
         self.N_samples = N_samples #Number of samples
         self.variables = variables
@@ -57,6 +184,12 @@ class ManufacturedSolutionsSet:
         self.generate_manufactured_solutions()
 
     def generate_manufactured_solutions(self):
+        """
+        Generate the manufactured solutions.
+
+        Returns:
+            None
+        """
         #Empty lists to be filled with functions
         thetas = []
         us = []
@@ -77,8 +210,8 @@ class ManufacturedSolutionsSet:
                 l_theta[:,i] = l_theta[:,i-1]
                 l_u[:,i] = l_u[:,i-1]
         #Neumann boundary normals
-        n_b = numpy.array([0,-1])
-        n_t = numpy.array([0,1])
+        n_b = np.array([0,-1])
+        n_t = np.array([0,1])
         if self.l_min==self.l_max:
             #Generate batches of GRFs with the same length scale
             theta = ScaledGRF(N_samples=self.N_samples, l=self.l_min, c=c_theta, b=b_theta)
