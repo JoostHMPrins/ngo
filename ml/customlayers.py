@@ -113,6 +113,47 @@ def discretize_functions(f_list, x):
     return f_discretized
 
 
+def rho_power_iteration(B, x, tol):
+    """
+    Estimate the spectral radius (largest eigenvalue in magnitude) of a batch of matrices 
+    using the power iteration method.
+
+    Args:
+    B : ndarray of shape (N, M, M)
+        A batch of N symmetric square matrices of shape (M, M) whose spectral radii are to be estimated.
+    x : ndarray of shape (M,)
+        An initial guess for the eigenvector. This vector is tiled across the batch dimension.
+    tol : float
+        The convergence tolerance. Iteration continues until the maximum relative change in 
+        spectral radius estimates across the batch falls below this threshold.
+
+    Returns:
+    rho : ndarray of shape (N,)
+        The estimated spectral radii (largest eigenvalues) for each matrix in the batch.
+    """
+    #Add batch dimension to initial random vector
+    x = np.tile(x,(B.shape[0],1))
+    #Initialize the relative difference and spectral radius estimate arrays
+    reldiff = np.ones(B.shape[0])
+    rho = np.ones(B.shape[0])
+    i=0
+    while np.amax(reldiff)>tol:
+        #Compute new spectral radius estimate
+        Bx = opt_einsum.contract('Nij,Nj->Ni', B, x)
+        xTBx = opt_einsum.contract('Ni,Ni->N', x, Bx)
+        xTx = opt_einsum.contract('Ni,Ni->N', x, x)
+        rho_new = xTBx/xTx
+        #Compute absolute relative difference between estimate and previous estimate
+        reldiff = np.abs((rho_new - rho)/rho)
+        #Update spectral radius estimate
+        rho = rho_new
+        #Update eigenvector estimate
+        BxTBx = opt_einsum.contract('Ni,Ni->N', Bx, Bx)
+        x = Bx/BxTBx[:,None]
+        i+=1
+    return rho
+
+
 def sort_matrices(matrices):
     """
     Sort the rows and columns of each matrix in the batch by decreasing L2 norm.
