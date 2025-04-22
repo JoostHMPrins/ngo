@@ -32,27 +32,17 @@ class DataModule(pl.LightningDataModule):
         g_xL = dataset.gr
         u = dataset.u
         u0 = dataset.u0
-        #Discretize input functions
-        # if self.hparams['modeltype']=='NN' or self.hparams['modeltype']=='DeepONet' or self.hparams['modeltype']=='VarMiON':
         print('Discretizing input functions...')
         self.theta_q, self.theta_x0_q, self.theta_xL_q, self.f_q, self.eta_y0_q, self.eta_yL_q, self.g_x0_q, self.g_xL_q, self.u0_t0_q = dummymodel.discretize_input_functions(theta, f, eta_y0, eta_yL, g_x0, g_xL, u0)
-        if dummymodel.hparams['modeltype']=='model NGO':
-            print('Assembling F...')
-            bs = self.hparams['assembly_batch_size']
-            n_batches = int(self.N_samples/bs)
-            self.F = np.zeros((len(theta),self.hparams['N'],self.hparams['N']))
-            for i in range(n_batches):
-                print('batch: '+str(i))
-                self.F[bs*i:bs*(i+1)] = dummymodel.compute_F(self.theta_q[bs*i:bs*(i+1)], self.theta_x0_q[bs*i:bs*(i+1)], self.theta_xL_q[bs*i:bs*(i+1)])
-        if dummymodel.hparams['modeltype']=='data NGO':
+        if dummymodel.hparams['modeltype']=='model NGO' or dummymodel.hparams['modeltype']=='data NGO':
             print('Assembling F...')
             self.F = dummymodel.compute_F(self.theta_q, self.theta_x0_q, self.theta_xL_q)
-        if dummymodel.hparams['modeltype']=='model NGO' or dummymodel.hparams['modeltype']=='data NGO':
             print('Assembling d...')
             self.d = dummymodel.compute_d(self.f_q, self.eta_y0_q, self.eta_yL_q, self.g_x0_q, self.g_xL_q, self.u0_t0_q)
             print('Calculating conserved quantity...')
-            self.C = dummymodel.compute_C(self.f_q, self.eta_y0_q, self.eta_yL_q, self.u0_t0_q)
+            self.C = dummymodel.compute_C(self.f_q, self.eta_y0_q, self.eta_yL_q, self.g_x0_q, self.g_xL_q, self.u0_t0_q)
             self.C_m = dummymodel.compute_C_m(self.theta_x0_q, self.theta_xL_q)
+            self.d_t = dummymodel.compute_d_t(self.u0_t0_q)
         print('Discretizing output function...')
         self.u = dummymodel.discretize_output_function(u)    
         if dummymodel.hparams['output_coefficients']==True:
@@ -75,8 +65,9 @@ class DataModule(pl.LightningDataModule):
             self.d = torch.tensor(self.d, dtype=self.hparams['dtype'])
             self.C = torch.tensor(self.C, dtype=self.hparams['dtype'])
             self.C_m = torch.tensor(self.C_m, dtype=self.hparams['dtype'])
+            self.d_t = torch.tensor(self.d_t, dtype=self.hparams['dtype'])
             self.u = torch.tensor(self.u, dtype=self.hparams['dtype'])   
-            dataset = torch.utils.data.TensorDataset(self.F, self.d, self.C, self.C_m, self.u)
+            dataset = torch.utils.data.TensorDataset(self.F, self.d, self.C, self.C_m, self.d_t, self.u)
         self.trainingset, self.validationset = random_split(dataset, [self.hparams['N_samples_train'], self.hparams['N_samples_val']])
 
     def train_dataloader(self):
