@@ -1,9 +1,9 @@
 import torch
 import numpy as np
-from torch import nn
 import pytorch_lightning as pl
 import numpy as np
 import opt_einsum
+
 
 import sys
 sys.path.insert(0, '/home/prins/st8/prins/phd/git/ngo-pde-gk/ml')
@@ -20,12 +20,12 @@ class NeuralOperator(pl.LightningModule):
         self.hparams.update(hparams)
         self.used_device = self.hparams['used_device']
         self = self.to(self.hparams['dtype'])
-        #Model type
-        self.init_modeltype()
         #compute_quadrature and quadrature
         self.compute_quadrature()
         self.rescale_quadrature_t()
         self.timestep = 0
+        #Model type
+        self.init_modeltype()
         #System net
         self.hparams['N_w_real'] = sum(p.numel() for p in self.parameters())
         self.systemnet = self.hparams['systemnet'](self.hparams).to(self.used_device)
@@ -37,12 +37,12 @@ class NeuralOperator(pl.LightningModule):
             self.basis_test = BSplineInterpolatedPOD2D(N_samples=self.hparams['N_samples_train'], d=self.hparams['d'], l_min=self.hparams['l_min'], l_max=self.hparams['l_max'], w=self.w_Omega, xi=self.xi_Omega, N=self.hparams['N'], device=self.used_device)
             self.basis_trial = BSplineInterpolatedPOD2D(N_samples=self.hparams['N_samples_train'], d=self.hparams['d'], l_min=self.hparams['l_min'], l_max=self.hparams['l_max'], w=self.w_Omega, xi=self.xi_Omega, N=self.hparams['N'], device=self.used_device)
         #Relevant matrices
+        self.x_0 = torch.rand(self.hparams['N'], dtype=self.dtype, device=self.used_device)
         if self.hparams['modeltype']!='NN':
             self.Identity = torch.eye(self.hparams['N'], dtype=self.dtype, device=self.used_device)
-            self.compute_Kronecker_factors_x()
-            self.compute_Kronecker_factors_t()
-            # if self.hparams['Neumannseries']==True:
-            self.A_0 = self.compute_A_0()
+            self.compute_Kronecker_factors()
+            if self.hparams['Neumannseries']==True:
+                self.compute_F_0_A_0()
 
     def init_modeltype(self):
         if self.hparams['modeltype']=='NN':
@@ -81,7 +81,7 @@ class NeuralOperator(pl.LightningModule):
             self.forwardfunction = self.projection_forward
             self.simforwardfunction = self.projection_simforward
 
-    def compute_Kronecker_factors_x(self):
+    def compute_Kronecker_factors(self):
         basis_test_x = self.hparams['test_bases'][1].forward(self.xi_x)
         basis_test_y = self.hparams['test_bases'][2].forward(self.xi_y)
         gradbasis_test_x = self.hparams['test_bases'][1].grad(self.xi_x)
@@ -100,14 +100,25 @@ class NeuralOperator(pl.LightningModule):
         gradbasis_trial_xL = self.hparams['trial_bases'][1].grad(1)[0]
         basis_test_y0 = self.hparams['test_bases'][2].forward(0)[0]
         basis_test_yL = self.hparams['test_bases'][2].forward(1)[0]
+        basis_test_t = self.hparams['test_bases'][0].forward(self.xi_t)
+        gradbasis_test_t = 1/self.hparams['Dt']*self.hparams['test_bases'][0].grad(self.xi_t)
+        basis_trial_t = self.hparams['trial_bases'][0].forward(self.xi_t)
+        basis_test_tT = self.hparams['test_bases'][0].forward(1)[0]
+        basis_trial_tT = self.hparams['trial_bases'][0].forward(1)[0]
+        basis_test_t0 = self.hparams['test_bases'][0].forward(0)[0]
+        basis_trial_t0 = self.hparams['trial_bases'][0].forward(0)[0]
+        basis_test_tT = self.hparams['test_bases'][0].forward(1)[0]
+        basis_trial_tT = self.hparams['trial_bases'][0].forward(1)[0]
         self.K_x_psipsiphi = opt_einsum.contract('q,qb,qe,qh->beh', self.w_x, basis_test_x, basis_test_x, basis_trial_x)
         self.K_y_psipsiphi = opt_einsum.contract('q,qc,qf,qi->cfi', self.w_y, basis_test_y, basis_test_y, basis_trial_y)
         self.K_x_psidpsidphi = opt_einsum.contract('q,qb,qe,qh->beh', self.w_x, basis_test_x, gradbasis_test_x, gradbasis_trial_x)
         self.K_y_psidpsidphi = opt_einsum.contract('q,qc,qf,qi->cfi', self.w_y, basis_test_y, gradbasis_test_y, gradbasis_trial_y)
+        self.K_x_psipsiphi_x0 = opt_einsum.contract('b,e,h->beh', basis_test_x0, basis_test_x0, basis_trial_x0)
+        self.K_x_psipsiphi_xL = opt_einsum.contract('b,e,h->beh', basis_test_xL, basis_test_xL, basis_trial_xL)
         self.K_x_psipsidphi_x0 = opt_einsum.contract('b,e,h->beh', basis_test_x0, basis_test_x0, gradbasis_trial_x0)
         self.K_x_psidpsiphi_x0 = opt_einsum.contract('b,e,h->beh', basis_test_x0, gradbasis_test_x0, basis_trial_x0)
         self.K_x_psipsidphi_xL = opt_einsum.contract('b,e,h->beh', basis_test_xL, basis_test_xL, gradbasis_trial_xL)
-        self.K_x_psidpsiphi_xL = opt_einsum.contract('b,e,h->beh', basis_test_xL, gradbasis_test_xL, basis_trial_xL)
+        self.K_x_psidpsiphi_xL = opt_einsum.contract('b,e,h->beh', basis_test_xL, gradbasis_test_xL, basis_trial_xL)    
         self.K_x_psiphi = opt_einsum.contract('q,qe,qh->eh', self.w_x, basis_test_x, basis_trial_x)
         self.K_x_psiphi_inv = np.linalg.inv(self.K_x_psiphi)
         self.K_y_psiphi = opt_einsum.contract('q,qf,qi->fi', self.w_y, basis_test_y, basis_trial_y)
@@ -124,17 +135,6 @@ class NeuralOperator(pl.LightningModule):
         self.M_y_psipsi_yL = opt_einsum.contract('c,f->cf', basis_test_yL, basis_test_yL)
         self.M_x_psidpsi_x0 = opt_einsum.contract('c,f->cf', basis_test_x0, gradbasis_test_x0)
         self.M_x_psidpsi_xL = opt_einsum.contract('c,f->cf', basis_test_xL, gradbasis_test_xL)
-
-    def compute_Kronecker_factors_t(self):
-        basis_test_t = self.hparams['test_bases'][0].forward(self.xi_t)
-        gradbasis_test_t = 1/self.hparams['Dt']*self.hparams['test_bases'][0].grad(self.xi_t)
-        basis_trial_t = self.hparams['trial_bases'][0].forward(self.xi_t)
-        basis_test_tT = self.hparams['test_bases'][0].forward(1)[0]
-        basis_trial_tT = self.hparams['trial_bases'][0].forward(1)[0]
-        basis_test_t0 = self.hparams['test_bases'][0].forward(0)[0]
-        basis_trial_t0 = self.hparams['trial_bases'][0].forward(0)[0]
-        basis_test_tT = self.hparams['test_bases'][0].forward(1)[0]
-        basis_trial_tT = self.hparams['trial_bases'][0].forward(1)[0]
         self.K_t_psipsiphi = opt_einsum.contract('q,qa,qd,qg->adg', self.w_t, basis_test_t, basis_test_t, basis_trial_t)
         self.K_t_dpsiphi = opt_einsum.contract('q,qd,qg->dg', self.w_t, gradbasis_test_t, basis_trial_t)
         self.K_t_psiphi_tT = opt_einsum.contract('d,g->dg', basis_test_tT, basis_trial_tT)
@@ -144,9 +144,10 @@ class NeuralOperator(pl.LightningModule):
         self.M_t_phiphi_inv = np.linalg.pinv(self.M_t_phiphi)
         self.M_phiphi = np.kron(np.kron(self.M_t_phiphi, self.M_x_phiphi), self.M_y_phiphi)
         self.M_t_psipsi_t0 = opt_einsum.contract('a,d->ad', basis_test_t0, basis_test_t0)
+        self.M_t_psipsi_tT = opt_einsum.contract('a,d->ad', basis_test_tT, basis_test_tT)
         self.M_t_psiphi_t0 = opt_einsum.contract('a,d->ad', basis_test_t0, basis_trial_t0)
-        # self.M_t_psiphi_t0_inv = np.linalg.inv(M_t_psiphi_t0)
         self.M_t_psiphi_tT = opt_einsum.contract('a,d->ad', basis_test_tT, basis_trial_tT)
+        self.M_t_psiphi_t0T = opt_einsum.contract('a,d->ad', basis_test_t0, basis_trial_tT)
 
     def discretize_input_functions(self, theta, f, eta_y0, eta_yL, g_x0, g_xL, u0):
         theta_q = discretize_functions(theta, self.xi_OmegaT_scaled)
@@ -154,19 +155,10 @@ class NeuralOperator(pl.LightningModule):
         theta_xL_q = discretize_functions(theta, self.xi_Gamma_xL_scaled)
         f_q = discretize_functions(f, self.xi_OmegaT_scaled)
         u0_t0_q = discretize_functions(u0, self.xi_Gamma_t0_scaled)
-        # u0_t0_q = discretize_functions(u0, self.xi_OmegaT_scaled)
-        # u0_l = self.project_input_function(u0_t0_q)
-        # u0_t0_q = opt_einsum.contract('Nn,qn->Nq', u0_l, self.basis_test.forward(self.xi_Gamma_t0))
-        # if self.hparams['project_rhs']==False:
         eta_y0_q = discretize_functions(eta_y0, self.xi_Gamma_y0_scaled)
         eta_yL_q = discretize_functions(eta_yL, self.xi_Gamma_yL_scaled)
         g_x0_q = discretize_functions(g_x0, self.xi_Gamma_x0_scaled)
         g_xL_q = discretize_functions(g_xL, self.xi_Gamma_xL_scaled)
-        # if self.hparams['project_rhs']==True:
-        #     eta_y0_q = discretize_functions(eta_y0, self.xi_OmegaT_scaled)
-        #     eta_yL_q = discretize_functions(eta_yL, self.xi_OmegaT_scaled)
-        #     g_x0_q = discretize_functions(g_x0, self.xi_OmegaT_scaled)
-        #     g_xL_q = discretize_functions(g_xL, self.xi_OmegaT_scaled)
         return theta_q, theta_x0_q, theta_xL_q, f_q, eta_y0_q, eta_yL_q, g_x0_q, g_xL_q, u0_t0_q
     
     def discretize_output_function(self, u):
@@ -177,6 +169,22 @@ class NeuralOperator(pl.LightningModule):
         basis_test_OmegaT = self.basis_test.forward(self.xi_OmegaT)
         d = opt_einsum.contract('q,qm,Nq->Nm', self.w_OmegaT, basis_test_OmegaT, u_q)
         M_inv = np.kron(np.kron(self.M_t_psipsi_inv, self.M_x_psipsi_inv), self.M_y_psipsi_inv)
+        u_m = opt_einsum.contract('mn,Nm->Nn', M_inv, d)
+        return u_m
+
+    def project_on_psi_t0(self, u_q):
+        basis_test_t0 = self.basis_test.forward(self.xi_Gamma_t0)
+        d = opt_einsum.contract('q,qm,Nq->Nm', self.w_Gamma_t0, basis_test_t0, u_q)
+        M = np.kron(np.kron(self.M_t_psipsi_t0, self.M_x_psipsi), self.M_y_psipsi)
+        M_inv = np.linalg.pinv(M)
+        u_m = opt_einsum.contract('mn,Nm->Nn', M_inv, d)
+        return u_m
+    
+    def project_on_phi_tT(self, u_q):
+        basis_test_tT = self.basis_trial.forward(self.xi_Gamma_tT)
+        d = opt_einsum.contract('q,qm,Nq->Nm', self.w_Gamma_tT, basis_test_tT, u_q)
+        M = np.kron(np.kron(self.M_t_psipsi_tT, self.M_x_psipsi), self.M_y_psipsi)
+        M_inv = np.linalg.pinv(M)
         u_m = opt_einsum.contract('mn,Nm->Nn', M_inv, d)
         return u_m
     
@@ -190,8 +198,13 @@ class NeuralOperator(pl.LightningModule):
     def compute_F_direct(self, theta_q, theta_x0_q, theta_xL_q):
         if  self.hparams['modeltype']=='data NGO':
             basis_test_OmegaT = self.basis_test.forward(self.xi_OmegaT)
+            basis_test_x0 = self.basis_test.forward(self.xi_Gamma_x0)
+            basis_test_xL = self.basis_test.forward(self.xi_Gamma_xL)
             F = opt_einsum.contract('q,qm,Nq->Nm', self.w_OmegaT, basis_test_OmegaT, theta_q)
             F = F.reshape(((theta_q.shape[0],)+self.hparams['h']))
+            if self.hparams.get('gamma_stabilization',0)!=0:
+                F += self.hparams['gamma_stabilization']*opt_einsum.contract('q,qm,Nq->Nm', self.w_Gamma_x0, basis_test_x0, theta_x0_q).reshape(((theta_q.shape[0],)+self.hparams['h']))
+                F += self.hparams['gamma_stabilization']*opt_einsum.contract('q,qm,Nq->Nm', self.w_Gamma_xL, basis_test_xL, theta_xL_q).reshape(((theta_q.shape[0],)+self.hparams['h']))
         if  self.hparams['modeltype']=='model NGO' or self.hparams['modeltype']=='FEM' or self.hparams['modeltype']=='projection':
             basis_trial = self.basis_trial.forward(self.xi_OmegaT)
             gradbasis_test = self.basis_test.grad(self.xi_OmegaT)[:,:,1:]
@@ -208,15 +221,15 @@ class NeuralOperator(pl.LightningModule):
             basis_test_tT = self.basis_test.forward(self.xi_Gamma_tT)
             basis_trial_tT = self.basis_trial.forward(self.xi_Gamma_tT)
             F = opt_einsum.contract('q,Nq,qmx,qnx->Nmn', self.w_OmegaT, theta_q, gradbasis_test, gradbasis_trial)
-            F += - opt_einsum.contract('q,qn,qm->mn', self.w_OmegaT, basis_trial, ddtbasis_test)
+            F += -opt_einsum.contract('q,qn,qm->mn', self.w_OmegaT, basis_trial, ddtbasis_test)
             F += -opt_einsum.contract('q,qm,x,Nq,qnx->Nmn', self.w_Gamma_x0, basis_test_x0, self.n_x0, theta_x0_q, gradbasis_trial_x0)
             F += -opt_einsum.contract('q,qm,x,Nq,qnx->Nmn', self.w_Gamma_xL, basis_test_xL, self.n_xL, theta_xL_q, gradbasis_trial_xL)
             F += -opt_einsum.contract('q,qn,x,Nq,qmx->Nmn', self.w_Gamma_x0, basis_trial_x0, self.n_x0, theta_x0_q, gradbasis_test_x0)
             F += -opt_einsum.contract('q,qn,x,Nq,qmx->Nmn', self.w_Gamma_xL, basis_trial_xL, self.n_xL, theta_xL_q, gradbasis_test_xL)
             F += opt_einsum.contract('q,qm,qn->mn', self.w_Gamma_tT, basis_test_tT, basis_trial_tT)
             if self.hparams.get('gamma_stabilization',0)!=0:
-                F += -self.hparams['gamma_stabilization']*opt_einsum.contract('q,qm,Nq,qn->Nmn', self.w_Gamma_x0, basis_test_x0, theta_x0_q, basis_trial_x0)
-                F += -self.hparams['gamma_stabilization']*opt_einsum.contract('q,qm,Nq,qn->Nmn', self.w_Gamma_xL, basis_test_xL, theta_xL_q, basis_trial_xL)
+                F += self.hparams['gamma_stabilization']*opt_einsum.contract('q,qm,Nq,qn->Nmn', self.w_Gamma_x0, basis_test_x0, theta_x0_q, basis_trial_x0)
+                F += self.hparams['gamma_stabilization']*opt_einsum.contract('q,qm,Nq,qn->Nmn', self.w_Gamma_xL, basis_test_xL, theta_xL_q, basis_trial_xL)
         return F
 
     def compute_F_tensorized(self, theta_q):
@@ -228,42 +241,60 @@ class NeuralOperator(pl.LightningModule):
         K_lmn = np.kron(K_lmn, self.K_y_psipsiphi)
         K_lmn = K_lmn + np.kron(self.K_x_psipsiphi, self.K_y_psidpsidphi)
         K_lmn = np.kron(self.K_t_psipsiphi, K_lmn)
+        if self.hparams.get('gamma_stabilization',0)!=0:
+            K_lmn += self.hparams['gamma_stabilization']*np.kron(np.kron(self.K_t_psipsiphi, self.K_x_psipsiphi_x0 + self.K_x_psipsiphi_xL), self.K_y_psipsiphi)
         K = opt_einsum.contract('Nl,lmn->Nmn', theta_l, K_lmn) + K_c
         return K
     
-    def compute_stability_criterion(self, theta):
+    def compute_stability_criterion(self, theta, u0):
         theta_q = discretize_functions(theta, self.xi_OmegaT_scaled)
         theta_x0_q = discretize_functions(theta, self.xi_Gamma_x0_scaled)
         theta_xL_q = discretize_functions(theta, self.xi_Gamma_xL_scaled)
-        basis_trial = self.basis_trial.forward(self.xi_OmegaT)
-        gradbasis_test = self.basis_test.grad(self.xi_OmegaT)[:,:,1:]
-        gradbasis_trial = self.basis_trial.grad(self.xi_OmegaT)[:,:,1:]
-        ddtbasis_test = 1/self.hparams['Dt']*self.basis_test.grad(self.xi_OmegaT)[:,:,0]
-        basis_test_x0 = self.basis_test.forward(self.xi_Gamma_x0)
-        basis_test_xL = self.basis_test.forward(self.xi_Gamma_xL)
-        gradbasis_test_x0 = self.basis_test.grad(self.xi_Gamma_x0)[:,:,1:]
-        gradbasis_test_xL = self.basis_test.grad(self.xi_Gamma_xL)[:,:,1:]
-        basis_trial_x0 = self.basis_trial.forward(self.xi_Gamma_x0)
-        basis_trial_xL = self.basis_trial.forward(self.xi_Gamma_xL)
-        gradbasis_trial_x0 = self.basis_trial.grad(self.xi_Gamma_x0)[:,:,1:]
-        gradbasis_trial_xL = self.basis_trial.grad(self.xi_Gamma_xL)[:,:,1:]
-        F = opt_einsum.contract('q,Nq,qmx,qnx->Nmn', self.w_OmegaT, theta_q, gradbasis_test, gradbasis_trial)
-        F += - opt_einsum.contract('q,qn,qm->mn', self.w_OmegaT, basis_trial, ddtbasis_test)
-        F += -opt_einsum.contract('q,qm,x,Nq,qnx->Nmn', self.w_Gamma_x0, basis_test_x0, self.n_x0, theta_x0_q, gradbasis_trial_x0)
-        F += -opt_einsum.contract('q,qm,x,Nq,qnx->Nmn', self.w_Gamma_xL, basis_test_xL, self.n_xL, theta_xL_q, gradbasis_trial_xL)
-        F += -opt_einsum.contract('q,qn,x,Nq,qmx->Nmn', self.w_Gamma_x0, basis_trial_x0, self.n_x0, theta_x0_q, gradbasis_test_x0)
-        F += -opt_einsum.contract('q,qn,x,Nq,qmx->Nmn', self.w_Gamma_xL, basis_trial_xL, self.n_xL, theta_xL_q, gradbasis_test_xL)
-        F_tilde = F/self.hparams['Dt']
-        # M_x_inv = np.kron(np.kron(self.M_t_psiphi_t0_inv, self.K_x_psiphi_inv), self.K_y_psiphi_inv)
-        # A = -M_x_inv@F_tilde
-        # Lambda = np.linalg.eigvals(A)
-        # criterion = np.sqrt(1 - 2*self.hparams['Dt']*np.real(Lambda) + self.hparams['Dt']**2*(np.real(Lambda)**2 + np.imag(Lambda)**2))
-        M_l = np.kron(np.kron(self.M_t_psiphi_t0, self.K_x_psiphi), self.K_y_psiphi)
-        M_r = np.kron(np.kron(self.M_t_psiphi_tT, self.K_x_psiphi), self.K_y_psiphi)
-        A = M_r + self.hparams['Dt']*F_tilde
-        B = np.linalg.inv(A)@M_l
-        criterion = np.linalg.eigvals(B)
-        # print(criterion)
+        u0_t0_q = discretize_functions(u0, self.xi_Gamma_t0_scaled)
+        F = torch.tensor(self.compute_F(theta_q, theta_x0_q, theta_xL_q), dtype=self.dtype, device=self.used_device)
+        d_t = torch.tensor(self.compute_d_t(u0_t0_q), dtype=self.dtype, device=self.used_device)
+        if self.hparams['modeltype']=='FEM':
+            A_hat = torch.linalg.inv(F)
+        if self.hparams['modeltype']=='data NGO':
+            A_hat = self.systemnet.forward(F/(self.hparams['Dt']/self.hparams['N']))/(self.hparams['Dt']/self.hparams['N'])
+            if self.hparams.get('SPD', False)==True:
+                L = torch.tril(A_hat)
+                U = torch.tril(A_hat.transpose(-1,-2))
+                A_hat = (L@L.transpose(-2,-1) + self.hparams['epsilon']*self.Identity + U - U.transpose(-1,-2))
+            if self.hparams.get('spectral radius scaling',False)==True:
+                M = torch.tensor(np.kron(np.kron(self.M_t_psiphi_t0T, self.K_x_psiphi), self.K_y_psiphi), dtype=self.dtype, device=self.used_device)
+                scaling = rho_power_iteration(A_hat@M, x=self.x_0, tol=self.hparams['tol'])
+                scaling = torch.maximum(self.hparams['rho_max']*torch.ones_like(scaling),scaling)/self.hparams['rho_max']
+                A_hat = A_hat/scaling[:,None,None]
+        if self.hparams['modeltype']=='model NGO':
+            if self.hparams.get('scaling_equivariance',False)==True:
+                scaling = torch.frobenius_norm(F, dim=(-1,-2))
+                F = F/scaling[:,None,None]
+            if self.hparams.get('Neumannseries', False)==False:
+                A_hat = self.systemnet.forward(F/(self.hparams['Dt']/self.hparams['N'])**2)/(self.hparams['Dt']/self.hparams['N'])**2
+            if self.hparams.get('SPD', False)==True:
+                L = torch.tril(A_hat)
+                U = torch.tril(A_hat.transpose(-1,-2))
+                A_hat = (L@L.transpose(-2,-1) + self.hparams['epsilon']*self.Identity + U - U.transpose(-1,-2))
+            if self.hparams.get('spectral radius scaling',False)==True:
+                M = torch.tensor(np.kron(np.kron(self.M_t_psiphi_t0T, self.K_x_psiphi), self.K_y_psiphi), dtype=self.dtype, device=self.used_device)
+                scaling = rho_power_iteration(A_hat@M, x=self.x_0, tol=self.hparams['tol'])
+                scaling = torch.maximum(self.hparams['rho_max']*torch.ones_like(scaling),scaling)/self.hparams['rho_max']
+                A_hat = A_hat/scaling[:,None,None]
+            if self.hparams.get('Neumannseries', False)==True:
+                T = torch.zeros(F.shape, dtype=self.dtype, device=self.used_device)
+                Ti = self.Identity
+                T1 = -F@self.A_0 + self.Identity
+                for i in range(0, self.hparams['Neumannseries_order']):
+                    Ti = T1@Ti
+                    T = T + Ti
+                A_hat = self.A_0@(self.Identity + T + self.systemnet.forward(T1))
+            if self.hparams.get('scaling_equivariance',False)==True:
+                A_hat = A_hat/scaling[:,None,None]
+        A_hat = A_hat.detach().cpu().numpy()
+        M = np.kron(np.kron(self.M_t_psiphi_t0T, self.K_x_psiphi), self.K_y_psiphi)
+        B = A_hat@M
+        criterion = np.sort(np.linalg.eigvals(B))
         return criterion
 
     def compute_F(self, theta_q, theta_x0_q, theta_xL_q):
@@ -273,20 +304,15 @@ class NeuralOperator(pl.LightningModule):
             F = self.compute_F_direct(theta_q, theta_x0_q, theta_xL_q)
         return F
 
-    def compute_A_0(self):
-        theta_l = np.ones((1,self.hparams['N']))
-        K_c = self.K_t_psiphi_tT - self.K_t_dpsiphi
-        K_c = np.kron(K_c, self.K_x_psiphi)
-        K_c = np.kron(K_c, self.K_y_psiphi)
-        K_lmn = self.K_x_psidpsidphi - self.K_x_psipsidphi_xL + self.K_x_psipsidphi_x0 - self.K_x_psidpsiphi_xL + self.K_x_psidpsiphi_x0
-        K_lmn = np.kron(K_lmn, self.K_y_psipsiphi)
-        K_lmn = K_lmn + np.kron(self.K_x_psipsiphi, self.K_y_psidpsidphi)
-        K_lmn = np.kron(self.K_t_psipsiphi, K_lmn)
-        F_0 = opt_einsum.contract('Nl,lmn->Nmn', theta_l, K_lmn) + K_c
-        A_0 = torch.tensor(np.linalg.inv(F_0), dtype=self.dtype, device=self.used_device)
-        return A_0
+    def compute_F_0_A_0(self):
+        theta_q = np.ones((1,self.xi_OmegaT.shape[0]))
+        theta_x0_q = np.ones((1,self.xi_Gamma_x0.shape[0]))
+        theta_xL_q = np.ones((1,self.xi_Gamma_xL.shape[0]))
+        self.F_0 = torch.tensor(self.compute_F(theta_q, theta_x0_q, theta_xL_q)[0], dtype=self.dtype, device=self.used_device)
+        if self.hparams['modeltype']=='model NGO':
+            self.A_0 = torch.linalg.inv(self.F_0)
     
-    def compute_d_direct(self, f_q, eta_y0_q, eta_yL_q, g_x0_q, g_xL_q, u0_t0_q):
+    def compute_d(self, f_q, eta_y0_q, eta_yL_q, g_x0_q, g_xL_q, u0_t0_q):
         basis_test_OmegaT = self.basis_test.forward(self.xi_OmegaT)
         basis_test_Gamma_y0 = self.basis_test.forward(self.xi_Gamma_y0)
         basis_test_Gamma_yL = self.basis_test.forward(self.xi_Gamma_yL)
@@ -295,52 +321,6 @@ class NeuralOperator(pl.LightningModule):
         gradbasis_test_Gamma_x0 = self.basis_test.grad(self.xi_Gamma_x0)[:,:,1:]
         gradbasis_test_Gamma_xL = self.basis_test.grad(self.xi_Gamma_xL)[:,:,1:]
         basis_test_Gamma_t0 = self.basis_test.forward(self.xi_Gamma_t0)
-
-        # d_f = opt_einsum.contract('q,qm,Nq->Nm', self.w_OmegaT, basis_test_OmegaT, f_q)
-        # d_eta_y0 = opt_einsum.contract('q,qm,Nq->Nm', self.w_Gamma_y0, basis_test_Gamma_y0, eta_y0_q)
-        # d_eta_yL = opt_einsum.contract('q,qm,Nq->Nm', self.w_Gamma_yL, basis_test_Gamma_yL, eta_yL_q)
-        # d_g_x0 = opt_einsum.contract('q,x,qmx,Nq->Nm', self.w_Gamma_x0, self.n_x0, gradbasis_test_Gamma_x0, g_x0_q)
-        # d_g_xL = opt_einsum.contract('q,x,qmx,Nq->Nm', self.w_Gamma_xL, self.n_xL, gradbasis_test_Gamma_xL, g_xL_q)
-        # d_u0 = opt_einsum.contract('q,qm,Nq->Nm', self.w_Gamma_t0, basis_test_Gamma_t0, u0_t0_q)
-        # print('d_f: '+str(np.amax(np.sum(d_f**2, axis=-1)**(1/2))))
-        # print('d_eta_y0: '+str(np.amax(np.sum(d_eta_y0**2, axis=-1)**(1/2))))
-        # print('d_eta_yL: '+str(np.amax(np.sum(d_eta_yL**2, axis=-1)**(1/2))))
-        # print('d_g_x0: '+str(np.amax(np.sum(d_g_x0**2, axis=-1)**(1/2))))
-        # print('d_g_xL: '+str(np.amax(np.sum(d_g_xL**2, axis=-1)**(1/2))))
-        # print('d_u0: '+str(np.amax(np.sum(d_u0**2, axis=-1)**(1/2))))
-
-        d = opt_einsum.contract('q,qm,Nq->Nm', self.w_OmegaT, basis_test_OmegaT, f_q)
-        d += opt_einsum.contract('q,qm,Nq->Nm', self.w_Gamma_y0, basis_test_Gamma_y0, eta_y0_q)
-        d += opt_einsum.contract('q,qm,Nq->Nm', self.w_Gamma_yL, basis_test_Gamma_yL, eta_yL_q)
-        d -= opt_einsum.contract('q,x,qmx,Nq->Nm', self.w_Gamma_x0, self.n_x0, gradbasis_test_Gamma_x0, g_x0_q)
-        d -= opt_einsum.contract('q,x,qmx,Nq->Nm', self.w_Gamma_xL, self.n_xL, gradbasis_test_Gamma_xL, g_xL_q)
-        d += opt_einsum.contract('q,qm,Nq->Nm', self.w_Gamma_t0, basis_test_Gamma_t0, u0_t0_q)
-        if self.hparams.get('gamma_stabilization',0)!=0:
-            d += -self.hparams['gamma_stabilization']*opt_einsum.contract('q,qm,Nq->Nm', self.w_Gamma_x0, basis_test_Gamma_x0, g_x0_q)
-            d += -self.hparams['gamma_stabilization']*opt_einsum.contract('q,qm,Nq->Nm', self.w_Gamma_xL, basis_test_Gamma_xL, g_xL_q)         
-        return d
-    
-    def compute_d_tensorized(self, f_q, eta_y0_q, eta_yL_q, g_x0_q, g_xL_q, u0_t0_q):
-        basis_test_OmegaT = self.basis_test.forward(self.xi_OmegaT)
-        basis_test_Gamma_y0 = self.basis_test.forward(self.xi_Gamma_y0)
-        basis_test_Gamma_yL = self.basis_test.forward(self.xi_Gamma_yL)
-        basis_test_Gamma_x0 = self.basis_test.forward(self.xi_Gamma_x0)
-        basis_test_Gamma_xL = self.basis_test.forward(self.xi_Gamma_xL)
-        gradbasis_test_Gamma_x0 = self.basis_test.grad(self.xi_Gamma_x0)[:,:,1:]
-        gradbasis_test_Gamma_xL = self.basis_test.grad(self.xi_Gamma_xL)[:,:,1:]
-        basis_test_Gamma_t0 = self.basis_test.forward(self.xi_Gamma_t0)
-
-        f_l = self.project_input_function(f_q)
-        eta_y0_l = self.project_input_function(eta_y0_q)
-        eta_yL_l = self.project_input_function(eta_yL_q)
-        g_x0_l = self.project_input_function(g_x0_q)
-        g_xL_l = self.project_input_function(g_xL_q)
-        f_q = opt_einsum.contract('Nn,qn->Nq', f_l, basis_test_OmegaT)
-        eta_y0_q = opt_einsum.contract('Nn,qn->Nq', eta_y0_l, basis_test_Gamma_y0)
-        eta_yL_q = opt_einsum.contract('Nn,qn->Nq', eta_yL_l, basis_test_Gamma_yL)
-        g_x0_q = opt_einsum.contract('Nn,qn->Nq', g_x0_l, basis_test_Gamma_x0)
-        g_xL_q = opt_einsum.contract('Nn,qn->Nq', g_xL_l, basis_test_Gamma_xL)
-
         d = opt_einsum.contract('q,qm,Nq->Nm', self.w_OmegaT, basis_test_OmegaT, f_q)
         d += opt_einsum.contract('q,qm,Nq->Nm', self.w_Gamma_y0, basis_test_Gamma_y0, eta_y0_q)
         d += opt_einsum.contract('q,qm,Nq->Nm', self.w_Gamma_yL, basis_test_Gamma_yL, eta_yL_q)
@@ -349,52 +329,37 @@ class NeuralOperator(pl.LightningModule):
         d += opt_einsum.contract('q,qm,Nq->Nm', self.w_Gamma_t0, basis_test_Gamma_t0, u0_t0_q)
         if self.hparams.get('gamma_stabilization',0)!=0:
             d += self.hparams['gamma_stabilization']*opt_einsum.contract('q,qm,Nq->Nm', self.w_Gamma_x0, basis_test_Gamma_x0, g_x0_q)
-            d += self.hparams['gamma_stabilization']*opt_einsum.contract('q,qm,Nq->Nm', self.w_Gamma_xL, basis_test_Gamma_xL, g_xL_q)         
+            d += self.hparams['gamma_stabilization']*opt_einsum.contract('q,qm,Nq->Nm', self.w_Gamma_xL, basis_test_Gamma_xL, g_xL_q)
         return d
 
-    def compute_d_tensorized(self, f_q, eta_y0_q, eta_yL_q, g_x0_q, g_xL_q, u0_t0_q):
-        f_l = self.project_input_function(f_q)
-        eta_y0_l = self.project_input_function(eta_y0_q)
-        eta_yL_l = self.project_input_function(eta_yL_q)
-        g_x0_l = self.project_input_function(g_x0_q)
-        g_xL_l = self.project_input_function(g_xL_q)
-        u0_l = self.project_input_function(u0_t0_q)
-        M_f = np.kron(np.kron(self.M_t_psipsi, self.M_x_psipsi), self.M_y_psipsi)
-        M_eta_y0 = np.kron(np.kron(self.M_t_psipsi, self.M_x_psipsi), self.M_y_psipsi_y0)
-        M_eta_yL = np.kron(np.kron(self.M_t_psipsi, self.M_x_psipsi), self.M_y_psipsi_yL)
-        M_g_x0 = np.kron(np.kron(self.M_t_psipsi, self.M_x_psidpsi_x0), self.M_y_psipsi)
-        M_g_xL = np.kron(np.kron(self.M_t_psipsi, self.M_x_psidpsi_xL), self.M_y_psipsi)
-        M_u0 = np.kron(np.kron(self.M_t_psipsi_t0, self.M_x_psipsi), self.M_y_psipsi)
-        d = opt_einsum.contract('Nl,lm->Nm', f_l, M_f)
-        d += opt_einsum.contract('Nl,lm->Nm', eta_y0_l, M_eta_y0)
-        d += opt_einsum.contract('Nl,lm->Nm', eta_yL_l, M_eta_yL)
-        d += opt_einsum.contract('Nl,lm->Nm', g_x0_l, M_g_x0)
-        d += opt_einsum.contract('Nl,lm->Nm', g_xL_l, M_g_xL)
-        d += opt_einsum.contract('Nl,lm->Nm', u0_l, M_u0)
-        return d
-    
-    def compute_d(self, f_q, eta_y0_q, eta_yL_q, g_x0_q, g_xL_q, u0_t0_q):
-        # if self.hparams['project_rhs']==True:
-        #     d = self.compute_d_tensorized(f_q, eta_y0_q, eta_yL_q, g_x0_q, g_xL_q, u0_t0_q)
-        # if self.hparams['project_rhs']==False:
-        d = self.compute_d_direct(f_q, eta_y0_q, eta_yL_q, g_x0_q, g_xL_q, u0_t0_q)
+    def compute_d_t(self, u0_t0_q):
+        basis_test_Gamma_t0 = self.basis_test.forward(self.xi_Gamma_t0)
+        d = opt_einsum.contract('q,qm,Nq->Nm', self.w_Gamma_t0, basis_test_Gamma_t0, u0_t0_q)
         return d
 
     #Conserved quantity
-    def compute_C(self, f_q, eta_y0_q, eta_yL_q, u0_t0_q):
+    def compute_C(self, f_q, eta_y0_q, eta_yL_q, g_x0_q, g_xL_q, u0_t0_q):
         C = opt_einsum.contract('q,Nq->N', self.w_OmegaT, f_q)
         C += opt_einsum.contract('q,Nq->N', self.w_Gamma_y0, eta_y0_q)
         C += opt_einsum.contract('q,Nq->N', self.w_Gamma_yL, eta_yL_q)
         C += opt_einsum.contract('q,Nq->N', self.w_Gamma_t0, u0_t0_q)
+        if self.hparams.get('gamma_stabilization',0)!=0:
+            C += self.hparams['gamma_stabilization']*opt_einsum.contract('q,Nq->N', self.w_Gamma_x0, g_x0_q)
+            C += self.hparams['gamma_stabilization']*opt_einsum.contract('q,Nq->N', self.w_Gamma_xL, g_xL_q)    
         return C
    
     #Conserved quantity per DOF
     def compute_C_m(self, theta_x0_q, theta_xL_q):
         gradbasis_trial_Gamma_x0 = self.basis_trial.grad(self.xi_Gamma_x0)[:,:,1:]
         gradbasis_trial_Gamma_xL = self.basis_trial.grad(self.xi_Gamma_xL)[:,:,1:]
+        basis_trial_x0 = self.basis_trial.forward(self.xi_Gamma_x0)
+        basis_trial_xL = self.basis_trial.forward(self.xi_Gamma_xL)
         C_m = -opt_einsum.contract('q,x,qmx,Nq->Nm', self.w_Gamma_x0, self.n_x0, gradbasis_trial_Gamma_x0, theta_x0_q)
         C_m += -opt_einsum.contract('q,x,qmx,Nq->Nm', self.w_Gamma_xL, self.n_xL, gradbasis_trial_Gamma_xL, theta_xL_q)
         C_m += opt_einsum.contract('q,qm->m', self.w_Gamma_tT, self.basis_trial.forward(self.xi_Gamma_tT))
+        if self.hparams.get('gamma_stabilizNG_fation',0)!=0:
+            C_m += -self.hparams['gamma_stabilization']*opt_einsum.contract('q,Nq,qm->Nm', self.w_Gamma_x0, theta_x0_q, basis_trial_x0)
+            C_m += -self.hparams['gamma_stabilization']*opt_einsum.contract('q,Nq,qm->Nm', self.w_Gamma_xL, theta_xL_q, basis_trial_xL)
         return C_m
         
     def NN_forward(self, theta_q, f_q, eta_y0_q, eta_yL_q, g_x0_q, g_xL_q, u0_t0_q):
@@ -501,25 +466,49 @@ class NeuralOperator(pl.LightningModule):
         self.u_m_hat = u_m_hat
         return u_m_hat
     
-    def NGO_forward(self, F, d, C, C_m):
+    def dataNGO_forward(self, F, d, C, C_m, d_t):
+        A_hat = self.systemnet.forward(F/(self.hparams['Dt']/self.hparams['N']))/(self.hparams['Dt']/self.hparams['N'])
+        if self.hparams.get('SPD', False)==True:
+            L = torch.tril(A_hat)
+            U = torch.tril(A_hat.transpose(-1,-2))
+            A_hat = (L@L.transpose(-2,-1) + self.hparams['epsilon']*self.Identity + U - U.transpose(-1,-2))
+        if self.hparams.get('spectral radius scaling',False)==True:
+            M = torch.tensor(np.kron(np.kron(self.M_t_psiphi_t0T, self.K_x_psiphi), self.K_y_psiphi), dtype=self.dtype, device=self.used_device)
+            scaling = rho_power_iteration(A_hat@M, x=self.x_0, tol=self.hparams['tol'])
+            scaling = torch.maximum(self.hparams['rho_max']*torch.ones_like(scaling),scaling)/self.hparams['rho_max']
+            A_hat = A_hat/scaling[:,None,None]
+        u_m_hat = opt_einsum.contract('nij,nj->ni', A_hat, d)
+        if self.hparams['massconservation']==True:
+            C_hat = opt_einsum.contract('Nn,Nn->N', u_m_hat, C_m)
+            l = (C - C_hat)/opt_einsum.contract('Nn,Nn->N', C_m, C_m)
+            u_m_hat = u_m_hat + l[:,None]*C_m
+        return u_m_hat
+    
+    def modelNGO_forward(self, F, d, C, C_m, d_t):
         if self.hparams.get('scaling_equivariance',False)==True:
             scaling = torch.frobenius_norm(F, dim=(-1,-2))
             F = F/scaling[:,None,None]
         if self.hparams.get('Neumannseries', False)==False:
-            A_hat = self.systemnet.forward(F)
+            A_hat = self.systemnet.forward(F/(self.hparams['Dt']/self.hparams['N'])**2)/(self.hparams['Dt']/self.hparams['N'])**2
+        if self.hparams.get('SPD', False)==True:
+            L = torch.tril(A_hat)
+            U = torch.tril(A_hat.transpose(-1,-2))
+            A_hat = (L@L.transpose(-2,-1) + self.hparams['epsilon']*self.Identity + U - U.transpose(-1,-2))
+        if self.hparams.get('spectral radius scaling',False)==True:
+            M = torch.tensor(np.kron(np.kron(self.M_t_psiphi_t0T, self.K_x_psiphi), self.K_y_psiphi), dtype=self.dtype, device=self.used_device)
+            scaling = rho_power_iteration(A_hat@M, x=self.x_0, tol=self.hparams['tol'])
+            scaling = torch.maximum(self.hparams['rho_max']*torch.ones_like(scaling),scaling)/self.hparams['rho_max']
+            A_hat = A_hat/scaling[:,None,None]
         if self.hparams.get('Neumannseries', False)==True:
             T = torch.zeros(F.shape, dtype=self.dtype, device=self.used_device)
             Ti = self.Identity
             T1 = -F@self.A_0 + self.Identity
-            # eigvals = torch.linalg.eigvals(T1)
-            # spectralradius = torch.amax(torch.real((eigvals*torch.conj(eigvals))**(1/2)), dim=-1)
-            # print(spectralradius)
             for i in range(0, self.hparams['Neumannseries_order']):
                 Ti = T1@Ti
                 T = T + Ti
             A_hat = self.A_0@(self.Identity + T + self.systemnet.forward(T1))
         if self.hparams.get('scaling_equivariance',False)==True:
-            A_hat = A_hat/scaling[:,None,None]        
+            A_hat = A_hat/scaling[:,None,None]
         u_m_hat = opt_einsum.contract('nij,nj->ni', A_hat, d)
         if self.hparams['massconservation']==True:
             C_hat = opt_einsum.contract('Nn,Nn->N', u_m_hat, C_m)
@@ -531,18 +520,21 @@ class NeuralOperator(pl.LightningModule):
         theta_q, theta_x0_q, theta_xL_q, f_q, eta_y0_q, eta_yL_q, g_x0_q, g_xL_q, u0_t0_q = self.discretize_input_functions(theta, f, eta_y0, eta_yL, g_x0, g_xL, u0)
         if self.timestep>0:
             u0_t0_q = opt_einsum.contract('Nn,qn->Nq', self.u_m_hat, self.basis_trial.forward(self.xi_Gamma_tT))
+            # u0_t0_m = self.project_on_Gamma_t(u0_t0_q)
+            # u0_t0_q = opt_einsum.contract('Nn,qn->Nq', u0_t0_m, self.basis_trial.forward(self.xi_Gamma_t0))
         F = torch.tensor(self.compute_F(theta_q, theta_x0_q, theta_xL_q), dtype=self.dtype, device=self.used_device)
         d = torch.tensor(self.compute_d(f_q, eta_y0_q, eta_yL_q, g_x0_q, g_xL_q, u0_t0_q), dtype=self.dtype, device=self.used_device)
-        C = torch.tensor(self.compute_C(f_q, eta_y0_q, eta_yL_q, u0_t0_q), dtype=self.dtype, device=self.used_device)
+        C = torch.tensor(self.compute_C(f_q, eta_y0_q, eta_yL_q, g_x0_q, g_xL_q, u0_t0_q), dtype=self.dtype, device=self.used_device)
         C_m = torch.tensor(self.compute_C_m(theta_x0_q, theta_xL_q), dtype=self.dtype, device=self.used_device)
-        u_m_hat = self.NGO_forward(F, d, C, C_m).detach().cpu().numpy()
+        d_t = torch.tensor(self.compute_d_t(u0_t0_q), dtype=self.dtype, device=self.used_device)
+        u_m_hat = self.NGO_forward(F, d, C, C_m, d_t).detach().cpu().numpy()
         self.u_m_hat = u_m_hat
         return u_m_hat
 
     def FEM_forward(self, F, d):
+        np.save('d.npy', d.detach().cpu().numpy())
         if self.hparams['Neumannseries']==False:
             K_inv = torch.linalg.pinv(F)
-            # K_inv = self.A_0@torch.linalg.pinv(F@self.A_0)
         if self.hparams['Neumannseries']==True:
             T = torch.zeros(F.shape, dtype=self.dtype, device=self.used_device)
             Ti = self.Identity
@@ -551,6 +543,9 @@ class NeuralOperator(pl.LightningModule):
                 Ti = T1@Ti
                 T = T + Ti
             K_inv = self.A_0@(self.Identity + T)
+        # if self.timestep>0:
+        #     M = torch.tensor(np.kron(np.kron(self.M_t_psiphi_t0T, self.K_x_psiphi), self.K_y_psiphi), dtype=self.dtype, device=self.used_device)
+        #     u_m = torch.tensor(self.u_m_hat, dtype=self.dtype, device=self.used_device)
         u_m_hat = opt_einsum.contract('nij,nj->ni', K_inv, d)
         return u_m_hat
     
@@ -558,8 +553,9 @@ class NeuralOperator(pl.LightningModule):
         theta_q, theta_x0_q, theta_xL_q, f_q, eta_y0_q, eta_yL_q, g_x0_q, g_xL_q, u0_t0_q = self.discretize_input_functions(theta, f, eta_y0, eta_yL, g_x0, g_xL, u0)
         if self.timestep>0:
             u0_t0_q = opt_einsum.contract('Nn,qn->Nq', self.u_m_hat, self.basis_trial.forward(self.xi_Gamma_tT))
+            # u0_t0_m = self.project_on_Gamma_t(u0_t0_q)
+            # u0_t0_q = opt_einsum.contract('Nn,qn->Nq', u0_t0_m, self.basis_trial.forward(self.xi_Gamma_t0))
         F = torch.tensor(self.compute_F(theta_q, theta_x0_q, theta_xL_q), dtype=self.dtype, device=self.used_device)
-        # print(torch.amax(torch.real(torch.linalg.eigvals(T1))))
         d = torch.tensor(self.compute_d(f_q, eta_y0_q, eta_yL_q, g_x0_q, g_xL_q, u0_t0_q), dtype=self.dtype, device=self.used_device)
         u_m_hat = self.FEM_forward(F, d).detach().cpu().numpy()
         self.u_m_hat = u_m_hat
