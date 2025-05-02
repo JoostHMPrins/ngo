@@ -3,6 +3,7 @@ from torch import nn
 import torch.nn.functional as F
 import numpy as np
 from joblib import Parallel, delayed
+import opt_einsum
 
 
 class ConvNd(nn.Module):
@@ -113,7 +114,7 @@ def discretize_functions(f_list, x):
     return f_discretized
 
 
-def rho_power_iteration(B, x, tol):
+def rho_max_power_iteration(B, x, tol, max_iterations, dtype, device):
     """
     Estimate the spectral radius (largest eigenvalue in magnitude) of a batch of matrices 
     using the power iteration method.
@@ -132,26 +133,34 @@ def rho_power_iteration(B, x, tol):
         The estimated spectral radii (largest eigenvalues) for each matrix in the batch.
     """
     #Add batch dimension to initial random vector
-    x = np.tile(x,(B.shape[0],1))
+    # x_norm = (torch.sum(x**2, axis=-1))**(1/2)
+    # x = x/x_norm[:,None]
+    x = torch.tile(x,(B.shape[0],1))
     #Initialize the relative difference and spectral radius estimate arrays
-    reldiff = np.ones(B.shape[0])
-    rho = np.ones(B.shape[0])
+    reldiff = torch.ones(B.shape[0], dtype=dtype, device=device)
+    rho = torch.ones(B.shape[0], dtype=dtype, device=device)
     i=0
-    while np.amax(reldiff)>tol:
+    while torch.amax(reldiff)>tol and i<max_iterations:
         #Compute new spectral radius estimate
         Bx = opt_einsum.contract('Nij,Nj->Ni', B, x)
         xTBx = opt_einsum.contract('Ni,Ni->N', x, Bx)
         xTx = opt_einsum.contract('Ni,Ni->N', x, x)
-        rho_new = xTBx/xTx
+        rho_new = xTBx/torch.max(xTx, 1e-7*torch.ones_like(xTx))
         #Compute absolute relative difference between estimate and previous estimate
-        reldiff = np.abs((rho_new - rho)/rho)
+        reldiff = torch.abs((rho_new - rho)/rho)
         #Update spectral radius estimate
         rho = rho_new
         #Update eigenvector estimate
         BxTBx = opt_einsum.contract('Ni,Ni->N', Bx, Bx)
-        x = Bx/BxTBx[:,None]
+        x = Bx/torch.max(BxTBx[:,None], 1e-7*torch.ones_like(BxTBx[:,None]))
         i+=1
-    return rho
+    print(i)
+    if i==max_iterations:
+        print('Power iteration did not converge')
+        rho = torch.ones(B.shape[0], dtype=dtype, device=device)
+    # print(rho)
+    v = x[0]
+    return rho, v
 
 
 def sort_matrices(matrices):
