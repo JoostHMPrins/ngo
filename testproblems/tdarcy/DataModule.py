@@ -32,13 +32,14 @@ class DataModule(pl.LightningDataModule):
         g_xL = dataset.gr
         u = dataset.u
         u0 = dataset.u0
+        
         print('Discretizing input functions...')
         self.theta_q, self.theta_x0_q, self.theta_xL_q, self.f_q, self.eta_y0_q, self.eta_yL_q, self.g_x0_q, self.g_xL_q, self.u0_t0_q = dummymodel.discretize_input_functions(theta, f, eta_y0, eta_yL, g_x0, g_xL, u0)
         if dummymodel.hparams['modeltype']=='model NGO' or dummymodel.hparams['modeltype']=='data NGO':
             print('Assembling F...')
-            self.F = dummymodel.compute_F(self.theta_q, self.theta_x0_q, self.theta_xL_q)
+            self.F = dummymodel.compute_F(self.theta_q, self.theta_x0_q, self.theta_xL_q)/(self.hparams['Dt']/self.hparams['N'])
             print('Assembling d...')
-            self.d = dummymodel.compute_d(self.f_q, self.eta_y0_q, self.eta_yL_q, self.g_x0_q, self.g_xL_q, self.u0_t0_q)
+            self.d = dummymodel.compute_d(self.f_q, self.eta_y0_q, self.eta_yL_q, self.g_x0_q, self.g_xL_q, self.u0_t0_q)/(self.hparams['Dt']/self.hparams['N'])
             print('Calculating conserved quantity...')
             self.C = dummymodel.compute_C(self.f_q, self.eta_y0_q, self.eta_yL_q, self.g_x0_q, self.g_xL_q, self.u0_t0_q)
             self.C_m = dummymodel.compute_C_m(self.theta_x0_q, self.theta_xL_q)
@@ -47,7 +48,10 @@ class DataModule(pl.LightningDataModule):
         self.u = dummymodel.discretize_output_function(u)    
         if dummymodel.hparams['output_coefficients']==True:
             self.u = dummymodel.project_output_function(self.u)
-        
+            # self.u = dummymodel.project_on_phi_tT(self.u)
+
+
+
     def setup(self, stage=None):
         torch.cuda.empty_cache()
         if self.hparams['modeltype']=='NN' or self.hparams['modeltype']=='DeepONet' or self.hparams['modeltype']=='VarMiON':
