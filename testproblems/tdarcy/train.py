@@ -3,6 +3,7 @@ import pytorch_lightning as pl
 from tqdm.auto import tqdm, trange
 from ipywidgets import IntProgress
 import time
+import torch
 from torch import nn
 from torch.nn import functional as F
 
@@ -29,12 +30,13 @@ hparams['l_min'] = [0.5,0.5,0.5]
 hparams['l_max'] = [1,1,1]
 hparams['project_materialparameters'] = False
 hparams['output_coefficients'] = True
+hparams['project_initialcondition'] = True
 
 #Training settings
-hparams['dtype'] = torch.float32
-hparams['precision'] = 32
-hparams['used_device'] = 'cuda:1'
-hparams['devices'] = [1]
+hparams['dtype'] = torch.float64
+hparams['precision'] = 64
+hparams['used_device'] = 'cuda:0'
+hparams['devices'] = [0]
 hparams['solution_loss'] = relativeL2_coefficients #weightedrelativeL2
 hparams['matrix_loss'] = None #relativematrixnorm
 hparams['metric'] = relativeL2_coefficients #weightedrelativeL2
@@ -77,23 +79,26 @@ hparams['bottleneck_size'] = 20
 hparams['outputactivation'] = None
 
 #Additional inductive bias
-hparams['gamma_stabilization'] = 0
+hparams['gamma_stabilization'] = 100
 hparams['scaling_equivariance'] = False
-hparams['massconservation'] = False
+hparams['massconservation'] = True
 hparams['Neumannseries'] = False
 hparams['Neumannseries_order'] = 0
-hparams['SPD'] = True
+hparams['PD'] = False
 hparams['epsilon'] = 1e-4
-hparams['spectral radius scaling'] = True
+hparams['spectral_radius_scaling'] = True
 hparams['rho_max'] = 0.99
 hparams['tol'] = 1e-4
+hparams['max_iterations'] = 1000
+hparams['dissipation'] = False
+hparams['alpha'] = 0
 
 logdir = '../../../../nnlogs'
-sublogdir = 'dataNGOs_lmax'
-sublogdir = 'test'
-hparams['N_samples_train'] = 10
-hparams['N_samples_val'] = 10
-label = 'rhoscaling' 
+sublogdir = 'project_initialcondition'
+# sublogdir = 'test'
+# hparams['N_samples_train'] = 100
+# hparams['N_samples_val'] = 100
+label = 'dataNGO_coeffs_projectoninterior_Ft' 
 hparams['label'] = label
 
 model = NeuralOperator
