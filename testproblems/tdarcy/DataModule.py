@@ -37,20 +37,18 @@ class DataModule(pl.LightningDataModule):
         self.theta_q, self.theta_x0_q, self.theta_xL_q, self.f_q, self.eta_y0_q, self.eta_yL_q, self.g_x0_q, self.g_xL_q, self.u0_t0_q = dummymodel.discretize_input_functions(theta, f, eta_y0, eta_yL, g_x0, g_xL, u0)
         if dummymodel.hparams['modeltype']=='model NGO' or dummymodel.hparams['modeltype']=='data NGO':
             print('Assembling F...')
-            self.F = dummymodel.compute_F(self.theta_q, self.theta_x0_q, self.theta_xL_q)/(self.hparams['Dt']/self.hparams['N'])
+            self.F = dummymodel.compute_F(self.theta_q, self.theta_x0_q, self.theta_xL_q)/self.hparams['Dt']
             print('Assembling d...')
-            self.d = dummymodel.compute_d(self.f_q, self.eta_y0_q, self.eta_yL_q, self.g_x0_q, self.g_xL_q, self.u0_t0_q)/(self.hparams['Dt']/self.hparams['N'])
+            self.d = dummymodel.compute_d(self.f_q, self.eta_y0_q, self.eta_yL_q, self.g_x0_q, self.g_xL_q, self.u0_t0_q)/self.hparams['Dt']
             print('Calculating conserved quantity...')
-            self.C = dummymodel.compute_C(self.f_q, self.eta_y0_q, self.eta_yL_q, self.g_x0_q, self.g_xL_q, self.u0_t0_q)
-            self.C_m = dummymodel.compute_C_m(self.theta_x0_q, self.theta_xL_q)
-            self.d_t = dummymodel.compute_d_t(self.u0_t0_q)
+            self.C = dummymodel.compute_C(self.f_q, self.eta_y0_q, self.eta_yL_q, self.g_x0_q, self.g_xL_q, self.u0_t0_q)/self.hparams['Dt']
+            self.C_m = dummymodel.compute_C_m(self.theta_x0_q, self.theta_xL_q)/self.hparams['Dt']
+            self.theta_bar = opt_einsum.contract('q,Nq->N', dummymodel.w_OmegaT, self.theta_q)/self.hparams['Dt']
+            
         print('Discretizing output function...')
         self.u = dummymodel.discretize_output_function(u)    
         if dummymodel.hparams['output_coefficients']==True:
             self.u = dummymodel.project_output_function(self.u)
-            # self.u = dummymodel.project_on_phi_tT(self.u)
-
-
 
     def setup(self, stage=None):
         torch.cuda.empty_cache()
@@ -69,9 +67,9 @@ class DataModule(pl.LightningDataModule):
             self.d = torch.tensor(self.d, dtype=self.hparams['dtype'])
             self.C = torch.tensor(self.C, dtype=self.hparams['dtype'])
             self.C_m = torch.tensor(self.C_m, dtype=self.hparams['dtype'])
-            self.d_t = torch.tensor(self.d_t, dtype=self.hparams['dtype'])
+            self.theta_bar = torch.tensor(self.theta_bar, dtype=self.hparams['dtype'])      
             self.u = torch.tensor(self.u, dtype=self.hparams['dtype'])   
-            dataset = torch.utils.data.TensorDataset(self.F, self.d, self.C, self.C_m, self.d_t, self.u)
+            dataset = torch.utils.data.TensorDataset(self.F, self.d, self.C, self.C_m, self.theta_bar, self.u)
         self.trainingset, self.validationset = random_split(dataset, [self.hparams['N_samples_train'], self.hparams['N_samples_val']])
 
     def train_dataloader(self):
