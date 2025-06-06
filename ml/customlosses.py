@@ -63,16 +63,16 @@ def vectornorm(A_hat, A):
 
 def relativeL2_coefficients(M, u_m_hat, u_m):
     Du_m = u_m_hat - u_m
-    numerator = opt_einsum.contract('Nm,mn,Nn', Du_m, M, Du_m)
-    denominator = opt_einsum.contract('Nm,mn,Nn', u_m, M, u_m)
-    relativeL2 = (numerator/torch.maximum(denominator, 1e-7*torch.ones_like(denominator)))**(1/2)
+    numerator = opt_einsum.contract('Nm,mn,Nn', Du_m, M, Du_m)**(1/2)
+    denominator = opt_einsum.contract('Nm,mn,Nn', u_m, M, u_m)**(1/2)
+    relativeL2 = numerator/torch.maximum(denominator, 1e-7*torch.ones_like(denominator))
     return torch.mean(relativeL2)
 
 def relativeMSE_coefficients(M, u_m_hat, u_m):
     Du_m = u_m_hat - u_m
-    numerator = opt_einsum.contract('Nm,mn,Nn', Du_m, M, Du_m)
-    denominator = opt_einsum.contract('Nm,mn,Nn', u_m, M, u_m)
-    relativeL2 = (numerator/torch.maximum(denominator, 1e-7*torch.ones_like(denominator)))**(1/2)
+    numerator = opt_einsum.contract('Nm,mn,Nn', Du_m, M, Du_m)**(1/2)
+    denominator = opt_einsum.contract('Nm,mn,Nn', u_m, M, u_m)**(1/2)
+    relativeL2 = numerator/torch.maximum(denominator, 1e-7*torch.ones_like(denominator))
     return torch.mean(relativeL2)
 
 
