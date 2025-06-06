@@ -237,12 +237,12 @@ class CNN_3dto2d(nn.Module):
         x11 = self.layers[10](x10) + x9 if self.hparams['skipconnections']==True else self.layers[10](x10)
         x12 = self.layers[11](x11)
         x13 = self.layers[12](x12)
-        x14 = self.layers[13](x13) + x7 if self.hparams['skipconnections']==True else self.layers[13](x13)
+        x14 = self.layers[13](x13) + torch.sum(x7, dim=-3) if self.hparams['skipconnections']==True else self.layers[13](x13)
         x15 = self.layers[14](x14)
-        x16 = self.layers[15](x15) + x5 if self.hparams['skipconnections']==True else self.layers[15](x15)
+        x16 = self.layers[15](x15) + torch.sum(x5, dim=-3) if self.hparams['skipconnections']==True else self.layers[15](x15)
         x17 = self.layers[16](x16)
-        x18 = self.layers[17](x17) + x3 if self.hparams['skipconnections']==True else self.layers[17](x17)
-        x19 = self.layers[18](x18) + x1 if self.hparams['modeltype']=='model NGO' else self.layers[18](x18)
+        x18 = self.layers[17](x17) + torch.sum(x3, dim=-3) if self.hparams['skipconnections']==True else self.layers[17](x17)
+        x19 = self.layers[18](x18) + torch.sum(x1, dim=-3) if self.hparams['modeltype']=='model NGO' else self.layers[18](x18)
         x20 = self.layers[19](x19)
         y = x20
         # if self.hparams['outputactivation'] is not None:

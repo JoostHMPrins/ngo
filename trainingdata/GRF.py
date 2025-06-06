@@ -1,6 +1,29 @@
 import numpy as np
 from scipy.spatial import distance_matrix
 import opt_einsum
+from numba import njit
+
+@njit(parallel=True)
+def compute_phi_n(f_hat_i, x, mus, l):
+    N_points, d = x.shape
+    n_mus = mus.shape[0]
+
+    # Reshape for broadcasting without using None (which causes typing issues in Numba)
+    x_reshaped = x.reshape(N_points, 1, d)
+    mus_reshaped = mus.reshape(1, n_mus, d)
+    l_reshaped = l.reshape(1, 1, d)
+
+    # Compute squared distances
+    diff = (x_reshaped - mus_reshaped) / l_reshaped
+    sq_dist = np.sum(diff ** 2, axis=2)
+
+    # Compute RBF values
+    exp_term = np.exp(-0.5 * sq_dist)
+
+    # Reshape f_hat_i for broadcasting
+    f_hat_i_reshaped = f_hat_i.reshape(1, n_mus)
+
+    return exp_term * f_hat_i_reshaped
 
 
 class GRF:
@@ -46,6 +69,9 @@ class GRF:
     def phi_n(self, i, x):
         output = self.f_hat[i,None,:]*np.exp(-1/2*np.sum(((x[:,None,:] - self.mus[None,:,:])/self.l[None,None,:])**2, axis=-1))
         return output
+
+    # def phi_n(self, i, x):
+    #     return compute_phi_n(self.f_hat[i], x, self.mus, self.l)
     
     #Forward evaluation of RBF interpolated GRF
     def forward(self, i):
