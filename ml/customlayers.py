@@ -4,7 +4,72 @@ import torch.nn.functional as F
 import numpy as np
 from joblib import Parallel, delayed
 import opt_einsum
+from numba import njit
 
+
+
+def correct_mass_energy_conservation(model, F, d, u_m_hat, C_m, C):
+    
+
+    # if model.hparams['modeltype']=='model NGO':
+        # alpha = opt_einsum.contract('Nm,Nmn,Nn->N', u_m_hat, F, u_m_hat)    
+    # if model.hparams['modeltype']=='data NGO':
+    #     alpha = model.hparams['alpha']
+
+    d = d*model.hparams['Dt']
+    C_m = C_m*model.hparams['Dt']
+    C = C*model.hparams['Dt']
+    M = model.hparams['Dt']*model.M_rr
+
+    CTMC = opt_einsum.contract('Nn,mn,Nn->N', C_m, M, C_m)
+    CTC = opt_einsum.contract('Nn,Nn->N', C_m, C_m)
+    CTd = opt_einsum.contract('Nn,Nn->N', C_m, d)
+    uTd = opt_einsum.contract('Nn,Nn->N', u_m_hat, d)
+    C_hat = opt_einsum.contract('Nn,Nn->N', u_m_hat, C_m)
+    uTu = opt_einsum.contract('Nn,Nn->N', u_m_hat, u_m_hat)
+    uTMu = opt_einsum.contract('Nn,mn,Nn->N', u_m_hat, M, u_m_hat)
+
+    alpha =  1e-3*torch.ones_like(C) #CTd/C - 1/2*CTMC/CTC #
+
+    Q = 1/2*M + alpha[:,None,None]*model.Identity[None,:,:]
+
+    uTQu = opt_einsum.contract('Nm,Nmn,Nn->N', u_m_hat, Q, u_m_hat)
+    uTQC = opt_einsum.contract('Nm,Nmn,Nn->N', u_m_hat, Q, C_m)
+    CTQu = opt_einsum.contract('Nm,Nmn,Nn->N', C_m, Q, u_m_hat)
+    CTQC = opt_einsum.contract('Nn,Nmn,Nn->N', C_m, Q, C_m)
+
+    A = uTQu - C_hat/CTC*(uTQC + CTQu) + (C_hat/CTC)**2*CTQC
+    B = C/CTC*(uTQC + CTQu) - 2*C*C_hat/CTC**2*CTQC + C_hat/CTC*CTd - uTd
+    D = (C/CTC)**2*CTQC - C/CTC*CTd
+
+    BdivA = B/(torch.max(A, 1e-7*torch.ones_like(A)))
+    ADdivB2 = A*D/(torch.max(B**2, 1e-7*torch.ones_like(B**2)))
+    a1 = -BdivA/2*(1 + torch.sqrt(1 - 4*ADdivB2))
+    a2 = -BdivA/2*(1 - torch.sqrt(1 - 4*ADdivB2))
+
+    # print(1-4*ADdivB2)
+
+
+    # print(a1)
+    # print(a2)
+
+    # a = -BdivA
+    # print(a1)
+    # print(a2)
+    # a = torch.where(torch.abs(a1)<torch.abs(a2), a1, a2)
+    # print(a)
+    # a = -BdivA/2
+    # print(a)
+    # a = (a1 + a2)/2
+
+    if model.hparams['modeltype']!='model NGO':
+        a = torch.min(a, torch.ones_like(a))
+
+    b = C/CTC - C_hat/CTC*a
+
+    u_m_hat_prime = a[:,None]*u_m_hat + b[:,None]*C_m
+
+    return u_m_hat_prime
 
 class ConvNd(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, stride, bias, padding=0, dilation=1):
@@ -107,11 +172,138 @@ def balance_num_trainable_params(model, N_w):
         raise ValueError('Not enough trainable parameter budget.')
     return model  
 
-
+# @njit
 def discretize_functions(f_list, x):
     f_discretized = Parallel(n_jobs=-1)(delayed(f)(x) for f in f_list)
     f_discretized = np.array(f_discretized)
+    # f_discretized = np.zeros((len(f_list), x.shape[0]))
+    # for i in range(len(f_list)):
+    #     f_discretized[i] = f_list[i](x)
     return f_discretized
+
+
+# def rho_max_power_iteration(B, x, tol, max_iterations, dtype, device):
+#     """
+#     Estimate the spectral radius (largest eigenvalue in magnitude) of a batch of matrices 
+#     using the power iteration method.
+
+#     Args:
+#     B : ndarray of shape (N, M, M)
+#         A batch of N symmetric square matrices of shape (M, M) whose spectral radii are to be estimated.
+#     x : ndarray of shape (M,)
+#         An initial guess for the eigenvector. This vector is tiled across the batch dimension.
+#     tol : float
+#         The convergence tolerance. Iteration continues until the maximum relative change in 
+#         spectral radius estimates across the batch falls below this threshold.
+
+#     Returns:
+#     rho : ndarray of shape (N,)
+#         The estimated spectral radii (largest eigenvalues) for each matrix in the batch.
+#     """
+#     #Add batch dimension to initial random vector
+#     x_norm = (torch.sum(x**2))**(1/2)
+#     x = x/x_norm
+#     x = torch.tile(x,(B.shape[0],1))
+#     #Initialize the relative difference and spectral radius estimate arrays
+#     reldiff = torch.ones(B.shape[0], dtype=dtype, device=device)
+#     rho = torch.ones(B.shape[0], dtype=dtype, device=device)
+#     i=0
+#     while torch.amax(reldiff)>tol and i<max_iterations:
+#         #Compute new spectral radius estimate
+#         Bx = opt_einsum.contract('Nij,Nj->Ni', B, x)
+#         xTBx = opt_einsum.contract('Ni,Ni->N', x, Bx)
+#         xTx = opt_einsum.contract('Ni,Ni->N', x, x)
+#         rho_new = xTBx/torch.max(xTx, 1e-7*torch.ones_like(xTx))
+#         #Compute absolute relative difference between estimate and previous estimate
+#         reldiff = torch.abs((rho_new - rho)/rho)
+#         #Update spectral radius estimate
+#         print(i)
+#         print(torch.sum(reldiff>tol))
+#         rho[reldiff>tol] = rho_new[reldiff>tol]
+#         #Update eigenvector estimate
+#         BxTBx = opt_einsum.contract('Ni,Ni->N', Bx, Bx)
+#         x = Bx/torch.max(BxTBx[:,None], 1e-7*torch.ones_like(BxTBx[:,None]))
+#         i+=1
+#     # print(i)
+#     if i==max_iterations:
+#         print('Power iteration did not converge')
+#         rho = torch.ones(B.shape[0], dtype=dtype, device=device)
+#     # print(rho)
+#     v = x[0]/(torch.sum(x[0]**2, axis=-1))**(1/2)
+#     return rho, v
+
+
+# def rho_max_power_iteration(B, x, tol, max_iterations, dtype, device):
+#     """
+#     Estimate the spectral radius (largest eigenvalue in magnitude) of a batch of matrices 
+#     using the power iteration method.
+
+#     Args:
+#     B : torch.Tensor of shape (N, M, M)
+#         A batch of N symmetric square matrices of shape (M, M) whose spectral radii are to be estimated.
+#     x : torch.Tensor of shape (M,)
+#         An initial guess for the eigenvector. This vector is tiled across the batch dimension.
+#     tol : float
+#         The convergence tolerance. Iteration continues until the maximum relative change in 
+#         spectral radius estimates across the batch falls below this threshold.
+#     max_iterations : int
+#         Maximum number of iterations to perform.
+#     dtype : torch.dtype
+#         Data type for tensors.
+#     device : torch.device
+#         Device on which computations will be performed.
+
+#     Returns:
+#     rho : torch.Tensor of shape (N,)
+#         The estimated spectral radii (largest eigenvalues) for each matrix in the batch.
+#     v : torch.Tensor of shape (M,)
+#         The normalized eigenvector estimate for the first matrix in the batch.
+#     """
+#     # Normalize and expand initial vector
+#     x_norm = (torch.sum(x ** 2)) ** 0.5
+#     x = x / x_norm
+#     x = torch.tile(x, (B.shape[0], 1))
+
+#     # Initialize arrays
+#     rho = torch.ones(B.shape[0], dtype=dtype, device=device)
+#     not_converged = torch.ones(B.shape[0], dtype=dtype, device=device)
+
+#     i = 0
+#     while i < max_iterations and torch.sum(not_converged)>0:
+#         # Compute Bx
+#         Bx = opt_einsum.contract('Nij,Nj->Ni', B, x)
+#         xTBx = opt_einsum.contract('Ni,Ni->N', x, Bx)
+#         xTx = opt_einsum.contract('Ni,Ni->N', x, x)
+
+#         # Spectral radius estimate
+#         rho_new = xTBx / torch.clamp(xTx, min=1e-7)
+
+#         # Compute relative difference
+#         reldiff = torch.abs((rho_new - rho) / torch.clamp(rho, min=1e-7))
+
+#         # Print iteration info
+#         # print(f"Iteration {i}: {torch.sum(reldiff > tol)} matrices not converged")
+
+#         # Only update rho where not converged
+#         not_converged = reldiff > tol
+#         # rho[not_converged] = rho_new[not_converged]
+
+#         #Update eigenvector estimate
+#         BxTBx = opt_einsum.contract('Ni,Ni->N', Bx, Bx)
+#         x = Bx/torch.clamp(BxTBx[:, None], min=1e-7)
+
+#         i += 1
+    
+#     print(f"Total iterations: {i}")
+    
+#     if i == max_iterations:
+#         print('Power iteration did not converge for all matrices')
+#         rho[not_converged] = 1
+
+#     # Return normalized eigenvector for the first matrix
+#     v = x[0] / (torch.sum(x[0] ** 2)) ** 0.5
+
+#     return rho, v
 
 
 def rho_max_power_iteration(B, x, tol, max_iterations, dtype, device):
@@ -121,46 +313,62 @@ def rho_max_power_iteration(B, x, tol, max_iterations, dtype, device):
 
     Args:
     B : ndarray of shape (N, M, M)
-        A batch of N symmetric square matrices of shape (M, M) whose spectral radii are to be estimated.
+        Batch of N symmetric square matrices of shape (M, M) whose spectral radii are to be estimated.
     x : ndarray of shape (M,)
-        An initial guess for the eigenvector. This vector is tiled across the batch dimension.
+        Initial guess for the eigenvector (normalized). Tiled across batch.
     tol : float
-        The convergence tolerance. Iteration continues until the maximum relative change in 
-        spectral radius estimates across the batch falls below this threshold.
+        Convergence tolerance (relative change in rho).
+    max_iterations : int
+        Maximum number of iterations.
+    dtype : torch.dtype
+        Tensor data type (e.g., torch.float32 or torch.float64).
+    device : torch.device
+        Device (e.g., torch.device('cuda') or 'cpu').
 
     Returns:
-    rho : ndarray of shape (N,)
-        The estimated spectral radii (largest eigenvalues) for each matrix in the batch.
+    rho : torch.Tensor of shape (N,)
+        Estimated spectral radii for each matrix.
     """
-    #Add batch dimension to initial random vector
-    # x_norm = (torch.sum(x**2, axis=-1))**(1/2)
-    # x = x/x_norm[:,None]
-    x = torch.tile(x,(B.shape[0],1))
-    #Initialize the relative difference and spectral radius estimate arrays
-    reldiff = torch.ones(B.shape[0], dtype=dtype, device=device)
+    # Normalize x and tile across batch
+    x = x / torch.linalg.norm(x)
+    x = x.repeat(B.shape[0], 1)  # Shape: (N, M)
+
     rho = torch.ones(B.shape[0], dtype=dtype, device=device)
-    i=0
-    while torch.amax(reldiff)>tol and i<max_iterations:
-        #Compute new spectral radius estimate
+
+    for i in range(max_iterations):
+        # Matrix-vector multiplication: Bx
         Bx = opt_einsum.contract('Nij,Nj->Ni', B, x)
+
+        # Rayleigh quotient: (x^T B x) / (x^T x)
         xTBx = opt_einsum.contract('Ni,Ni->N', x, Bx)
         xTx = opt_einsum.contract('Ni,Ni->N', x, x)
-        rho_new = xTBx/torch.max(xTx, 1e-7*torch.ones_like(xTx))
-        #Compute absolute relative difference between estimate and previous estimate
-        reldiff = torch.abs((rho_new - rho)/rho)
-        #Update spectral radius estimate
-        rho = rho_new
-        #Update eigenvector estimate
+        rho_new = xTBx / torch.clamp(xTx, min=1e-7)
+
+        # Relative difference
+        reldiff = torch.abs((rho_new - rho) / torch.clamp(rho, min=1e-7))
+
+        # Update rho where reldiff > tol
+        rho = torch.where(reldiff > tol, rho_new, rho)
+
+        # Update x for all samples (no masking for speed)
         BxTBx = opt_einsum.contract('Ni,Ni->N', Bx, Bx)
-        x = Bx/torch.max(BxTBx[:,None], 1e-7*torch.ones_like(BxTBx[:,None]))
-        i+=1
-    print(i)
-    if i==max_iterations:
-        print('Power iteration did not converge')
-        rho = torch.ones(B.shape[0], dtype=dtype, device=device)
-    # print(rho)
-    v = x[0]
+        x = Bx / torch.clamp(BxTBx[:, None], min=1e-7)
+
+        # Check for global convergence
+        if torch.all(reldiff <= tol):
+            break
+    
+    print(f"Total iterations: {i+1}")
+    if i == max_iterations - 1:
+        print('Power iteration did not fully converge within max_iterations.')
+        rho[reldiff > tol] = torch.amax(torch.abs(torch.linalg.eigvals(B[reldiff > tol])), axis=-1)
+        print('Exact computation of spectral radius for non-converged matrices.')
+        # rho[reldiff > tol] = 1
+    # Return normalized eigenvector for the first matrix
+    v = x[0] / (torch.sum(x[0] ** 2)) ** 0.5
+
     return rho, v
+
 
 
 def sort_matrices(matrices):
