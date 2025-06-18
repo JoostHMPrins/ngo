@@ -4,8 +4,7 @@ import torch.nn.functional as F
 import numpy as np
 from joblib import Parallel, delayed
 import opt_einsum
-from numba import njit
-
+from numba import njit, prange
 
 
 def correct_mass_energy_conservation(model, F, d, u_m_hat, C_m, C):
@@ -172,12 +171,13 @@ def balance_num_trainable_params(model, N_w):
         raise ValueError('Not enough trainable parameter budget.')
     return model  
 
-# @njit
+# @njit(parallel=True)
 def discretize_functions(f_list, x):
     f_discretized = Parallel(n_jobs=-1)(delayed(f)(x) for f in f_list)
     f_discretized = np.array(f_discretized)
     # f_discretized = np.zeros((len(f_list), x.shape[0]))
-    # for i in range(len(f_list)):
+    # for i in prange(len(f_list)):
+    #     print(i)
     #     f_discretized[i] = f_list[i](x)
     return f_discretized
 
@@ -306,7 +306,7 @@ def discretize_functions(f_list, x):
 #     return rho, v
 
 
-def rho_max_power_iteration(B, x, tol, max_iterations, dtype, device):
+def rho_max_power_iteration(B, rho_0, x_0, tol, max_iterations, dtype, device):
     """
     Estimate the spectral radius (largest eigenvalue in magnitude) of a batch of matrices 
     using the power iteration method.
@@ -330,10 +330,10 @@ def rho_max_power_iteration(B, x, tol, max_iterations, dtype, device):
         Estimated spectral radii for each matrix.
     """
     # Normalize x and tile across batch
-    x = x / torch.linalg.norm(x)
+    x = x_0 / torch.clamp(torch.linalg.norm(x_0), min=1e-7)
     x = x.repeat(B.shape[0], 1)  # Shape: (N, M)
 
-    rho = torch.ones(B.shape[0], dtype=dtype, device=device)
+    rho = rho_0*torch.ones(B.shape[0], dtype=dtype, device=device)
 
     for i in range(max_iterations):
         # Matrix-vector multiplication: Bx
@@ -348,20 +348,28 @@ def rho_max_power_iteration(B, x, tol, max_iterations, dtype, device):
         reldiff = torch.abs((rho_new - rho) / torch.clamp(rho, min=1e-7))
 
         # Update rho where reldiff > tol
-        rho = torch.where(reldiff > tol, rho_new, rho)
+        # rho = torch.where(reldiff > tol, rho_new, rho)
+        not_converged = reldiff > tol
+        rho[not_converged] = rho_new[not_converged]
 
-        # Update x for all samples (no masking for speed)
+        # Update x for all samples
         BxTBx = opt_einsum.contract('Ni,Ni->N', Bx, Bx)
         x = Bx / torch.clamp(BxTBx[:, None], min=1e-7)
+        # x_new = x.clone()
+        # x_new[not_converged] = Bx[not_converged] / torch.clamp(BxTBx[not_converged, None], min=1e-7)
+        # x = x_new
 
         # Check for global convergence
-        if torch.all(reldiff <= tol):
+        # if torch.all(reldiff <= tol):
+        if torch.sum(not_converged) == 0:
             break
     
     print(f"Total iterations: {i+1}")
     if i == max_iterations - 1:
-        print('Power iteration did not fully converge within max_iterations.')
-        rho[reldiff > tol] = torch.amax(torch.abs(torch.linalg.eigvals(B[reldiff > tol])), axis=-1)
+        print('Power iteration did not fully converge within max_iterations. Number of non-converged matrices:', torch.sum(reldiff > tol).item())
+        # If not converged, compute exact spectral radius
+        rho[not_converged] = torch.amax(torch.abs(torch.linalg.eigvals(B[not_converged])), axis=-1)
+        # rho[reldiff > tol] = torch.amax(torch.abs(torch.linalg.eigvals(B[reldiff > tol])), axis=-1)
         print('Exact computation of spectral radius for non-converged matrices.')
         # rho[reldiff > tol] = 1
     # Return normalized eigenvector for the first matrix
