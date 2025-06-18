@@ -3,7 +3,7 @@ import numpy as np
 import pytorch_lightning as pl
 import numpy as np
 import opt_einsum
-
+import os
 
 import sys
 sys.path.insert(0, '/home/prins/st8/prins/phd/git/ngo-pde-gk/ml')
@@ -57,24 +57,27 @@ class NeuralOperator(pl.LightningModule):
             self.simforwardfunction = self.VarMiON_simforward
             self.hparams['input_shape'] = (1,)+(self.hparams['Q'])
             self.hparams['output_shape'] = (self.hparams['N'],self.hparams['N'])
-            self.F_0 = torch.ones(self.hparams['Q'], dtype=self.dtype, device=self.used_device)
+            self.compute_Kronecker_factors()
+            self.F_0 = torch.ones((1,)+self.hparams['Q'], dtype=self.dtype, device=self.used_device)
+            x_0 = torch.randn(int(self.hparams['N']/2))
+            x_0 = x_0/torch.sum(x_0**2)**(1/2)
+            x_0 = torch.tensor(x_0, dtype=self.dtype, device=self.used_device)
             self.Identity = torch.eye(self.hparams['N'], dtype=self.dtype, device=self.used_device) 
         if self.hparams['modeltype']=='data NGO':
             self.forwardfunction = self.NGO_forward
             self.simforwardfunction = self.NGO_simforward
             self.hparams['input_shape'] = (1,)+self.hparams['h']
-            # self.hparams['input_shape'] = (self.hparams['n_inputs'],)+(self.hparams['h'])
-            if self.hparams.get('gamma_stabilization',0)!=0 and self.hparams['n_inputs']==3:
-                self.hparams['input_shape'] = (3,)+(self.hparams['h'])
             self.hparams['output_shape'] = (self.hparams['N'],self.hparams['N'])
             self.compute_Kronecker_factors()
             self.compute_F_0_A_0()     
             x_0 = torch.randn(int(self.hparams['N']/2))
             x_0 = x_0/torch.sum(x_0**2)**(1/2)
-            x_0 = torch.tensor(x_0, dtype=self.dtype, device=self.used_device)
-            self.x_0 = torch.tensor(self.hparams.get('x_0', x_0), dtype=self.dtype, device=self.used_device)
-            # self.hparams['x_0'] = self.x_0
-            # self.x_0 = torch.tensor(self.hparams['x_0'], dtype=self.dtype, device=self.used_device)
+            self.x_0 = torch.tensor(x_0, dtype=self.dtype, device=self.used_device)
+            print(self.x_0)
+            if os.path.exists(self.hparams['logdir']+'/x_0.pt'):
+                print('loading x_0 from file')
+                self.x_0 = torch.load(self.hparams['logdir']+'/x_0.pt').to(self.used_device)
+            print(self.x_0)
             self.Identity = torch.eye(self.hparams['N'], dtype=self.dtype, device=self.used_device) 
         if self.hparams['modeltype']=='model NGO':
             self.forwardfunction = self.NGO_forward
@@ -233,19 +236,8 @@ class NeuralOperator(pl.LightningModule):
             basis_test_x0 = self.basis_test.forward(self.xi_Gamma_x0)
             basis_test_xL = self.basis_test.forward(self.xi_Gamma_xL)
             basis_test_tT = self.basis_test.forward(self.xi_Gamma_tT)
-
             F = opt_einsum.contract('q,qm,Nq->Nm', self.w_OmegaT, basis_test_OmegaT, theta_q)
             F = F.reshape((theta_q.shape[0],)+self.hparams['h'])
-
-            # F = np.zeros((theta_q.shape[0],self.hparams['input_shape'][0],self.hparams['N']))
-            # F[:,0,:] = opt_einsum.contract('q,qm,Nq->Nm', self.w_OmegaT, basis_test_OmegaT, theta_q)
-            # if self.hparams['input_shape'][0]==2:
-            #     F[:,1,:] = opt_einsum.contract('q,qm->m', self.w_Gamma_tT, basis_test_tT)
-            # if self.hparams.get('gamma_stabilization',0)!=0 and self.hparams['input_shape'][0]==3:
-            #     F[:,2,:] = self.hparams['gamma_stabilization']*opt_einsum.contract('q,qm,Nq->Nm', self.w_Gamma_x0, basis_test_x0, theta_x0_q)
-            #     F[:,2,:] += self.hparams['gamma_stabilization']*opt_einsum.contract('q,qm,Nq->Nm', self.w_Gamma_xL, basis_test_xL, theta_xL_q)
-            # F = F.reshape((theta_q.shape[0],self.hparams['n_inputs'],)+self.hparams['h'])
-
         if  self.hparams['modeltype']=='model NGO' or self.hparams['modeltype']=='FEM' or self.hparams['modeltype']=='projection':
             basis_trial = self.basis_trial.forward(self.xi_OmegaT)
             gradbasis_test = self.basis_test.grad(self.xi_OmegaT)[:,:,1:]
@@ -308,7 +300,7 @@ class NeuralOperator(pl.LightningModule):
             if self.hparams.get('spectral_radius_scaling',False)==True:
                 B = A_hat@self.M*self.hparams['Dt']
                 B = B[:,int(A_hat.shape[1]/2):,int(A_hat.shape[2]/2):]
-                scaling, v = rho_max_power_iteration(B=B, x=self.x_0, tol=self.hparams['tol'], max_iterations=self.hparams['max_iterations'], dtype=self.dtype, device=self.used_device)
+                scaling, v = rho_max_power_iteration(B=B, rho_0=1, x_0=self.x_0, tol=self.hparams['tol'], max_iterations=self.hparams['max_iterations'], dtype=self.dtype, device=self.used_device)
                 scaling = torch.maximum(self.hparams['rho_max']*torch.ones_like(scaling),scaling)/self.hparams['rho_max']
                 A_hat = A_hat/scaling[:,None,None]
                 # print("rho max")
@@ -413,9 +405,9 @@ class NeuralOperator(pl.LightningModule):
         C += opt_einsum.contract('q,Nq->N', self.w_Gamma_y0, eta_y0_q)
         C += opt_einsum.contract('q,Nq->N', self.w_Gamma_yL, eta_yL_q)
         C += opt_einsum.contract('q,Nq->N', self.w_Gamma_t0, u0_t0_q)
-        # if self.hparams.get('gamma_stabilization',0)!=0:
-        #     C += self.hparams['gamma_stabilization']*opt_einsum.contract('q,Nq->N', self.w_Gamma_x0, g_x0_q)
-        #     C += self.hparams['gamma_stabilization']*opt_einsum.contract('q,Nq->N', self.w_Gamma_xL, g_xL_q)    
+        if self.hparams.get('stabilization_in_massconservation',False)==True:
+            C += self.hparams['gamma_stabilization']*opt_einsum.contract('q,Nq->N', self.w_Gamma_x0, g_x0_q)
+            C += self.hparams['gamma_stabilization']*opt_einsum.contract('q,Nq->N', self.w_Gamma_xL, g_xL_q)    
         return C
    
     #Conserved quantity per DOF
@@ -427,9 +419,9 @@ class NeuralOperator(pl.LightningModule):
         C_m = -opt_einsum.contract('q,x,qmx,Nq->Nm', self.w_Gamma_x0, self.n_x0, gradbasis_trial_Gamma_x0, theta_x0_q)
         C_m += -opt_einsum.contract('q,x,qmx,Nq->Nm', self.w_Gamma_xL, self.n_xL, gradbasis_trial_Gamma_xL, theta_xL_q)
         C_m += opt_einsum.contract('q,qm->m', self.w_Gamma_tT, self.basis_trial.forward(self.xi_Gamma_tT))
-        # if self.hparams.get('gamma_stabilization',0)!=0:
-        #     C_m += self.hparams['gamma_stabilization']*opt_einsum.contract('q,Nq,qm->Nm', self.w_Gamma_x0, theta_x0_q, basis_trial_x0)
-        #     C_m += self.hparams['gamma_stabilization']*opt_einsum.contract('q,Nq,qm->Nm', self.w_Gamma_xL, theta_xL_q, basis_trial_xL)
+        if self.hparams.get('stabilization_in_massconservation',False)==True:
+            C_m += self.hparams['gamma_stabilization']*opt_einsum.contract('q,Nq,qm->Nm', self.w_Gamma_x0, theta_x0_q, basis_trial_x0)
+            C_m += self.hparams['gamma_stabilization']*opt_einsum.contract('q,Nq,qm->Nm', self.w_Gamma_xL, theta_xL_q, basis_trial_xL)
         return C_m
 
     def compute_C_s(self):
@@ -545,7 +537,7 @@ class NeuralOperator(pl.LightningModule):
         if self.hparams.get('spectral_radius_scaling',False)==True:
             B = A_hat@self.M
             B = B[:,int(A_hat.shape[1]/2):,int(A_hat.shape[2]/2):]
-            scaling, v = rho_max_power_iteration(B=B, x=self.x_0, tol=self.hparams['tol'], max_iterations=self.hparams['max_iterations'], dtype=self.dtype, device=self.used_device)
+            scaling, v = rho_max_power_iteration(B=B, rho_0=1, x_0=self.x_0, tol=self.hparams['tol'], max_iterations=self.hparams['max_iterations'], dtype=self.dtype, device=self.used_device)
             scaling = torch.maximum(self.hparams['rho_max']*torch.ones_like(scaling),scaling)/self.hparams['rho_max']
             A_hat = A_hat/scaling[:,None,None]
         d_hat = self.LBranch_f.forward(f_q) + self.LBranch_eta.forward(eta_q) + self.LBranch_g.forward(g_q) + self.LBranch_u0.forward(u0_t0_q)
@@ -580,28 +572,19 @@ class NeuralOperator(pl.LightningModule):
                 Ti = T1@Ti
                 T = T + Ti
             A_hat = self.A_0@(self.Identity + T + self.systemnet.forward(T1))
-        if self.hparams.get('PD', False)==True:
-            L = torch.tril(A_hat)
-            U = torch.tril(A_hat.transpose(-1,-2))
-            A_hat = (L@L.transpose(-2,-1) + self.hparams['epsilon']*self.Identity + U - U.transpose(-1,-2))
         if self.hparams.get('spectral_radius_scaling',False)==True:
             B = A_hat@self.M
             B = B[:,int(A_hat.shape[1]/2):,int(A_hat.shape[2]/2):]
-            scaling, v = rho_max_power_iteration(B=B, x=self.x_0, tol=self.hparams['tol'], max_iterations=self.hparams['max_iterations'], dtype=self.dtype, device=self.used_device)
+            scaling, v = rho_max_power_iteration(B=B, rho_0=1, x_0=self.x_0, tol=self.hparams['tol'], max_iterations=self.hparams['max_iterations'], dtype=self.dtype, device=self.used_device)
             scaling = torch.maximum(self.hparams['rho_max']*torch.ones_like(scaling),scaling)/self.hparams['rho_max']
             A_hat = A_hat/scaling[:,None,None]
         if self.hparams.get('scaling_equivariance',False)==True:
             A_hat = A_hat/theta_bar[:,None,None]
         u_m_hat = opt_einsum.contract('nij,nj->ni', A_hat, d)
-        # if self.hparams['dissipation']==True and self.hparams['massconservation']==False:
-        #     D = opt_einsum.contract('Ni,ij,Nj->N', u_m_hat, self.M_rr + self.hparams['alpha']*self.Identity, u_m_hat)/opt_einsum.contract('Ni,Ni->N', u_m_hat, d)
-        #     u_m_hat = u_m_hat/torch.maximum(D, torch.ones_like(D))[:,None]
-        if self.hparams['massconservation']==True:# and self.hparams['dissipation']==False:
+        if self.hparams['massconservation']==True:
             C_hat = opt_einsum.contract('Nn,Nn->N', u_m_hat, C_m)
             l = (C - C_hat)/opt_einsum.contract('Nn,Nn->N', C_m, C_m)
             u_m_hat = u_m_hat + l[:,None]*C_m
-        # if self.hparams['massconservation']==True and self.hparams['dissipation']==True:
-        #     u_m_hat = correct_mass_energy_conservation(self, F, d, u_m_hat, C_m, C)
         return u_m_hat
     
     def NGO_simforward(self, theta, f, eta_y0, eta_yL, g_x0, g_xL, u0, u):
@@ -867,9 +850,6 @@ class NeuralOperator(pl.LightningModule):
             metric = self.hparams['metric'](self.w_OmegaT_L, u_hat, u)
             # metric = self.hparams['metric'](self.w_Gamma_tT, u_hat, u)
         self.metric = metric.item()
-        if self.metric < self.metric_best:
-            self.metric_best = self.metric
-
         self.log('val_loss', loss)
         self.log('metric', metric)
 
@@ -897,15 +877,17 @@ class NeuralOperator(pl.LightningModule):
                 param.requires_grad = False
 
     def on_validation_epoch_end(self):
-        # if self.hparams['spectral_radius_scaling']==True:# and self.metric==self.metric_best:
-        #     # with torch.no_grad():
-        #     A_hat = self.systemnet.forward(self.F_0)
-        #     B = A_hat@self.M
-        #     B = B[:,int(A_hat.shape[1]/2):,int(A_hat.shape[2]/2):]
-        #     scaling, self.x_0 = rho_max_power_iteration(B=B, x=self.x_0, tol=self.hparams['tol'], max_iterations=self.hparams['max_iterations'], dtype=self.dtype, device=self.used_device)
-        #     # if self.metric==self.metric_best:
-        #     # print('lowest error, saving eigenvector estimate')
-        #     self.hparams['x_0'] = self.x_0
+        if self.metric<self.metric_best:
+            self.metric_best = self.metric
+            if self.hparams['spectral_radius_scaling']==True:
+                # with torch.no_grad():
+                A_hat = self.systemnet.forward(self.F_0)
+                B = A_hat@self.M
+                B = B[:,int(A_hat.shape[1]/2):,int(A_hat.shape[2]/2):]
+                rho_0, self.x_0 = rho_max_power_iteration(B=B, rho_0=1, x_0=self.x_0, tol=self.hparams['tol'], max_iterations=self.hparams['max_iterations'], dtype=self.dtype, device=self.used_device)
+                print('Lowest error, saving eigenvector estimate:')
+                print(self.x_0)
+                torch.save(self.x_0.cpu(), self.hparams['logdir']+'/x_0.pt')
         print(self.metric)
         if self.hparams['switch_threshold']!=None:
             if self.metric[-1]<self.hparams['switch_threshold']:
