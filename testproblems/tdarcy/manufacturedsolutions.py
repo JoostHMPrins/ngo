@@ -112,6 +112,7 @@ class ManufacturedSolutionsSet:
                 u0s.append(u0.forward(i))
         if self.l_min!=self.l_max:
             for i in range(self.N_samples):
+                # print(i)
                 #Define functions
                 theta = ScaledGRF(N_samples=1, l=l_theta[i], c=[c_theta[i]], b=[b_theta[i]])
                 u = ScaledGRF(N_samples=1, l=l_u[i], c=[c_u[i]], b=[b_u[i]])
