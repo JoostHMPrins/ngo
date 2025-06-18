@@ -35,8 +35,8 @@ hparams['project_initialcondition'] = True
 #Training settings
 hparams['dtype'] = torch.float32
 hparams['precision'] = 32
-hparams['used_device'] = 'cuda:0'
-hparams['devices'] = [0]
+hparams['used_device'] = 'cuda:2'
+hparams['devices'] = [2]
 hparams['solution_loss'] = relativeL2_coefficients
 hparams['matrix_loss'] = None #relativematrixnorm
 hparams['metric'] = relativeL2_coefficients
@@ -68,41 +68,38 @@ hparams['n_elements_L'] = (1,3,3) #max(int((hparams['h'][0] - 1)/hparams['p']), 
 hparams['Q_L'] = (2,99,99) #33*hparams['n_elements_L']
 
 #System net'
-hparams['n_inputs'] = 1
 hparams['modeltype'] = 'data NGO'
 hparams['systemnet'] = CNN_3dto2d
 hparams['N_w'] = 30000
 hparams['bias'] = False
 hparams['skipconnections'] = True
-# hparams['kernel_sizes'] = [2,2,5,10,10,5,2,2]
-# hparams['kernel_sizes'] = [(1,1,1),(1,1,1),(1,2,2),(2,5,5),(10,10),(5,5),(2,2),(2,2)]
+# hparams['kernel_sizes'] = [(1,2,2),(1,2,2),(1,5,5),(2,5,5),(2,5,5),(1,5,5),(1,2,2),(1,2,2)]
+# hparams['kernel_sizes'] = [(1,10,10),(1,1,1),(1,2,2),(2,5,5),(2,5,5),(1,2,2),(1,1,1),(1,1,1)]
+# hparams['kernel_sizes'] = [(1,1,1),(1,1,1),(1,1,1),(2,5,5),(5,5),(2,2),(1,1),(20,20)]
 hparams['kernel_sizes'] = [(1,1,1),(1,1,1),(1,2,2),(2,5,5),(5,5),(2,2),(1,1),(20,20)]
-# hparams['kernel_sizes'] = [(1,2,2),(1,2,2),(1,5,5),(2,5,5),(2,5,5),(1,2,2),(1,1,1),(1,1,1)]
-# hparams['kernel_sizes'] = [(1,1,1),(1,1,1),(1,1,1),(2,5,5),(10,10),(5,5),(2,2),(2,2)]
+# hparams['kernel_sizes'] = [2,2,5,10,10,5,2,2]
 hparams['bottleneck_size'] = 20
 hparams['outputactivation'] = None #nn.Tanhshrink()
 
 #Additional inductive bias
-hparams['gamma_stabilization'] = 100
-hparams['scaling_equivariance'] = False
-hparams['massconservation'] = True
-hparams['Neumannseries'] = False
-hparams['Neumannseries_order'] = None
-hparams['PD'] = False
-hparams['epsilon'] = 1e-4
 hparams['spectral_radius_scaling'] = True
 hparams['rho_max'] = 0.9
 hparams['tol'] = 1e-3
 hparams['max_iterations'] = 1000
-hparams['dissipation'] = False
-hparams['alpha'] = 0
+hparams['gamma_stabilization'] = 100
+hparams['massconservation'] = True
+hparams['stabilization_in_massconservation'] = True
+hparams['scaling_equivariance'] = False
+hparams['Neumannseries'] = False
+hparams['Neumannseries_order'] = None
 
 logdir = '../../../../nnlogs'
-sublogdir = 'tdd_new2'
+sublogdir = 'tdd_dataNGOs_new'
 # sublogdir = 'test'
-# hparams['N_samples_train'] = 100
-# hparams['N_samples_val'] = 100
-label = 'dataNGO_IB_noCCs_rho09_novlearn' 
+# hparams['N_samples_train'] = 10
+# hparams['N_samples_val'] = 10
+label = 'dataNGO_rhomax_Cs_CCs' 
+hparams['logdir'] = logdir+'/'+sublogdir+'/'+label
 hparams['label'] = label
 
 model = NeuralOperator
