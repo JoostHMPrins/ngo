@@ -7,68 +7,62 @@ import opt_einsum
 from numba import njit, prange
 
 
-def correct_mass_energy_conservation(model, F, d, u_m_hat, C_m, C):
-    
+def conserve_mass_and_energy(model, F, d_x, u_0_m, C_m, C, u_m_hat):
 
-    # if model.hparams['modeltype']=='model NGO':
-        # alpha = opt_einsum.contract('Nm,Nmn,Nn->N', u_m_hat, F, u_m_hat)    
-    # if model.hparams['modeltype']=='data NGO':
-    #     alpha = model.hparams['alpha']
+    d_x = d_x#*model.hparams['Dt']
+    C_m = C_m#*model.hparams['Dt']
+    C = C#*model.hparams['Dt']
+    M = model.M_rr#*model.hparams['Dt']
 
-    d = d*model.hparams['Dt']
-    C_m = C_m*model.hparams['Dt']
-    C = C*model.hparams['Dt']
-    M = model.hparams['Dt']*model.M_rr
-
-    CTMC = opt_einsum.contract('Nn,mn,Nn->N', C_m, M, C_m)
     CTC = opt_einsum.contract('Nn,Nn->N', C_m, C_m)
-    CTd = opt_einsum.contract('Nn,Nn->N', C_m, d)
-    uTd = opt_einsum.contract('Nn,Nn->N', u_m_hat, d)
+    CTd = opt_einsum.contract('Nn,Nn->N', C_m, d_x)
+    uTd = opt_einsum.contract('Nn,Nn->N', u_m_hat, d_x)
     C_hat = opt_einsum.contract('Nn,Nn->N', u_m_hat, C_m)
-    uTu = opt_einsum.contract('Nn,Nn->N', u_m_hat, u_m_hat)
-    uTMu = opt_einsum.contract('Nn,mn,Nn->N', u_m_hat, M, u_m_hat)
+    u_im1TMu_im1 = opt_einsum.contract('Nn,mn,Nn->N', u_0_m, M, u_0_m)
 
-    alpha =  1e-3*torch.ones_like(C) #CTd/C - 1/2*CTMC/CTC #
+    alpha =  model.hparams['alpha']
 
-    Q = 1/2*M + alpha[:,None,None]*model.Identity[None,:,:]
+    Q = 1/2*M + alpha*model.Identity/model.hparams['Dt']
 
-    uTQu = opt_einsum.contract('Nm,Nmn,Nn->N', u_m_hat, Q, u_m_hat)
-    uTQC = opt_einsum.contract('Nm,Nmn,Nn->N', u_m_hat, Q, C_m)
-    CTQu = opt_einsum.contract('Nm,Nmn,Nn->N', C_m, Q, u_m_hat)
-    CTQC = opt_einsum.contract('Nn,Nmn,Nn->N', C_m, Q, C_m)
+    A = opt_einsum.contract('Nm,mn,Nn->N', u_m_hat - (C_hat/CTC)[:,None]*C_m, Q, u_m_hat - (C_hat/CTC)[:,None]*C_m)
+    uTQu = opt_einsum.contract('Nm,mn,Nn->N', u_m_hat, Q, u_m_hat)
+    uTQC = opt_einsum.contract('Nm,mn,Nn->N', u_m_hat, Q, C_m)
+    CTQu = opt_einsum.contract('Nm,mn,Nn->N', C_m, Q, u_m_hat)
+    CTQC = opt_einsum.contract('Nn,mn,Nn->N', C_m, Q, C_m)
+    
+    non_dissipative = uTQu > 1/2*u_im1TMu_im1 + uTd
+    # print(non_dissipative)
 
-    A = uTQu - C_hat/CTC*(uTQC + CTQu) + (C_hat/CTC)**2*CTQC
-    B = C/CTC*(uTQC + CTQu) - 2*C*C_hat/CTC**2*CTQC + C_hat/CTC*CTd - uTd
-    D = (C/CTC)**2*CTQC - C/CTC*CTd
+    # A = uTQu - C_hat/CTC*(uTQC + CTQu) + (C_hat/CTC)**2*CTQC
+    B = C/CTC*(uTQC + CTQu) - 2*C*C_hat/CTC**2*CTQC - uTd + C_hat/CTC*CTd
+    D = (C/CTC)**2*CTQC - C/CTC*CTd - 1/2*u_im1TMu_im1
 
-    BdivA = B/(torch.max(A, 1e-7*torch.ones_like(A)))
-    ADdivB2 = A*D/(torch.max(B**2, 1e-7*torch.ones_like(B**2)))
+    BdivA = B/torch.clamp(A, min=1e-7)
+    ADdivB2 = A*D/torch.clamp(B**2, min=1e-7)
     a1 = -BdivA/2*(1 + torch.sqrt(1 - 4*ADdivB2))
     a2 = -BdivA/2*(1 - torch.sqrt(1 - 4*ADdivB2))
 
-    # print(1-4*ADdivB2)
+    # mask = torch.abs(a1) < torch.abs(a2)
+    # a_plus = torch.where(mask, a1, a2)
 
+    a1[a1<0]=torch.inf
+    a2[a2<0]=torch.inf
+    a_plus = torch.min(a1,a2)
 
-    # print(a1)
-    # print(a2)
+    a = torch.ones(u_m_hat.shape[0], dtype=model.dtype, device=model.used_device)
+   
+    a[non_dissipative] = a_plus[non_dissipative]
 
-    # a = -BdivA
-    # print(a1)
-    # print(a2)
-    # a = torch.where(torch.abs(a1)<torch.abs(a2), a1, a2)
+    # a[a==torch.inf] = 1
     # print(a)
-    # a = -BdivA/2
-    # print(a)
-    # a = (a1 + a2)/2
-
-    if model.hparams['modeltype']!='model NGO':
-        a = torch.min(a, torch.ones_like(a))
 
     b = C/CTC - C_hat/CTC*a
+    # print(a[non_dissipative])
+    # print(b[non_dissipative])
 
-    u_m_hat_prime = a[:,None]*u_m_hat + b[:,None]*C_m
+    u_m_hat = a[:,None]*u_m_hat + b[:,None]*C_m
 
-    return u_m_hat_prime
+    return u_m_hat
 
 class ConvNd(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, stride, bias, padding=0, dilation=1):
@@ -352,12 +346,18 @@ def rho_max_power_iteration(B, rho_0, x_0, tol, max_iterations, dtype, device):
         not_converged = reldiff > tol
         rho[not_converged] = rho_new[not_converged]
 
-        # Update x for all samples
-        BxTBx = opt_einsum.contract('Ni,Ni->N', Bx, Bx)
-        x = Bx / torch.clamp(BxTBx[:, None], min=1e-7)
+        # Update x
+        # Bx_not_converged = Bx[not_converged]
+        # Bx_norm = (opt_einsum.contract('Ni,Ni->N', Bx_not_converged, Bx_not_converged))**(1/2)
         # x_new = x.clone()
-        # x_new[not_converged] = Bx[not_converged] / torch.clamp(BxTBx[not_converged, None], min=1e-7)
+        # x_new[not_converged] = Bx_not_converged/torch.clamp(Bx_norm[:, None], min=1e-7)
         # x = x_new
+
+        Bx_norm = (opt_einsum.contract('Ni,Ni->N', Bx, Bx))**(1/2)
+        # x = Bx / torch.clamp(Bx_norm[:, None], min=1e-7)
+        x_new = x.clone()
+        x_new[not_converged] = Bx[not_converged] / torch.clamp(Bx_norm[not_converged, None], min=1e-7)
+        x = x_new
 
         # Check for global convergence
         # if torch.all(reldiff <= tol):
