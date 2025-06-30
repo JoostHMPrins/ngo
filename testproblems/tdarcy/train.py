@@ -82,23 +82,23 @@ hparams['bottleneck_size'] = 20
 hparams['outputactivation'] = None #nn.Tanhshrink()
 
 #Additional inductive bias
-hparams['spectral_radius_scaling'] = True
-hparams['rho_max'] = 0.9
+hparams['spectral_radius_scaling'] = False
+hparams['rho_max'] = 0.8
 hparams['tol'] = 1e-3
 hparams['max_iterations'] = 1000
-hparams['gamma_stabilization'] = 100
-hparams['massconservation'] = True
-hparams['stabilization_in_massconservation'] = True
+hparams['gamma_stabilization'] = 0
+hparams['massconservation'] = False
+hparams['stabilization_in_massconservation'] = False
 hparams['scaling_equivariance'] = False
 hparams['Neumannseries'] = False
 hparams['Neumannseries_order'] = None
 
 logdir = '../../../../nnlogs'
-sublogdir = 'tdd_dataNGOs_new'
+sublogdir = 'tdd_dataNGOs_rho0.8'
 # sublogdir = 'test'
-# hparams['N_samples_train'] = 10
-# hparams['N_samples_val'] = 10
-label = 'dataNGO_rhomax_Cs_CCs' 
+# hparams['N_samples_train'] = 100
+# hparams['N_samples_val'] = 100
+label = 'dataNGO' 
 hparams['logdir'] = logdir+'/'+sublogdir+'/'+label
 hparams['label'] = label
 

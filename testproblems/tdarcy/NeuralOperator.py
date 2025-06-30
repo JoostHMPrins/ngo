@@ -185,9 +185,10 @@ class NeuralOperator(pl.LightningModule):
         theta_xL_q = discretize_functions(theta, self.xi_Gamma_xL_scaled)
         f_q = discretize_functions(f, self.xi_OmegaT_scaled)
         u0_t0_q = discretize_functions(u0, self.xi_Gamma_t0_scaled)
-        if self.hparams.get('project_initialcondition,',False)==True:
-            u0_m = self.project_input_function(u0_t0_q)
-            u0_t0_q = opt_einsum.contract('Nn,qn->Nq', u0_m, self.basis_trial.forward(self.xi_Gamma_t0))
+        # if self.hparams.get('project_initialcondition',False)==True:
+        #     print('testing project initial condition')
+        #     u0_m = self.project_input_function(u0_t0_q)
+        #     u0_t0_q = opt_einsum.contract('Nn,qn->Nq', u0_m, self.basis_trial.forward(self.xi_Gamma_t0))
         eta_y0_q = discretize_functions(eta_y0, self.xi_Gamma_y0_scaled)
         eta_yL_q = discretize_functions(eta_yL, self.xi_Gamma_yL_scaled)
         g_x0_q = discretize_functions(g_x0, self.xi_Gamma_x0_scaled)
@@ -279,32 +280,20 @@ class NeuralOperator(pl.LightningModule):
         K = opt_einsum.contract('Nl,lmn->Nmn', theta_l, K_lmn) + K_c
         return K
     
-    def compute_stability_criterion(self, theta, u0):
-        theta_q = discretize_functions(theta, self.xi_OmegaT_scaled)
-        theta_x0_q = discretize_functions(theta, self.xi_Gamma_x0_scaled)
-        theta_xL_q = discretize_functions(theta, self.xi_Gamma_xL_scaled)
-        u0_t0_q = discretize_functions(u0, self.xi_Gamma_t0_scaled)
-        F = torch.tensor(self.compute_F(theta_q, theta_x0_q, theta_xL_q), dtype=self.dtype, device=self.used_device)
+    def compute_stability_criterion(self, theta, f, eta_y0, eta_yL, g_x0, g_xL, u0):
+        theta_q, theta_x0_q, theta_xL_q, f_q, eta_y0_q, eta_yL_q, g_x0_q, g_xL_q, u0_t0_q = self.discretize_input_functions(theta, f, eta_y0, eta_yL, g_x0, g_xL, u0)
+        F = torch.tensor(self.compute_F(theta_q, theta_x0_q, theta_xL_q), dtype=self.dtype, device=self.used_device)/self.hparams['Dt']
+        d = torch.tensor(self.compute_d(f_q, eta_y0_q, eta_yL_q, g_x0_q, g_xL_q, u0_t0_q), dtype=self.dtype, device=self.used_device)/self.hparams['Dt']
+        C = torch.tensor(self.compute_C(f_q, eta_y0_q, eta_yL_q, g_x0_q, g_xL_q, u0_t0_q), dtype=self.dtype, device=self.used_device)/self.hparams['Dt']
+        C_m = torch.tensor(self.compute_C_m(theta_x0_q, theta_xL_q), dtype=self.dtype, device=self.used_device)/self.hparams['Dt']
+        F = torch.tensor(self.compute_F(theta_q, theta_x0_q, theta_xL_q), dtype=self.dtype, device=self.used_device)/self.hparams['Dt']
         if self.hparams['modeltype']=='FEM':
-            A_hat = torch.linalg.inv(F)
+            A_hat = torch.linalg.inv(F)*self.hparams['Dt']
         if self.hparams['modeltype']=='data NGO' or self.hparams['modeltype']=='model NGO':
             if self.hparams.get('scaling_equivariance',False)==True:
-                scaling = torch.frobenius_norm(F, dim=(-1,-2))
-                F = F/scaling[:,None,None]
+                F = F/theta_bar[:,None]
             if self.hparams.get('Neumannseries', False)==False:
-                A_hat = self.systemnet.forward(F/self.hparams['Dt'])/self.hparams['Dt']
-            if self.hparams.get('PD', False)==True:           
-                L = torch.tril(A_hat)
-                U = torch.tril(A_hat.transpose(-1,-2))
-                A_hat = L@L.transpose(-2,-1) + self.hparams['epsilon']*self.Identity + 0.01*(U - U.transpose(-1,-2))
-            if self.hparams.get('spectral_radius_scaling',False)==True:
-                B = A_hat@self.M*self.hparams['Dt']
-                B = B[:,int(A_hat.shape[1]/2):,int(A_hat.shape[2]/2):]
-                scaling, v = rho_max_power_iteration(B=B, rho_0=1, x_0=self.x_0, tol=self.hparams['tol'], max_iterations=self.hparams['max_iterations'], dtype=self.dtype, device=self.used_device)
-                scaling = torch.maximum(self.hparams['rho_max']*torch.ones_like(scaling),scaling)/self.hparams['rho_max']
-                A_hat = A_hat/scaling[:,None,None]
-                # print("rho max")
-                # print(torch.amax(torch.abs(torch.linalg.eigvals(A_hat@self.M))))
+                A_hat = self.systemnet.forward(F)
             if self.hparams.get('Neumannseries', False)==True:
                 T = torch.zeros(F.shape, dtype=self.dtype, device=self.used_device)
                 Ti = self.Identity
@@ -313,11 +302,21 @@ class NeuralOperator(pl.LightningModule):
                     Ti = T1@Ti
                     T = T + Ti
                 A_hat = self.A_0@(self.Identity + T + self.systemnet.forward(T1))
-            if self.hparams.get('scaling_equivariance',False)==True:
+            if self.hparams.get('spectral_radius_scaling',False)==True:
+                B = A_hat@self.M
+                B = B[:,int(A_hat.shape[1]/2):,int(A_hat.shape[2]/2):]
+                scaling, v = rho_max_power_iteration(B=B, rho_0=1, x_0=self.x_0, tol=self.hparams['tol'], max_iterations=self.hparams['max_iterations'], dtype=self.dtype, device=self.used_device)
+                scaling = torch.maximum(self.hparams['rho_max']*torch.ones_like(scaling),scaling)/self.hparams['rho_max']
                 A_hat = A_hat/scaling[:,None,None]
-        A_hat = A_hat.detach().cpu().numpy()
-        M = np.kron(np.kron(self.M_t_psiphi_t0T, self.K_x_psiphi), self.K_y_psiphi)
-        B = A_hat@M
+            if self.hparams.get('scaling_equivariance',False)==True:
+                A_hat = A_hat/theta_bar[:,None,None]
+            u_m_hat = opt_einsum.contract('nij,nj->ni', A_hat, d)
+            if self.hparams['massconservation']==True:
+                C_hat = opt_einsum.contract('Nn,Nn->N', u_m_hat, C_m)
+                l = (C - C_hat)/opt_einsum.contract('Nn,Nn->N', C_m, C_m)
+                u_m_hat = u_m_hat + l[:,None]*C_m
+        B = A_hat@self.M
+        B = B.detach().cpu().numpy()
         criterion = np.sort(np.linalg.eigvals(B))
         return criterion
     
