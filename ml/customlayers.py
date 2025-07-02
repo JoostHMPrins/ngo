@@ -167,7 +167,7 @@ def balance_num_trainable_params(model, N_w):
 
 # @njit(parallel=True)
 def discretize_functions(f_list, x):
-    f_discretized = Parallel(n_jobs=-1)(delayed(f)(x) for f in f_list)
+    f_discretized = Parallel(n_jobs=28)(delayed(f)(x) for f in f_list)
     f_discretized = np.array(f_discretized)
     # f_discretized = np.zeros((len(f_list), x.shape[0]))
     # for i in prange(len(f_list)):
