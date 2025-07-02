@@ -61,7 +61,10 @@ class NeuralOperator(pl.LightningModule):
             self.F_0 = torch.ones((1,)+self.hparams['Q'], dtype=self.dtype, device=self.used_device)
             x_0 = torch.randn(int(self.hparams['N']/2))
             x_0 = x_0/torch.sum(x_0**2)**(1/2)
-            x_0 = torch.tensor(x_0, dtype=self.dtype, device=self.used_device)
+            self.x_0 = torch.tensor(x_0, dtype=self.dtype, device=self.used_device)
+            if os.path.exists(self.hparams['logdir']+'/x_0.pt'):
+                print('loading x_0 from file')
+                self.x_0 = torch.load(self.hparams['logdir']+'/x_0.pt').to(self.used_device)
             self.Identity = torch.eye(self.hparams['N'], dtype=self.dtype, device=self.used_device) 
         if self.hparams['modeltype']=='data NGO':
             self.forwardfunction = self.NGO_forward
@@ -73,11 +76,9 @@ class NeuralOperator(pl.LightningModule):
             x_0 = torch.randn(int(self.hparams['N']/2))
             x_0 = x_0/torch.sum(x_0**2)**(1/2)
             self.x_0 = torch.tensor(x_0, dtype=self.dtype, device=self.used_device)
-            # print(self.x_0)
             if os.path.exists(self.hparams['logdir']+'/x_0.pt'):
                 print('loading x_0 from file')
                 self.x_0 = torch.load(self.hparams['logdir']+'/x_0.pt').to(self.used_device)
-            # print(self.x_0)
             self.Identity = torch.eye(self.hparams['N'], dtype=self.dtype, device=self.used_device) 
         if self.hparams['modeltype']=='model NGO':
             self.forwardfunction = self.NGO_forward
@@ -330,34 +331,8 @@ class NeuralOperator(pl.LightningModule):
         u_iTMu_i = opt_einsum.contract('Nn,mn,Nn->N', u_m_hat, M, u_m_hat)
         u_im1TMu_im1 = opt_einsum.contract('Nn,mn,Nn->N', u_0_m, M, u_0_m)
         u_iTu_i = opt_einsum.contract('Nn,Nn->N', u_m_hat, u_m_hat)
-
         alpha = (uTd - 1/2*u_iTMu_i + 1/2*u_im1TMu_im1)/u_iTu_i
-
         return alpha
-    
-    def compute_C_ABC(self, theta, f, eta_y0, eta_yL, g_x0, g_xL, u0, u):
-        theta_q, theta_x0_q, theta_xL_q, f_q, eta_y0_q, eta_yL_q, g_x0_q, g_xL_q, u0_t0_q = self.discretize_input_functions(theta, f, eta_y0, eta_yL, g_x0, g_xL, u0)
-        d = torch.tensor(self.compute_d(f_q, eta_y0_q, eta_yL_q, g_x0_q, g_xL_q, u0_t0_q), dtype=self.dtype, device=self.used_device)/self.hparams['Dt']
-        C = torch.tensor(self.compute_C(f_q, eta_y0_q, eta_yL_q, g_x0_q, g_xL_q, u0_t0_q), dtype=self.dtype, device=self.used_device)/self.hparams['Dt']
-        C_m = torch.tensor(self.compute_C_m(theta_x0_q, theta_xL_q), dtype=self.dtype, device=self.used_device)/self.hparams['Dt']
-
-        d = d*self.hparams['Dt']
-        C_m = C_m*self.hparams['Dt']
-        C = C*self.hparams['Dt']
-        M = self.hparams['Dt']*self.M_rr
-
-        CTMC = opt_einsum.contract('Nn,mn,Nn->N', C_m, M, C_m)
-        CTC = opt_einsum.contract('Nn,Nn->N', C_m, C_m)
-        CTd = opt_einsum.contract('Nn,Nn->N', C_m, d)
-
-        alpha = self.hparams['alpha']
-
-        Q = 1/2*M + alpha*self.Identity[None,:,:]
-
-        CTQC = opt_einsum.contract('Nn,Nmn,Nn->N', C_m, Q, C_m)
-
-        D = (C/CTC)**2*CTQC - C/CTC*CTd
-        return D
     
     def compute_F(self, theta_q, theta_x0_q, theta_xL_q):
         if self.hparams['project_materialparameters']==True:
