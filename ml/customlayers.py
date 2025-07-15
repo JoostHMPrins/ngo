@@ -49,7 +49,7 @@ def conserve_mass_and_energy(model, F, d_x, u_0_m, C_m, C, u_m_hat):
     a2[a2<0]=torch.inf
     a_plus = torch.min(a1,a2)
 
-    a = torch.ones(u_m_hat.shape[0], dtype=model.dtype, device=model.used_device)
+    a = torch.ones(u_m_hat.shape[0], dtype=model.dtype, device=model.device)
    
     a[non_dissipative] = a_plus[non_dissipative]
 
