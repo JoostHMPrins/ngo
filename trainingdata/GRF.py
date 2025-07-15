@@ -1,66 +1,35 @@
 import numpy as np
 from scipy.spatial import distance_matrix
 import opt_einsum
-from numba import njit
-
-@njit(parallel=True)
-def compute_phi_n(f_hat_i, x, mus_i, l):
-    N_points, d = x.shape
-    n_mus = mus_i.shape[0]
-
-    # Reshape for broadcasting: (N_points, 1, d)
-    x_reshaped = np.reshape(x, (N_points, 1, d))
-    mus_reshaped = np.reshape(mus_i, (1, n_mus, d))
-    l_reshaped = np.reshape(l, (1, 1, d))
-
-    # Compute squared distances
-    diff = (x_reshaped - mus_reshaped) / l_reshaped
-    sq_dist = np.sum(diff ** 2, axis=2)
-
-    # Compute RBF values and multiply
-    f_hat_i_reshaped = np.reshape(f_hat_i, (1, n_mus))
-    return np.exp(-0.5 * sq_dist) * f_hat_i_reshaped
+import jax.numpy as jnp
+from jax import jit, vmap
 
 
-@njit(parallel=True)
-def compute_grad_phi_n(f_hat_i, x, mus_i, l):
-    N_points, d = x.shape
-    n_mus = mus_i.shape[0]
+@jit
+def phi_n_jax(x, mus, f_hat, l):
+    x_scaled = x / l
+    mus_scaled = mus / l
+    r2 = jnp.sum((x_scaled[:, None, :] - mus_scaled[None, :, :])**2, axis=-1)
+    return f_hat * jnp.exp(-0.5 * r2)
 
-    x_reshaped = np.reshape(x, (N_points, 1, d))         
-    mus_reshaped = np.reshape(mus_i, (1, n_mus, d))      
-    l_reshaped = np.reshape(l, (1, 1, d))                
+@jit
+def grad_jax(x, mus, f_hat, l):
+    x_scaled = x / l
+    mus_scaled = mus / l
+    r = x_scaled[:, None, :] - mus_scaled[None, :, :]
+    r2 = jnp.sum(r**2, axis=-1)
+    phi = f_hat * jnp.exp(-0.5 * r2)
+    return jnp.sum(-r * phi[:, :, None] / l**2, axis=1)
 
-    diff = (x_reshaped - mus_reshaped) / l_reshaped      
-    sq_dist = np.sum(diff ** 2, axis=2)                  
-    phi_n = np.exp(-0.5 * sq_dist) * f_hat_i.reshape(1, n_mus)  # (N_points, n_mus)
-
-    prefactor = -diff / l_reshaped                       
-
-    phi_n_reshaped = phi_n.reshape(N_points, n_mus, 1)  # Instead of phi_n[:, :, None]
-    return np.sum(prefactor * phi_n_reshaped, axis=1)
-
-
-
-
-@njit(parallel=True)
-def compute_laplacian_phi_n(f_hat_i, x, mus_i, l):
-    N_points, d = x.shape
-    n_mus = mus_i.shape[0]
-
-    x_reshaped = np.reshape(x, (N_points, 1, d))         # (N, 1, d)
-    mus_reshaped = np.reshape(mus_i, (1, n_mus, d))      # (1, n_mus, d)
-    l_reshaped = np.reshape(l, (1, 1, d))                # (1, 1, d)
-
-    diff = (x_reshaped - mus_reshaped) / l_reshaped      # (N, n_mus, d)
-    sq_dist = np.sum(diff ** 2, axis=2)                  # (N, n_mus)
-    phi_n = np.exp(-0.5 * sq_dist) * f_hat_i.reshape(1, n_mus)  # (N, n_mus)
-
-    prefactor = (diff**2 - 1) / (l_reshaped ** 2)        # (N, n_mus, d)
-    phi_n_reshaped = phi_n.reshape(N_points, n_mus, 1)  # Instead of phi_n[:, :, None]
-
-    return np.sum(prefactor * phi_n_reshaped, axis=1)  # (N, d)
-
+@jit
+def d2dxi2_jax(x, mus, f_hat, l):
+    x_scaled = x / l
+    mus_scaled = mus / l
+    r = x_scaled[:, None, :] - mus_scaled[None, :, :]
+    r2 = jnp.sum(r**2, axis=-1)
+    phi = f_hat * jnp.exp(-0.5 * r2)
+    prefactor = (r**2 / (l**4)) - (1 / (l**2))
+    return jnp.sum(prefactor * phi[:, :, None], axis=1)
 
 
 class GRF:
@@ -80,10 +49,10 @@ class GRF:
 
     #Compute Gaussian covariance matrix cov between points
     def compute_cov(self):
-        scaled_mus = self.mus/self.l[None,None,:]
-        scaled_distance_matrix_squared = np.sum((scaled_mus[:,None,:,:] - scaled_mus[:,:, None,:])**2, axis=-1)
-        cov = np.exp(-1/2*scaled_distance_matrix_squared)
-        return cov
+        scaled_mus = self.mus / self.l[None, None, :]
+        diff = scaled_mus[:, None, :, :] - scaled_mus[:, :, None, :]
+        dist_sq = np.sum(diff**2, axis=-1)
+        return np.exp(-0.5 * dist_sq)
     
     def compute_coeffs(self):
         cov = self.compute_cov()
@@ -99,15 +68,17 @@ class GRF:
         output = self.f_hat[i,None,:]*np.exp(-1/2*np.sum(((x[:,None,:] - self.mus[i,:,:])/self.l[None,None,:])**2, axis=-1))
         return output
 
-    # def phi_n(self, i, x):
-    #     return compute_phi_n(self.f_hat[i], x, self.mus[i], self.l)
-    
     #Forward evaluation of RBF interpolated GRF
     def forward(self, i):
         def function(x):
             phi_n = self.phi_n(i, x)
             return np.sum(phi_n, axis=1)
         return function
+
+    # def forward(self, i):
+    #     def function(x):
+    #         return forward_numba(x, self.f_hat[i], self.mus[i], self.l)
+    #     return function
 
     #Pointwise forward evaluation of RBF interpolated GRF (required for Nutils)
     def forward_nutils(self, i):
@@ -126,7 +97,7 @@ class GRF:
 
     # def grad(self, i):
     #     def function(x):
-    #         return compute_grad_phi_n(self.f_hat[i], x, self.mus[i], self.l)
+    #         return grad_numba(x, self.mus[i], self.f_hat[i], self.l)
     #     return function
 
     # Laplacian of RBF interpolated GRF
@@ -139,9 +110,8 @@ class GRF:
 
     # def d2dxi2(self, i):
     #     def function(x):
-    #         return compute_laplacian_phi_n(self.f_hat[i], x, self.mus[i], self.l)
-    #     return function
-        
+    #         return d2dxi2_numba(x, self.mus[i], self.f_hat[i], self.l)
+    #     return function  
 
 class ScaledGRF:
     def __init__(self, N_samples, l, c, b):
