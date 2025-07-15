@@ -44,17 +44,17 @@ class NeuralOperator(pl.LightningModule):
         if self.hparams['modeltype']=='NN':
             self.forwardfunction = self.NN_forward
             self.simforwardfunction = self.NN_simforward
-            self.hparams['input_shape'] = (5,)+(self.hparams['Q'])
+            self.hparams['input_shape'] = (4,)+(self.hparams['Q'])
             self.hparams['output_shape'] = self.hparams['Q_L']
         if self.hparams['modeltype']=='DeepONet':
             self.forwardfunction = self.DeepONet_forward
             self.simforwardfunction = self.DeepONet_simforward
-            self.hparams['input_shape'] = (5,)+(self.hparams['Q'])
+            self.hparams['input_shape'] = (4,)+(self.hparams['Q'])
             self.hparams['output_shape'] = self.hparams['h']
         if self.hparams['modeltype']=='VarMiON':
-            self.LBranch_f = LBranchNet(self.hparams, input_dim=self.hparams['Q']**self.hparams['d'], output_dim=self.hparams['N']).to(self.device)
-            self.LBranch_eta = LBranchNet(self.hparams, input_dim=2*self.hparams['Q'], output_dim=self.hparams['N']).to(self.device)
-            self.LBranch_g = LBranchNet(self.hparams, input_dim=2*self.hparams['Q'], output_dim=self.hparams['N']).to(self.device)
+            self.LBranch_f = LBranchNet(self.hparams, input_dim=self.hparams['Q'][0]*self.hparams['Q'][1], output_dim=self.hparams['N']).to(self.device)
+            self.LBranch_eta = LBranchNet(self.hparams, input_dim=2*self.hparams['Q'][0], output_dim=self.hparams['N']).to(self.device)
+            self.LBranch_g = LBranchNet(self.hparams, input_dim=2*self.hparams['Q'][1], output_dim=self.hparams['N']).to(self.device)
             self.forwardfunction = self.VarMiON_forward
             self.simforwardfunction = self.VarMiON_simforward
             self.hparams['input_shape'] = (1,)+(self.hparams['Q'])
@@ -77,25 +77,25 @@ class NeuralOperator(pl.LightningModule):
             self.simforwardfunction = self.projection_simforward
 
     def discretize_input_functions(self, theta, f, eta_y0, eta_yL, g_x0, gr):
-        theta_d = discretize_functions(theta, self.xi_Omega)
-        theta_x0_d = discretize_functions(theta, self.xi_Gamma_x0)
-        theta_xL_d = discretize_functions(theta, self.xi_Gamma_xL)
-        f_d = discretize_functions(f, self.xi_Omega)
-        eta_y0_d = discretize_functions(eta_y0, self.xi_Gamma_y0)
-        eta_yL_d = discretize_functions(eta_yL, self.xi_Gamma_yL)
-        g_x0_d = discretize_functions(g_x0, self.xi_Gamma_x0)
-        g_xL_d = discretize_functions(gr, self.xi_Gamma_xL)
-        return theta_d, theta_x0_d, theta_xL_d, f_d, eta_y0_d, eta_yL_d, g_x0_d, g_xL_d
+        theta_q = discretize_functions(theta, self.xi_Omega)
+        theta_x0_q = discretize_functions(theta, self.xi_Gamma_x0)
+        theta_xL_q = discretize_functions(theta, self.xi_Gamma_xL)
+        f_q = discretize_functions(f, self.xi_Omega)
+        eta_y0_q = discretize_functions(eta_y0, self.xi_Gamma_y0)
+        eta_yL_q = discretize_functions(eta_yL, self.xi_Gamma_yL)
+        g_x0_q = discretize_functions(g_x0, self.xi_Gamma_x0)
+        g_xL_q = discretize_functions(gr, self.xi_Gamma_xL)
+        return theta_q, theta_x0_q, theta_xL_q, f_q, eta_y0_q, eta_yL_q, g_x0_q, g_xL_q
     
     def discretize_output_function(self, u):
-        u_d = discretize_functions(u, self.xi_Omega_L)
-        return u_d
+        u_q = discretize_functions(u, self.xi_Omega_L)
+        return u_q
 
-    def compute_F(self, theta, theta_x0, theta_xL):
+    def compute_F(self, theta_q, theta_x0_q, theta_xL_q):
         if  self.hparams['modeltype']=='data NGO':
             basis_test = self.basis_test.forward(self.xi_Omega)
-            F = opt_einsum.contract('q,qm,Nq->Nm', self.w_Omega, basis_test, theta)
-            F = F.reshape((theta.shape[0],self.hparams['h'][0],self.hparams['h'][1]))
+            F = opt_einsum.contract('q,qm,Nq->Nm', self.w_Omega, basis_test, theta_q)
+            F = F.reshape((theta_q.shape[0],self.hparams['h'][0],self.hparams['h'][1]))
         if  self.hparams['modeltype']=='model NGO' or self.hparams['modeltype']=='FEM' or self.hparams['modeltype']=='projection':
             gradbasis_test = self.basis_test.grad(self.xi_Omega)
             gradbasis_trial = self.basis_trial.grad(self.xi_Omega)
@@ -107,14 +107,14 @@ class NeuralOperator(pl.LightningModule):
             gradbasis_test_xL = self.basis_test.grad(self.xi_Gamma_xL)
             basis_trial_xL = self.basis_trial.forward(self.xi_Gamma_xL)
             gradbasis_trial_xL = self.basis_trial.grad(self.xi_Gamma_xL)
-            F = opt_einsum.contract('q,Nq,qmx,qnx->Nmn', self.w_Omega, theta, gradbasis_test, gradbasis_trial)
-            F += -opt_einsum.contract('q,qm,x,Nq,qnx->Nmn', self.w_Gamma_x0, basis_test_x0, self.n_x0, theta_x0, gradbasis_trial_x0)
-            F += -opt_einsum.contract('q,qm,x,Nq,qnx->Nmn', self.w_Gamma_xL, basis_test_xL, self.n_xL, theta_xL, gradbasis_trial_xL)
-            F += -opt_einsum.contract('q,qn,x,Nq,qmx->Nmn', self.w_Gamma_x0, basis_trial_x0, self.n_x0, theta_x0, gradbasis_test_x0)
-            F += -opt_einsum.contract('q,qn,x,Nq,qmx->Nmn', self.w_Gamma_xL, basis_trial_xL, self.n_xL, theta_xL, gradbasis_test_xL)
+            F = opt_einsum.contract('q,Nq,qmx,qnx->Nmn', self.w_Omega, theta_q, gradbasis_test, gradbasis_trial)
+            F += -opt_einsum.contract('q,qm,x,Nq,qnx->Nmn', self.w_Gamma_x0, basis_test_x0, self.n_x0, theta_x0_q, gradbasis_trial_x0)
+            F += -opt_einsum.contract('q,qm,x,Nq,qnx->Nmn', self.w_Gamma_xL, basis_test_xL, self.n_xL, theta_xL_q, gradbasis_trial_xL)
+            F += -opt_einsum.contract('q,qn,x,Nq,qmx->Nmn', self.w_Gamma_x0, basis_trial_x0, self.n_x0, theta_x0_q, gradbasis_test_x0)
+            F += -opt_einsum.contract('q,qn,x,Nq,qmx->Nmn', self.w_Gamma_xL, basis_trial_xL, self.n_xL, theta_xL_q, gradbasis_test_xL)
             if self.hparams.get('gamma_stabilization',0)!=0:
-                F += self.hparams['gamma_stabilization']*opt_einsum.contract('q,qm,Nq,qn->Nmn', self.w_Gamma_x0, basis_test_x0, theta_x0, basis_trial_x0)
-                F += self.hparams['gamma_stabilization']*opt_einsum.contract('q,qm,Nq,qn->Nmn', self.w_Gamma_xL, basis_test_xL, theta_xL, basis_trial_xL)
+                F += self.hparams['gamma_stabilization']*opt_einsum.contract('q,qm,Nq,qn->Nmn', self.w_Gamma_x0, basis_test_x0, theta_x0_q, basis_trial_x0)
+                F += self.hparams['gamma_stabilization']*opt_einsum.contract('q,qm,Nq,qn->Nmn', self.w_Gamma_xL, basis_test_xL, theta_xL_q, basis_trial_xL)
         return F
     
     def compute_F_0_A_0(self):
@@ -142,7 +142,7 @@ class NeuralOperator(pl.LightningModule):
         self.F_0 = torch.tensor(F_0, dtype=self.dtype, device=self.device)
         self.A_0 = torch.linalg.inv(self.F_0)
     
-    def compute_d(self, f, eta_y0, eta_yL, g_x0, gr):
+    def compute_d(self, f_q, eta_y0_q, eta_yL_q, g_x0_q, g_xL_q):
         basis_test = self.basis_test.forward(self.xi_Omega)
         basis_test_b = self.basis_test.forward(self.xi_Gamma_y0)
         basis_test_t = self.basis_test.forward(self.xi_Gamma_yL)
@@ -150,30 +150,34 @@ class NeuralOperator(pl.LightningModule):
         basis_test_r = self.basis_test.forward(self.xi_Gamma_xL)
         gradbasis_test_l = self.basis_test.grad(self.xi_Gamma_x0)
         gradbasis_test_r = self.basis_test.grad(self.xi_Gamma_xL)
-        d = opt_einsum.contract('q,qm,Nq->Nm', self.w_Omega, basis_test, f)
-        d += opt_einsum.contract('q,qm,Nq->Nm', self.w_Gamma_y0, basis_test_b, eta_y0)
-        d += opt_einsum.contract('q,qm,Nq->Nm', self.w_Gamma_yL, basis_test_t, eta_yL)
-        d -= opt_einsum.contract('q,x,qmx,Nq->Nm', self.w_Gamma_x0, self.n_x0, gradbasis_test_l, g_x0)
-        d -= opt_einsum.contract('q,x,qmx,Nq->Nm', self.w_Gamma_xL, self.n_xL, gradbasis_test_r, gr)
+        d = opt_einsum.contract('q,qm,Nq->Nm', self.w_Omega, basis_test, f_q)
+        d += opt_einsum.contract('q,qm,Nq->Nm', self.w_Gamma_y0, basis_test_b, eta_y0_q)
+        d += opt_einsum.contract('q,qm,Nq->Nm', self.w_Gamma_yL, basis_test_t, eta_yL_q)
+        d -= opt_einsum.contract('q,x,qmx,Nq->Nm', self.w_Gamma_x0, self.n_x0, gradbasis_test_l, g_x0_q)
+        d -= opt_einsum.contract('q,x,qmx,Nq->Nm', self.w_Gamma_xL, self.n_xL, gradbasis_test_r, g_xL_q)
         if self.hparams.get('gamma_stabilization',0)!=0:
-            d += self.hparams['gamma_stabilization']*opt_einsum.contract('q,qm,Nq->Nm', self.w_Gamma_x0, basis_test_l, g_x0)
-            d += self.hparams['gamma_stabilization']*opt_einsum.contract('q,qm,Nq->Nm', self.w_Gamma_xL, basis_test_r, gr)                 
+            d += self.hparams['gamma_stabilization']*opt_einsum.contract('q,qm,Nq->Nm', self.w_Gamma_x0, basis_test_l, g_x0_q)
+            d += self.hparams['gamma_stabilization']*opt_einsum.contract('q,qm,Nq->Nm', self.w_Gamma_xL, basis_test_r, g_xL_q)                 
         return d
     
-    def NN_forward(self, theta, f, eta_y0, eta_yL, g_x0, gr):
-        theta = theta.reshape((theta.shape[0],self.hparams['Q'],self.hparams['Q']))
-        f = f.reshape((f.shape[0],self.hparams['Q'],self.hparams['Q']))
-        eta = torch.zeros((eta_y0.shape[0],self.hparams['Q'],self.hparams['Q']), dtype=self.dtype, device=self.device)
-        eta[:,:,0] = eta_y0
-        eta[:,:,-1] = eta_yL
-        g = torch.zeros((g_x0.shape[0],self.hparams['Q'],self.hparams['Q']), dtype=self.dtype, device=self.device)
-        g[:,0,:] = g_x0
-        g[:,-1,:] = gr
-        inputfuncs = torch.stack((theta,f,eta,g), dim=1)
+    def NN_forward(self, theta_q, f_q, eta_y0_q, eta_yL_q, g_x0_q, g_xL_q):
+        theta_q = theta_q.reshape((theta_q.shape[0],)+(self.hparams['Q']))
+        f_q = f_q.reshape((f_q.shape[0],)+(self.hparams['Q']))
+        eta_y0_q = eta_y0_q.reshape((eta_y0_q.shape[0],)+(self.hparams['Q'][0],))
+        eta_yL_q = eta_yL_q.reshape((eta_yL_q.shape[0],)+(self.hparams['Q'][0],))
+        eta_q = torch.zeros((eta_y0_q.shape[0],)+(self.hparams['Q']), dtype=self.dtype, device=self.device)
+        eta_q[:,:,0] = eta_y0_q
+        eta_q[:,:,-1] = eta_yL_q
+        g_x0_q = g_x0_q.reshape((g_x0_q.shape[0],)+(self.hparams['Q'][1],))
+        g_xL_q = g_xL_q.reshape((g_xL_q.shape[0],)+(self.hparams['Q'][1],))  
+        g_q = torch.zeros((g_x0_q.shape[0],)+(self.hparams['Q']), dtype=self.dtype, device=self.device)
+        g_q[:,0,:] = g_x0_q
+        g_q[:,-1,:] = g_xL_q
+        inputfuncs = torch.stack((theta_q,f_q,eta_q,g_q), dim=1)
         if self.hparams['systemnet']==MLP:
-            inputfuncs = torch.cat((theta.flatten(-2,-1),f.flatten(-2,-1),eta_y0,eta_yL,g_x0,gr), dim=1)
-        u_hat = self.systemnet.forward(inputfuncs).reshape((theta.shape[0],self.hparams['Q_L']**self.hparams['d']))
-        return u_hat
+            inputfuncs = torch.cat((theta_q.flatten(-2,-1),f_q.flatten(-2,-1),eta_y0_q,eta_yL_q,g_x0_q,g_xL_q), dim=1)
+        u_q_hat = self.systemnet.forward(inputfuncs).reshape((theta_q.shape[0],)+(np.prod(self.hparams['Q_L']),))
+        return u_q_hat
     
     def NN_simforward(self, theta, f, eta_y0, eta_yL, g_x0, g_xL, u):
         theta_q, theta_x0_q, theta_xL_q, f_q, eta_y0_q, eta_yL_q, g_x0_q, g_xL_q = self.discretize_input_functions(theta, f, eta_y0, eta_yL, g_x0, g_xL)
@@ -186,19 +190,23 @@ class NeuralOperator(pl.LightningModule):
         u_q_hat = self.NN_forward(theta_q, f_q, eta_y0_q, eta_yL_q, g_x0_q, g_xL_q).detach().cpu().numpy()
         return u_q_hat
     
-    def DeepONet_forward(self, theta, f, eta_y0, eta_yL, g_x0, gr):
-        theta = theta.reshape((theta.shape[0],self.hparams['Q'],self.hparams['Q']))
-        f = f.reshape((f.shape[0],self.hparams['Q'],self.hparams['Q']))
-        eta = torch.zeros((eta_y0.shape[0],self.hparams['Q'],self.hparams['Q']), dtype=self.dtype, device=self.device)
-        eta[:,:,0] = eta_y0
-        eta[:,:,-1] = eta_yL
-        g = torch.zeros((g_x0.shape[0],self.hparams['Q'],self.hparams['Q']), dtype=self.dtype, device=self.device)
-        g[:,0,:] = g_x0
-        g[:,-1,:] = gr
-        inputfuncs = torch.stack((theta,f,eta,g), dim=1)
+    def DeepONet_forward(self, theta_q, f_q, eta_y0_q, eta_yL_q, g_x0_q, g_xL_q):
+        theta_q = theta_q.reshape((theta_q.shape[0],)+(self.hparams['Q']))
+        f_q = f_q.reshape((f_q.shape[0],)+(self.hparams['Q']))
+        eta_y0_q = eta_y0_q.reshape((eta_y0_q.shape[0],)+(self.hparams['Q'][0],))
+        eta_yL_q = eta_yL_q.reshape((eta_yL_q.shape[0],)+(self.hparams['Q'][0],))
+        eta_q = torch.zeros((eta_y0_q.shape[0],)+(self.hparams['Q']), dtype=self.dtype, device=self.device)
+        eta_q[:,:,0] = eta_y0_q
+        eta_q[:,:,-1] = eta_yL_q
+        g_x0_q = g_x0_q.reshape((g_x0_q.shape[0],)+(self.hparams['Q'][1],))
+        g_xL_q = g_xL_q.reshape((g_xL_q.shape[0],)+(self.hparams['Q'][1],))  
+        g_q = torch.zeros((g_x0_q.shape[0],)+(self.hparams['Q']), dtype=self.dtype, device=self.device)
+        g_q[:,0,:] = g_x0_q
+        g_q[:,-1,:] = g_xL_q
+        inputfuncs = torch.stack((theta_q,f_q,eta_q,g_q), dim=1)
         if self.hparams['systemnet']==MLP:
-            inputfuncs = torch.cat((theta.flatten(-2,-1),f.flatten(-2,-1),eta_y0,eta_yL,g_x0,gr), dim=1)
-        u_n = self.systemnet.forward(inputfuncs).reshape((theta.shape[0],self.hparams['N']))
+            inputfuncs = torch.cat((theta_q.flatten(-2,-1),f_q.flatten(-2,-1),eta_y0_q,eta_yL_q,g_x0_q,g_xL_q), dim=1)
+        u_n = self.systemnet.forward(inputfuncs).reshape((theta_q.shape[0],self.hparams['N']))
         u_hat = opt_einsum.contract('Nn,qn->Nq', u_n, self.psix)
         return u_hat
     
@@ -213,15 +221,15 @@ class NeuralOperator(pl.LightningModule):
         u_hat = self.DeepONet_forward(theta_q, f_q, eta_y0_q, eta_yL_q, g_x0_q, g_xL_q).detach().cpu().numpy()
         return u_hat
     
-    def VarMiON_forward(self, theta, f, eta_y0, eta_yL, g_x0, gr):
-        eta = torch.zeros((eta_y0.shape[0],2*eta_y0.shape[1]), dtype=self.dtype, device=self.device)
-        eta[:,:eta_y0.shape[1]] = eta_y0
-        eta[:,eta_y0.shape[1]:] = eta_yL
-        g = torch.zeros((g_x0.shape[0],2*g_x0.shape[1]), dtype=self.dtype, device=self.device)
-        g[:,:g_x0.shape[1]] = g_x0
-        g[:,g_x0.shape[1]:] = gr
-        systemnet = self.systemnet.forward(theta)
-        LBranch = self.LBranch_f.forward(f) + self.LBranch_eta.forward(eta) + self.LBranch_g.forward(g)
+    def VarMiON_forward(self, theta_q, f_q, eta_y0_q, eta_yL_q, g_x0_q, g_xL_q):
+        eta_q = torch.zeros((eta_y0_q.shape[0],2*eta_y0_q.shape[1]), dtype=self.dtype, device=self.device)
+        eta_q[:,:eta_y0_q.shape[1]] = eta_y0_q
+        eta_q[:,eta_y0_q.shape[1]:] = eta_yL_q
+        g_q = torch.zeros((g_x0_q.shape[0],2*g_x0_q.shape[1]), dtype=self.dtype, device=self.device)
+        g_q[:,:g_x0_q.shape[1]] = g_x0_q
+        g_q[:,g_x0_q.shape[1]:] = g_xL_q
+        systemnet = self.systemnet.forward(theta_q)
+        LBranch = self.LBranch_f.forward(f_q) + self.LBranch_eta.forward(eta_q) + self.LBranch_g.forward(g_q)
         u_n = opt_einsum.contract('nij,nj->ni', systemnet, LBranch)
         u_hat = opt_einsum.contract('Nn,qn->Nq', u_n, self.psix)
         return u_hat

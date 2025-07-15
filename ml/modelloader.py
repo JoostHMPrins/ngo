@@ -8,7 +8,7 @@ def loadmodelfromlabel(model, label, logdir, sublogdir, device):
             ckpt = torch.load(logdir + '/' + sublogdir + '/' + label + '/' + file,  map_location=device)
             hparams = ckpt['hparams']
             hparams['logdir'] = logdir + '/' + sublogdir + '/' + label
-            hparams['used_device'] = device
+            hparams['device'] = device
             Model = model(hparams)
             statedict = ckpt['state_dict']
             Model = Model.to(hparams['dtype'])

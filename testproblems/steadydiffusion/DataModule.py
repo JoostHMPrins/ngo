@@ -53,7 +53,7 @@ class DataModule(pl.LightningDataModule):
             self.eta_yL_q = torch.tensor(self.eta_yL_q, dtype=self.hparams['dtype'])
             self.g_x0_q = torch.tensor(self.g_x0_q, dtype=self.hparams['dtype'])
             self.g_xL_q = torch.tensor(self.g_xL_q, dtype=self.hparams['dtype']) 
-            self.u_q = torch.tensor(self.u, dtype=self.hparams['dtype'])             
+            self.u_q = torch.tensor(self.u_q, dtype=self.hparams['dtype'])             
             dataset = torch.utils.data.TensorDataset(self.theta_q, self.f_q, self.eta_y0_q, self.eta_yL_q, self.g_x0_q, self.g_xL_q, self.u_q)
         if self.hparams['modeltype']=='model NGO' or self.hparams['modeltype']=='data NGO' or self.hparams['modeltype']=='matrix data NGO':
             self.scaling = torch.tensor(self.scaling, dtype=self.hparams['dtype'])            
