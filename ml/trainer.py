@@ -16,11 +16,13 @@ def train(model, datamodule, hparams, logdir, sublogdir, label):
     #Model
     MLmodel = model(hparams)
 
+    print(MLmodel.device)
+
     #Training
     start = time.time() 
     trainer = pl.Trainer(logger=logger, 
                          accelerator='gpu', 
-                         devices=hparams['devices'],
+                         devices=[int(str(MLmodel.device).split(':')[1])],
                          strategy="ddp",
                          precision=hparams['precision'], 
                          max_epochs=hparams['epochs'], 
