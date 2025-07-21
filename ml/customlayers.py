@@ -4,7 +4,7 @@ import torch.nn.functional as F
 import numpy as np
 from joblib import Parallel, delayed
 import opt_einsum
-from numba import njit, prange
+# from numba import njit, prange
 
 
 def conserve_mass_and_energy(model, F, d_x, u_0_m, C_m, C, u_m_hat):
@@ -376,6 +376,81 @@ def rho_max_power_iteration(B, rho_0, x_0, tol, max_iterations, dtype, device):
     v = x[0] / (torch.sum(x[0] ** 2)) ** 0.5
 
     return rho, v
+
+
+
+def two_norm_power_iteration(B, norm2_0, x_0, tol, max_iterations, dtype, device):
+    """
+    Estimate the 2-norm (largest singular value) of a batch of matrices 
+    using power iteration on B^* B implicitly.
+
+    Args:
+        B : torch.Tensor of shape (N, M, K)
+            Batch of N matrices (not necessarily square).
+        norm2_0 : float
+            Initial guess for 2-norm.
+        x_0 : torch.Tensor of shape (K,)
+            Initial guess for right singular vector (normalized). Tiled across batch.
+        tol : float
+            Convergence tolerance (relative change in norm).
+        max_iterations : int
+            Maximum number of iterations.
+        dtype : torch.dtype
+            Tensor data type (e.g., torch.float32 or torch.float64).
+        device : torch.device
+            Device (e.g., torch.device('cuda') or 'cpu').
+
+    Returns:
+        norm2 : torch.Tensor of shape (N,)
+            Estimated 2-norms for each matrix.
+        v : torch.Tensor of shape (K,)
+            Approximate right singular vector for the first matrix.
+    """
+    N, M, K = B.shape
+    x = x_0 / torch.clamp(torch.linalg.norm(x_0), min=1e-7)
+    x = x.repeat(N, 1)  # Shape: (N, K)
+    norm2 = norm2_0 * torch.ones(N, dtype=dtype, device=device)
+
+    for i in range(max_iterations):
+        # 1) y = B x          shape (N, M)
+        y = torch.einsum('nij,nj->ni', B, x)
+
+        # 2) norm of y (for each matrix in batch)
+        norm_y = torch.linalg.norm(y, dim=1)
+
+        # 3) z = B^* y         shape (N, K)
+        z = torch.einsum('nij,ni->nj', B, y)
+
+        # Normalize z to get next x
+        z_norm = torch.linalg.norm(z, dim=1)
+        z_norm = torch.clamp(z_norm, min=1e-7)
+        x_new = z / z_norm[:, None]
+
+        # Update norm2 estimate
+        norm2_new = norm_y
+
+        # Relative difference for convergence check
+        reldiff = torch.abs((norm2_new - norm2) / torch.clamp(norm2, min=1e-7))
+
+        # Update norm2 and x only where not converged
+        not_converged = reldiff > tol
+        norm2[not_converged] = norm2_new[not_converged]
+        x[not_converged] = x_new[not_converged]
+
+        if torch.sum(not_converged) == 0:
+            break
+
+    print(f"Total iterations: {i+1}")
+
+    if i == max_iterations - 1:
+        print('Power iteration did not fully converge within max_iterations. Number of non-converged matrices:', torch.sum(reldiff > tol).item())
+        # Fall back to exact computation for non-converged matrices
+        norm2[not_converged] = torch.linalg.norm(B[not_converged], ord=2, dim=(1, 2))
+
+    # Return the right singular vector for the first matrix
+    v = x[0] / torch.linalg.norm(x[0])
+
+    return norm2, v
 
 
 
