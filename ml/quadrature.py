@@ -64,7 +64,7 @@ class UniformQuadrature:
 
     def compute_quadrature(self):
         grid = np.mgrid[[slice(0, 1, q * 1j) for q in self.Q]]
-        xis = np.vstack(map(np.ravel, grid)).T
+        xis = np.vstack(list(map(np.ravel, grid))).T
         ws = 1/np.prod(self.Q)*np.ones((np.prod(self.Q)))
         return ws, xis
     

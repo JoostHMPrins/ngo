@@ -314,7 +314,10 @@ class NeuralOperator(pl.LightningModule):
         A_hat = A_hat.detach().cpu().numpy()/self.hparams['Dt']
         M = np.kron(np.kron(self.M_t_psiphi_t0T, self.K_x_psiphi), self.K_y_psiphi)
         B = A_hat@M
-        criterion = np.sort(np.linalg.eigvals(B))
+        B= B[0]
+        # criterion = np.sort(np.sqrt(np.linalg.eigvals(B.T@B)))
+        criterion = np.sort(np.sqrt(np.linalg.eigvals(B)))
+        # print(two_norm_power_iteration(B=B, norm2_0=1, x_0=self.x_0, tol=1e-4, max_iterations=1000, dtype=torch.float32, device='cuda'))
         return criterion
     
     def compute_alpha(self, theta, f, eta_y0, eta_yL, g_x0, g_xL, u0, u):
@@ -571,6 +574,11 @@ class NeuralOperator(pl.LightningModule):
             B = B[:,int(A_hat.shape[1]/2):,int(A_hat.shape[2]/2):]
             scaling, v = rho_max_power_iteration(B=B, rho_0=1, x_0=self.x_0, tol=self.hparams['tol'], max_iterations=self.hparams['max_iterations'], dtype=self.dtype, device=self.device)
             scaling = torch.maximum(self.hparams['rho_max']*torch.ones_like(scaling),scaling)/self.hparams['rho_max']
+            A_hat = A_hat/scaling[:,None,None]
+        if self.hparams.get('2norm_scaling',False)==True:
+            B = A_hat@self.M
+            scaling, v = two_norm_power_iteration(B=B, norm2_0=1, x_0=self.x_0, tol=self.hparams['tol'], max_iterations=self.hparams['max_iterations'], dtype=self.dtype, device=self.device)
+            scaling = torch.maximum(self.hparams['2norm_max']*torch.ones_like(scaling),scaling)/self.hparams['2norm_max']
             A_hat = A_hat/scaling[:,None,None]
         if self.hparams.get('scaling_equivariance',False)==True:
             A_hat = A_hat/theta_bar[:,None,None]

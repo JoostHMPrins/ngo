@@ -4,9 +4,9 @@ import opt_einsum
 import sys
 sys.path.insert(0,'/home/prins/st8/prins/phd/git/ngo-pde-gk/trainingdata')
 from GRF import *
-from numba import njit
+# from numba import njit
 
-@njit
+# @njit
 def f_forward(theta, u, i, x):
     return u.grad(i)(x)[:,0] - theta.forward(i)(x)*np.sum(u.d2dxi2(i)(x)[:,1:], axis=-1) - np.sum(theta.grad(i)(x)[:,1:]*u.grad(i)(x)[:,1:], axis=-1) 
 

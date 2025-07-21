@@ -89,7 +89,7 @@ hparams['tol'] = 2e-4
 hparams['max_iterations'] = 1000
 hparams['dissipation'] = False
 hparams['alpha'] = 0
-hparams['gamma_stabilization'] = 0
+hparams['gamma_stabilization'] = 100
 hparams['massconservation'] = False
 hparams['stabilization_in_massconservation'] = False
 hparams['scaling_equivariance'] = False
@@ -101,7 +101,7 @@ sublogdir = 'tdd_modelNGOs'
 # sublogdir = 'test'
 # hparams['N_samples_train'] = 10
 # hparams['N_samples_val'] = 10
-label = 'datafreeNGO_Cs0' 
+label = 'datafreeNGO_Cs100' 
 hparams['logdir'] = logdir+'/'+sublogdir+'/'+label
 hparams['label'] = label
 

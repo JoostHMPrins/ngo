@@ -1,18 +1,18 @@
 import numpy as np
 from scipy.spatial import distance_matrix
 import opt_einsum
-import jax.numpy as jnp
-from jax import jit, vmap
+# import jax.numpy as jnp
+# from jax import jit, vmap
 
 
-@jit
+# @jit
 def phi_n_jax(x, mus, f_hat, l):
     x_scaled = x / l
     mus_scaled = mus / l
     r2 = jnp.sum((x_scaled[:, None, :] - mus_scaled[None, :, :])**2, axis=-1)
     return f_hat * jnp.exp(-0.5 * r2)
 
-@jit
+# @jit
 def grad_jax(x, mus, f_hat, l):
     x_scaled = x / l
     mus_scaled = mus / l
@@ -21,7 +21,7 @@ def grad_jax(x, mus, f_hat, l):
     phi = f_hat * jnp.exp(-0.5 * r2)
     return jnp.sum(-r * phi[:, :, None] / l**2, axis=1)
 
-@jit
+# @jit
 def d2dxi2_jax(x, mus, f_hat, l):
     x_scaled = x / l
     mus_scaled = mus / l
