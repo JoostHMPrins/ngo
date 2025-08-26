@@ -6,9 +6,6 @@ sys.path.insert(0,'/home/prins/st8/prins/phd/git/ngo-pde-gk/trainingdata')
 from GRF import *
 # from numba import njit
 
-# @njit
-def f_forward(theta, u, i, x):
-    return u.grad(i)(x)[:,0] - theta.forward(i)(x)*np.sum(u.d2dxi2(i)(x)[:,1:], axis=-1) - np.sum(theta.grad(i)(x)[:,1:]*u.grad(i)(x)[:,1:], axis=-1) 
 
 class Forcing:
     def __init__(self, theta, u):
@@ -16,14 +13,19 @@ class Forcing:
         self.theta = theta
         self.u = u
     
+    
     def forward(self, i):
         def function(x):
-            # return self.u.grad(i)(x)[:,0] -self.theta.forward(i)(x)*np.sum(self.u.d2dxi2(i)(x)[:,1:], axis=-1) - np.sum(self.theta.grad(i)(x)[:,1:]*self.u.grad(i)(x)[:,1:], axis=-1)
-            return f_forward(self.theta, self.u, i, x)
+            return self.u.grad(i)(x)[:,0] - self.theta.forward(i)(x)*np.sum(self.u.d2dxi2(i)(x)[:,1:], axis=-1) - np.sum(self.theta.grad(i)(x)[:,1:]*self.u.grad(i)(x)[:,1:], axis=-1) 
         return function
 
-def eta_forward(n, theta, u, i, x):
-    return opt_einsum.contract('i,N,Ni->N', self.n, self.theta.forward(i)(x), self.u.grad(i)(x)[:,1:])
+    # def forward(self, i):
+    #     def function(x):            
+    #         return self.u.grad_x(i,x)[:,0] - self.theta.forward_x(i,x)*np.sum(self.u.d2dxi2_x(i,x)[:,1:], axis=-1) - np.sum(self.theta.grad_x(i,x)[:,1:]*self.u.grad_x(i,x)[:,1:], axis=-1)
+    #     return function
+    # def forward_x(self, i , x):        
+    #     return u.grad_x(i,x)[:,0] - theta.forward_x(i,x)*np.sum(u.d2dxi2_x(i,x)[:,1:], axis=-1) - np.sum(theta.grad_x(i,x)[:,1:]*u.grad_x(i,x)[:,1:], axis=-1)         
+
 
 class NeumannBC:
     def __init__(self, n, theta, u):
@@ -83,6 +85,7 @@ class ManufacturedSolutionsSet:
         gls = []
         grs = []
         u0s = []
+        gradus = []
         #Lists of length scales l, scaling factors c and offsets b
         l_theta = np.random.uniform(self.l_min/np.sqrt(2),self.l_max/np.sqrt(2), size=(self.N_samples,self.d))
         c_theta = np.random.uniform(0,0.2,size=self.N_samples)
@@ -117,6 +120,7 @@ class ManufacturedSolutionsSet:
                 gls.append(gl.forward(i))
                 grs.append(gr.forward(i))
                 u0s.append(u0.forward(i))
+                gradus.append(u.grad(i))
         if self.l_min!=self.l_max:
             for i in range(self.N_samples):
                 # print(i)
@@ -138,6 +142,7 @@ class ManufacturedSolutionsSet:
                 gls.append(gl.forward(0))
                 grs.append(gr.forward(0))
                 u0s.append(u0.forward(0))
+                gradus.append(u.grad(0))
         #Save set
         self.theta = thetas
         self.u = us
@@ -147,6 +152,7 @@ class ManufacturedSolutionsSet:
         self.gl = gls
         self.gr = grs
         self.u0 = u0s
+        self.gradu = gradus
 
     def evaluate_functions_at_sensors(self):
         self.theta_sensor = np.zeros((self.N_samples,self.sensornodes.shape[0]))

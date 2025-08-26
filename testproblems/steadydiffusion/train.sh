@@ -8,11 +8,13 @@
 
 #SBATCH --mail-user=j.h.m.prins@tue.nl
 
-#SBATCH --output=log_train.txt       
+#SBATCH --output=log_train.txt    
+
+#SBATCH --time=23:59:00
 
 #SBATCH --ntasks-per-node=1
 
-#SBATCH --cpus-per-task=1
+#SBATCH --cpus-per-task=2
 
 #SBATCH --gres=gpu:1
 

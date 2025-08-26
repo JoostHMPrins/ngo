@@ -4,7 +4,6 @@ import torch
 from torch.utils.data import DataLoader
 from torch.utils.data import random_split
 import pytorch_lightning as pl
-from numba import jit
 import opt_einsum
 
 from NeuralOperator import NeuralOperator

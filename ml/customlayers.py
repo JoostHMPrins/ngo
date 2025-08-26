@@ -4,10 +4,55 @@ import torch.nn.functional as F
 import numpy as np
 from joblib import Parallel, delayed
 import opt_einsum
-# from numba import njit, prange
 
 
-def conserve_mass_and_energy(model, F, d_x, u_0_m, C_m, C, u_m_hat):
+# def conserve_mass_and_energy(model, d_x, u_0_m, C_m, C, u_m_hat):
+
+
+#     d_x = d_x#*model.hparams['Dt']
+#     C_m = C_m#*model.hparams['Dt']
+#     C = C#*model.hparams['Dt']
+#     M = model.M_rr#*model.hparams['Dt']
+
+#     CTC = opt_einsum.contract('Nn,Nn->N', C_m, C_m)
+#     CTd = opt_einsum.contract('Nn,Nn->N', C_m, d_x)
+#     uTd = opt_einsum.contract('Nn,Nn->N', u_m_hat, d_x)
+#     C_hat = opt_einsum.contract('Nn,Nn->N', u_m_hat, C_m)
+#     u_im1TMu_im1 = opt_einsum.contract('Nn,mn,Nn->N', u_0_m, M, u_0_m)
+
+#     alpha = model.hparams['alpha']
+
+#     Q = 1/2*M + alpha*model.Identity/model.hparams['Dt']
+
+#     uTQu = opt_einsum.contract('Nm,mn,Nn->N', u_m_hat, Q, u_m_hat)
+#     uTQC = opt_einsum.contract('Nm,mn,Nn->N', u_m_hat, Q, C_m)
+#     CTQu = opt_einsum.contract('Nm,mn,Nn->N', C_m, Q, u_m_hat)
+#     CTQC = opt_einsum.contract('Nn,mn,Nn->N', C_m, Q, C_m)
+    
+#     non_dissipative = uTQu > 1/2*u_im1TMu_im1 + uTd
+
+#     A = opt_einsum.contract('Nm,mn,Nn->N', u_m_hat - (C_hat/CTC)[:,None]*C_m, Q, u_m_hat - (C_hat/CTC)[:,None]*C_m)
+#     B = C/CTC*(uTQC + CTQu) - 2*C*C_hat/CTC**2*CTQC - uTd + C_hat/CTC*CTd
+#     D = (C/CTC)**2*CTQC - C/CTC*CTd - 1/2*u_im1TMu_im1
+
+#     a1 = 1/torch.clamp(2*A, min=1e-7)*(-B + torch.sqrt(B**2 - 4*A*D))
+#     a2 = 1/torch.clamp(2*A, min=1e-7)*(-B - torch.sqrt(B**2 - 4*A*D))
+
+#     a1[a1<0]=torch.inf
+#     a2[a2<0]=torch.inf
+#     a_plus = torch.min(a1,a2)
+
+#     a = torch.ones(u_m_hat.shape[0], dtype=model.dtype, device=model.device)
+#     a[non_dissipative] = a_plus[non_dissipative]
+
+#     b = C/CTC - C_hat/CTC*a
+
+#     u_m_hat = a[:,None]*u_m_hat + b[:,None]*C_m
+
+#     return u_m_hat
+
+
+def conserve_mass_and_energy(model, d_x, u_0_m, C_m, C, u_m_hat):
 
     d_x = d_x#*model.hparams['Dt']
     C_m = C_m#*model.hparams['Dt']
@@ -24,23 +69,24 @@ def conserve_mass_and_energy(model, F, d_x, u_0_m, C_m, C, u_m_hat):
 
     Q = 1/2*M + alpha*model.Identity/model.hparams['Dt']
 
-    A = opt_einsum.contract('Nm,mn,Nn->N', u_m_hat - (C_hat/CTC)[:,None]*C_m, Q, u_m_hat - (C_hat/CTC)[:,None]*C_m)
     uTQu = opt_einsum.contract('Nm,mn,Nn->N', u_m_hat, Q, u_m_hat)
     uTQC = opt_einsum.contract('Nm,mn,Nn->N', u_m_hat, Q, C_m)
     CTQu = opt_einsum.contract('Nm,mn,Nn->N', C_m, Q, u_m_hat)
     CTQC = opt_einsum.contract('Nn,mn,Nn->N', C_m, Q, C_m)
     
     non_dissipative = uTQu > 1/2*u_im1TMu_im1 + uTd
-    # print(non_dissipative)
 
-    # A = uTQu - C_hat/CTC*(uTQC + CTQu) + (C_hat/CTC)**2*CTQC
+    A = opt_einsum.contract('Nm,mn,Nn->N', u_m_hat - (C_hat/CTC)[:,None]*C_m, Q, u_m_hat - (C_hat/CTC)[:,None]*C_m)
     B = C/CTC*(uTQC + CTQu) - 2*C*C_hat/CTC**2*CTQC - uTd + C_hat/CTC*CTd
     D = (C/CTC)**2*CTQC - C/CTC*CTd - 1/2*u_im1TMu_im1
 
-    BdivA = B/torch.clamp(A, min=1e-7)
-    ADdivB2 = A*D/torch.clamp(B**2, min=1e-7)
-    a1 = -BdivA/2*(1 + torch.sqrt(1 - 4*ADdivB2))
-    a2 = -BdivA/2*(1 - torch.sqrt(1 - 4*ADdivB2))
+    # BdivA = B/torch.clamp(A, min=1e-7)
+    # ADdivB2 = A*D/torch.clamp(B**2, min=1e-7)
+    # a1 = -BdivA/2*(1 + torch.sqrt(1 - 4*ADdivB2))
+    # a2 = -BdivA/2*(1 - torch.sqrt(1 - 4*ADdivB2))
+
+    a1 = 1/torch.clamp(2*A, min=1e-7)*(-B + torch.sqrt(B**2 - 4*A*D))
+    a2 = 1/torch.clamp(2*A, min=1e-7)*(-B - torch.sqrt(B**2 - 4*A*D))
 
     # mask = torch.abs(a1) < torch.abs(a2)
     # a_plus = torch.where(mask, a1, a2)
@@ -54,7 +100,6 @@ def conserve_mass_and_energy(model, F, d_x, u_0_m, C_m, C, u_m_hat):
     a[non_dissipative] = a_plus[non_dissipative]
 
     # a[a==torch.inf] = 1
-    # print(a)
 
     b = C/CTC - C_hat/CTC*a
     # print(a[non_dissipative])
@@ -63,6 +108,69 @@ def conserve_mass_and_energy(model, F, d_x, u_0_m, C_m, C, u_m_hat):
     u_m_hat = a[:,None]*u_m_hat + b[:,None]*C_m
 
     return u_m_hat
+
+
+def conserve_energy(model, F, d_x, u_0_m, u_m_hat):
+
+    M = model.M_rr
+
+    uTd = opt_einsum.contract('Nn,Nn->N', u_m_hat, d_x)
+    uTMu = opt_einsum.contract('Nn,mn,Nn->N', u_m_hat, M, u_m_hat)
+    uTu = opt_einsum.contract('Nn,Nn->N', u_m_hat, u_m_hat)
+    u_im1TMu_im1 = opt_einsum.contract('Nn,mn,Nn->N', u_0_m, M, u_0_m)
+    
+    non_dissipative = 1/2*uTMu - 1/2*u_im1TMu_im1 > -model.hparams['alpha']/model.hparams['Dt']*uTu + uTd
+
+    A = 1/2*uTMu + model.hparams['alpha']/model.hparams['Dt']*uTu
+    B = -uTd
+    C = -1/2*u_im1TMu_im1
+
+    a1 = 1/torch.clamp(2*A, min=1e-7)*(-B + torch.sqrt(B**2 - 4*A*C))
+    a2 = 1/torch.clamp(2*A, min=1e-7)*(-B - torch.sqrt(B**2 - 4*A*C))
+
+    a1[a1<0]=torch.inf
+    a2[a2<0]=torch.inf
+    a_plus = torch.min(a1,a2)
+
+    a = torch.ones(u_m_hat.shape[0], dtype=model.dtype, device=model.device)
+   
+    a[non_dissipative] = a_plus[non_dissipative]
+
+    u_m_hat = a[:,None]*u_m_hat
+
+    return u_m_hat
+
+
+def M_norm_scaling(model, A_hat, u_0_m):
+
+    M_lr = torch.tensor(model.M_lr, dtype=model.dtype, device=model.device)
+    M_rr = torch.tensor(model.M_rr, dtype=model.dtype, device=model.device)
+
+    B = A_hat@M_lr
+    u_m_hat = opt_einsum.contract('Nmn,Nn->Nm', B, u_0_m)
+
+    uTMu = opt_einsum.contract('Nn,mn,Nn->N', u_m_hat, M_rr, u_m_hat)
+    uTu = opt_einsum.contract('Nn,Nn->N', u_m_hat, u_m_hat)
+    u_im1TMu_im1 = opt_einsum.contract('Nn,mn,Nn->N', u_0_m, M_rr, u_0_m)
+    
+    non_dissipative = 1/2*uTMu - 1/2*u_im1TMu_im1 > -model.hparams['alpha']*uTu#/model.hparams['Dt']
+
+    A = 1/2*uTMu + model.hparams['alpha']*uTu#/model.hparams['Dt']
+    C = -1/2*u_im1TMu_im1
+
+    a_plus = torch.sqrt(-C)/torch.clamp(torch.sqrt(A), min=1e-7)
+
+    a = torch.ones(u_m_hat.shape[0], dtype=model.dtype, device=model.device)
+   
+    a[non_dissipative] = a_plus[non_dissipative]
+
+    # print(a)
+
+    A_hat = a[:,None,None]*torch.clone(A_hat)
+
+    return A_hat
+
+
 
 class ConvNd(nn.Module):
     def __init__(self, in_channels, out_channels, kernel_size, stride, bias, padding=0, dilation=1):
@@ -167,11 +275,11 @@ def balance_num_trainable_params(model, N_w):
 
 # @njit(parallel=True)
 def discretize_functions(f_list, x):
-    f_discretized = Parallel(n_jobs=28)(delayed(f)(x) for f in f_list)
+    f_discretized = Parallel(n_jobs=-1)(delayed(f)(x) for f in f_list)
     f_discretized = np.array(f_discretized)
     # f_discretized = np.zeros((len(f_list), x.shape[0]))
-    # for i in prange(len(f_list)):
-    #     print(i)
+    # for i in range(len(f_list)):
+    #     # print(i)
     #     f_discretized[i] = f_list[i](x)
     return f_discretized
 
@@ -379,7 +487,7 @@ def rho_max_power_iteration(B, rho_0, x_0, tol, max_iterations, dtype, device):
 
 
 
-def two_norm_power_iteration(B, norm2_0, x_0, tol, max_iterations, dtype, device):
+def two_norm_power_iteration(B, norm2_0, x_0, tol, max_iterations, dtype, device, model):
     """
     Estimate the 2-norm (largest singular value) of a batch of matrices 
     using power iteration on B^* B implicitly.
@@ -407,9 +515,13 @@ def two_norm_power_iteration(B, norm2_0, x_0, tol, max_iterations, dtype, device
             Approximate right singular vector for the first matrix.
     """
     N, M, K = B.shape
+
+    norm2 = norm2_0 * torch.ones(N, dtype=dtype, device=device)
+
+    # norm2 = norm2 + x_0.T @ model.C_0 @ model.M_rr22 @ (B - model.C_0) @ x_0
+
     x = x_0 / torch.clamp(torch.linalg.norm(x_0), min=1e-7)
     x = x.repeat(N, 1)  # Shape: (N, K)
-    norm2 = norm2_0 * torch.ones(N, dtype=dtype, device=device)
 
     for i in range(max_iterations):
         # 1) y = B x          shape (N, M)
@@ -434,8 +546,10 @@ def two_norm_power_iteration(B, norm2_0, x_0, tol, max_iterations, dtype, device
 
         # Update norm2 and x only where not converged
         not_converged = reldiff > tol
-        norm2[not_converged] = norm2_new[not_converged]
-        x[not_converged] = x_new[not_converged]
+        # norm2[not_converged] = norm2_new[not_converged]
+        # x[not_converged] = x_new[not_converged]
+        x = torch.where(not_converged[:, None], x_new, x)
+        norm2 = torch.where(not_converged, norm2_new, norm2)
 
         if torch.sum(not_converged) == 0:
             break

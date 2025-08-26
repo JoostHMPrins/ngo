@@ -76,6 +76,7 @@ class ManufacturedSolutionsSet:
         gls = []
         grs = []
         u0s = []
+        forcings = []
         #Lists of length scales l, scaling factors c and offsets b
         l_theta = np.random.uniform(self.l_min/np.sqrt(2),self.l_max/np.sqrt(2), size=(self.N_samples,self.d))
         c_theta = np.random.uniform(0,0.2,size=self.N_samples)
@@ -95,6 +96,7 @@ class ManufacturedSolutionsSet:
             theta = ScaledGRF(N_samples=self.N_samples, l=self.l_min, c=c_theta, b=b_theta)
             u = ScaledGRF(N_samples=self.N_samples, l=self.l_min, c=c_u, b=b_u)
             f = Forcing(theta, u)
+            forcings.append(f)
             etab = NeumannBC(n_b, theta, u)
             etat = NeumannBC(n_t, theta, u)
             gl = DirichletBC(theta, u)
@@ -140,6 +142,8 @@ class ManufacturedSolutionsSet:
         self.gl = gls
         self.gr = grs
         self.u0 = u0s
+
+        self.forcings = forcings
 
     def evaluate_functions_at_sensors(self):
         self.theta_sensor = np.zeros((self.N_samples,self.sensornodes.shape[0]))

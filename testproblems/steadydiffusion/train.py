@@ -26,7 +26,7 @@ hparams['metric'] = weightedrelativeL2
 hparams['optimizer'] = torch.optim.Adam
 hparams['learning_rate'] = 1e-3
 hparams['batch_size'] = 100
-hparams['epochs'] = 20000
+hparams['epochs'] = 5000
 
 #Bases
 hparams['h'] = (10,10) #Number of basis functions per dimension
@@ -38,15 +38,15 @@ hparams['test_bases'] = [BSplineBasis1D(h=hparams['h'][0], p=hparams['p'][0], C=
 hparams['trial_bases'] = hparams['test_bases']
 
 #Quadrature
-hparams['quadrature'] = 'uniform' #Quadrature rule, either "Gauss-Legendre" or "uniform" (for FNO)
+hparams['quadrature'] = 'Gauss-Legendre' #Quadrature rule, either "Gauss-Legendre" or "uniform" (for FNO)
 hparams['n_elements'] = (3,3) #Number of elements of the quadrature grid
-hparams['Q'] = (100,100) #Number of quadrature points per dimension (for all elements, not per element)
-hparams['quadrature_L'] = 'uniform' #Loss quadrature rule, either "Gauss-Legendre" or "uniform" (for FNO)
+hparams['Q'] = (99,99) #Number of quadrature points per dimension (for all elements, not per element)
+hparams['quadrature_L'] = 'Gauss-Legendre' #Loss quadrature rule, either "Gauss-Legendre" or "uniform" (for FNO)
 hparams['n_elements_L'] = (3,3) #Number of elements of the loss quadrature grid
-hparams['Q_L'] = (100,100) #Number of loss quadrature points per dimension (for all elements, not per element)
+hparams['Q_L'] = (99,99) #Number of loss quadrature points per dimension (for all elements, not per element)
 
 #System net
-hparams['modeltype'] = 'NN' #Options: "NN" for bare NN, "DeepONet", "VarMiON", "data NGO", "model NGO"
+hparams['modeltype'] = 'model NGO' #Options: "NN" for bare NN, "DeepONet", "VarMiON", "data NGO", "model NGO"
 hparams['systemnet'] = CNN #See systemnets.py for the options
 hparams['N_w'] = 30000 #Number of trainable parameters (upper bound, not exact)
 hparams['skipconnections'] = True #In case of a symmetric CNN -> U-Net
@@ -54,20 +54,20 @@ hparams['kernel_sizes'] = [2,2,5,5,5,5,2,2] #In case of a CNN
 # hparams['kernel_sizes'] = [10,1,2,5,5,2,1,1] #In case of a CNN
 # hparams['kernel_sizes'] = [2,2,5,5,5,5,2,2] #In case of a CNN
 hparams['bottleneck_size'] = 20 #MLP bottleneck size in case of a CNN (uses an MLP connection in the bottleneck)
-hparams['outputactivation'] = None #nn.Tanhshrink() #For the systemnet
+hparams['outputactivation'] = nn.Tanhshrink() #For the systemnet
 
 #Inductive bias
 hparams['gamma_stabilization'] = 0 #Stabilization constant for the system matrix
-hparams['Neumannseries'] = False
-hparams['Neumannseries_order'] = None
-hparams['scale_equivariance'] = False 
+hparams['Neumannseries'] = True
+hparams['Neumannseries_order'] = 1
+hparams['scale_equivariance'] = False
 
 logdir = '../../../../nnlogs' #Location for the tensorboard log files
-sublogdir = 'steadydiffusion' #Folder name in the "logs" directory
+sublogdir = 'steadydiffusion_modelNGOs' #Folder name in the "logs" directory
 # sublogdir = 'test'
 # hparams['N_samples_train'] = 10
 # hparams['N_samples_val'] = 10
-label = 'NN' #Give your model a name
+label = 'modelNGO_Neumann2' #Give your model a name
 hparams['label'] = label
 
 model = NeuralOperator

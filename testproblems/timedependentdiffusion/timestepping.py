@@ -44,7 +44,7 @@ FNO = loadmodelfromlabel(model=NeuralOperator, label='FNO', logdir=logdir, sublo
 
 DeepONet = loadmodelfromlabel(model=NeuralOperator, label='DeepONet', logdir=logdir, sublogdir=sublogdir, device=device)
 
-VarMiON = loadmodelfromlabel(model=NeuralOperator, label='VarMiON2', logdir=logdir, sublogdir=sublogdir, device=device)
+VarMiON = loadmodelfromlabel(model=NeuralOperator, label='VarMiON', logdir=logdir, sublogdir=sublogdir, device=device)
 
 dataNGO = loadmodelfromlabel(model=NeuralOperator, label='dataNGO', logdir=logdir, sublogdir=sublogdir, device=device)
 
@@ -159,6 +159,6 @@ plt.legend(fontsize=10, loc='upper right', ncols=2)
 # legend2 = ax.legend(handles=plots[1:],fontsize=10, ncols=2, loc='lower right')
 # plt.gca().add_artist(legend2)
 
-plt.savefig("errorsovertime.svg", bbox_inches='tight')#, transparent=True)
+plt.savefig("errorsovertime_ood.svg", bbox_inches='tight')#, transparent=True)
 
 plt.show()

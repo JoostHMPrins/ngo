@@ -29,7 +29,7 @@ hparams['variables'] = ['t','x','x']
 hparams['d'] = len(hparams['variables'])
 hparams['l_min'] = [0.5,0.5,0.5]
 hparams['l_max'] = [1,1,1]
-hparams['project_materialparameters'] = True
+hparams['project_materialparameters'] = False
 hparams['output_coefficients'] = True
 hparams['project_initialcondition'] = False
 
@@ -37,15 +37,15 @@ hparams['project_initialcondition'] = False
 hparams['dtype'] = torch.float32
 hparams['precision'] = 32
 hparams['device'] = 'cuda'
-hparams['solution_loss'] = None #relativeL2_coefficients #weightedrelativeL2
-hparams['matrix_loss'] = relativematrixnorm
+hparams['solution_loss'] = relativeL2_coefficients #weightedrelativeL2
+hparams['matrix_loss'] = None #relativematrixnorm
 hparams['metric'] = relativeL2_coefficients #weightedrelativeL2
 hparams['optimizer1'] = torch.optim.Adam
 hparams['optimizer2'] = torch.optim.LBFGS
 hparams['switch_threshold'] = None
 hparams['learning_rate'] = 1e-3
 hparams['batch_size'] = 100
-hparams['epochs'] = 5000
+hparams['epochs'] = 20000
 
 #Bases
 hparams['h'] = (2,10,10)
@@ -68,8 +68,8 @@ hparams['n_elements_L'] = (1,3,3) #max(int((hparams['h'][0] - 1)/hparams['p']), 
 hparams['Q_L'] = (2,99,99) #33*hparams['n_elements_L']
 
 #System net'
-hparams['modeltype'] = 'model NGO'
-hparams['systemnet'] = CNN
+hparams['modeltype'] = 'data NGO'
+hparams['systemnet'] = CNN_3dto2d
 hparams['N_w'] = 30000
 hparams['bias'] = False
 hparams['skipconnections'] = True
@@ -77,31 +77,32 @@ hparams['skipconnections'] = True
 # hparams['kernel_sizes'] = [(1,10,10),(1,1,1),(1,2,2),(2,5,5),(2,5,5),(1,2,2),(1,1,1),(1,1,1)]
 # hparams['kernel_sizes'] = [(1,1,1),(1,1,1),(1,1,1),(2,5,5),(5,5),(2,2),(1,1),(20,20)]
 # hparams['kernel_sizes'] = [(1,1,1),(1,1,1),(1,1,1),(2,5,5),(5,5),(1,1),(1,1),(40,40)]
-# hparams['kernel_sizes'] = [(1,1,1),(1,1,1),(1,2,2),(2,5,5),(5,5),(2,2),(1,1),(20,20)]
-hparams['kernel_sizes'] = [2,2,5,10,10,5,2,2]
+hparams['kernel_sizes'] = [(1,1,1),(1,1,1),(1,2,2),(2,5,5),(5,5),(2,2),(1,1),(20,20)]
+# hparams['kernel_sizes'] = [2,2,5,10,10,5,2,2]
 hparams['bottleneck_size'] = 20
-hparams['outputactivation'] = nn.Tanhshrink()
+hparams['outputactivation'] = None # nn.Tanhshrink()
 
 #Additional inductive bias
-hparams['spectral_radius_scaling'] = False
-hparams['rho_max'] = 0.8
-hparams['tol'] = 2e-4
+hparams['Mnorm_scaling'] = False
+hparams['Mnorm_max'] = 0.8
+hparams['tol'] = 1e-3
 hparams['max_iterations'] = 1000
-hparams['dissipation'] = False
+hparams['dissipation'] = True
 hparams['alpha'] = 0
 hparams['gamma_stabilization'] = 100
-hparams['massconservation'] = False
+hparams['massconservation'] = True
 hparams['stabilization_in_massconservation'] = False
 hparams['scaling_equivariance'] = False
-hparams['Neumannseries'] = True
-hparams['Neumannseries_order'] = 1
+hparams['Neumannseries'] = False
+hparams['Neumannseries_order'] = 0
+hparams['PD'] = False
 
 logdir = '../../../../nnlogs'
-sublogdir = 'tdd_modelNGOs'
+sublogdir = 'tdd_dataNGOs'
 # sublogdir = 'test'
-# hparams['N_samples_train'] = 10
-# hparams['N_samples_val'] = 10
-label = 'datafreeNGO_Cs100' 
+# hparams['N_samples_train'] = 100
+# hparams['N_samples_val'] = 100
+label = 'dataNGO_S_M_E' 
 hparams['logdir'] = logdir+'/'+sublogdir+'/'+label
 hparams['label'] = label
 

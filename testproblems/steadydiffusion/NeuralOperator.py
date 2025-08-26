@@ -35,8 +35,8 @@ class NeuralOperator(pl.LightningModule):
             self.basis_test = BSplineInterpolatedPOD2D(N_samples=self.hparams['N_samples_train'], variables=hparams['variables'], l_min=self.hparams['l_min'], l_max=self.hparams['l_max'], w=self.w_Omega, xi=self.xi_Omega, N=self.hparams['N'], device=self.device)
             self.basis_trial = BSplineInterpolatedPOD2D(N_samples=self.hparams['N_samples_train'], variables=hparams['variables'], l_min=self.hparams['l_min'], l_max=self.hparams['l_max'], w=self.w_Omega, xi=self.xi_Omega, N=self.hparams['N'], device=self.device)
         #Relevant matrices
-        if self.hparams['Neumannseries']==True:
-            self.compute_F_0_A_0()
+        # if self.hparams['Neumannseries']==True:
+        self.compute_F_0_A_0()
         #Identity
         self.Identity = torch.eye(self.hparams['N'], dtype=self.dtype, device=self.device)
 
@@ -305,7 +305,7 @@ class NeuralOperator(pl.LightningModule):
         return u_hat
     
     def projection_simforward(self, theta, f, eta_y0, eta_yL, g_x0, g_xL, u):
-        u_hat = self.projection_forward(u)
+        u_hat = self.projection_forward(u).detach().cpu().numpy()
         return u_hat
     
     def forward(self, *args):
@@ -316,6 +316,19 @@ class NeuralOperator(pl.LightningModule):
         self.psix = torch.tensor(self.basis_trial.forward(x), dtype=self.dtype, device=self.device)
         u_hat = self.simforwardfunction(theta, f, eta_y0, eta_yL, g_x0, g_xL, u)
         return u_hat
+
+    def Neumann_criterion(self, theta):
+        theta_q = discretize_functions(theta, self.xi_Omega)
+        theta_x0_q = discretize_functions(theta, self.xi_Gamma_x0)
+        theta_xL_q = discretize_functions(theta, self.xi_Gamma_xL)
+        F = torch.tensor(self.compute_F(theta_q, theta_x0_q, theta_xL_q), dtype=self.hparams['dtype'], device=self.device)
+        if self.hparams.get('scaling_equivariance',False)==True:
+            scaling = torch.tensor(torch.sum(self.w_Omega[None,:]*theta_q, axis=-1), dtype=self.hparams['dtype'], device=self.device)
+            F = F/scaling[:,None,None]
+        T1 = -F@self.A_0 + self.Identity
+        eigvals = torch.linalg.eigvals(T1)
+        spectralradius = torch.amax(torch.real((eigvals*torch.conj(eigvals))**(1/2)), dim=-1)
+        return spectralradius
     
     def compute_quadrature(self):
         #Quadrature
