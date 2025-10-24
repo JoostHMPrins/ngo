@@ -6,50 +6,6 @@ import jax
 import jax.numpy as jnp
 from jax import jit, vmap
 
-
-@jax.jit
-def phi_n_jax(x, mus, f_hat, l):
-    x_scaled = x / l
-    mus_scaled = mus / l
-    r2 = jnp.sum((x_scaled[:, None, :] - mus_scaled[None, :, :])**2, axis=-1)
-    return f_hat * jnp.exp(-0.5 * r2)
-
-@jax.jit
-def grad_jax(x, mus, f_hat, l):
-    x_scaled = x / l
-    mus_scaled = mus / l
-    r = x_scaled[:, None, :] - mus_scaled[None, :, :]
-    r2 = jnp.sum(r**2, axis=-1)
-    phi = f_hat * jnp.exp(-0.5 * r2)
-    return jnp.sum(-r * phi[:, :, None] / l**2, axis=1)
-
-@jax.jit
-def d2dxi2_jax(x, mus, f_hat, l):
-    x_scaled = x / l
-    mus_scaled = mus / l
-    r = x_scaled[:, None, :] - mus_scaled[None, :, :]
-    r2 = jnp.sum(r**2, axis=-1)
-    phi = f_hat * jnp.exp(-0.5 * r2)
-    prefactor = (r**2 / (l**4)) - (1 / (l**2))
-    return jnp.sum(prefactor * phi[:, :, None], axis=1)
-
-@jax.jit
-def phi_n_jit(f_hat, mus, l, i, x):
-    output = f_hat[i,None,:]*jnp.exp(-1/2*jnp.sum(((x[:,None,:] - mus[i,:,:])/l[None,None,:])**2, axis=-1))
-    return output
-
-@jax.jit
-def grad_x_jit(f_hat, mus, l, i, x):
-    phi_n = phi_n_jit(f_hat, mus, l, i, x)
-    prefactor = -1/(l[None,None,:]**2)*(x[:,None,:] - mus[i,:,:])
-    return jnp.sum(prefactor*phi_n[:,:,None], axis=1)
-
-@jax.jit
-def d2dxi2_jit(f_hat, mus, l, i, x):
-    phi_n = phi_n_jit(f_hat, mus, l, i, x)
-    prefactor = (x[:,None,:] - mus[i,:,:])**2/l[None,None,:]**4 - 1/l[None,None,:]**2
-    return jnp.sum(prefactor*phi_n[:,:,None], axis=1)
-
 class GRF:
     def __init__(self, N_samples, l):
         super().__init__()
