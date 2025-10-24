@@ -1,188 +1,267 @@
-# import functools
+# # Copyright 2025 Joost Prins
+
+# # 3rd Party
 # import numpy as np
-# import scipy
+# import scipy.spatial as spsp
+# import opt_einsum
 
 
-# def generate_GRF_parameters(N_samples, l, c_min, c_max, b_min, b_max):
+# class GRF:
 #     """
-#     Generate parameters for a Gaussian Random Field (GRF).
-#     Args:
-#         N_samples: Number of samples to generate.
-#         l: Length scale of the GRF (list or array).
-#         c_min: Minimum value for the scaling coefficients.
-#         c_max: Maximum value for the scaling coefficients.
-#         b_min: Minimum value for the translation coefficients.
-#         b_max: Maximum value for the translation coefficients.
-#     Returns:
-#         A tuple containing:
-#             - f_n: Coefficients of the GRF. Shape: (N_samples, n_mus).
-#             - mus: Locations of the GRF samples. Shape: (N_samples, n_mus, d).
-#             - l: Length scale of the GRF. Shape: (d,).
-#             - c: Scaling coefficients. Shape: (N_samples,).
-#             - b: Translation coefficients. Shape: (N_samples,).
+#     Class to generate Gaussian Random Fields (GRFs).
+
+#     Attributes:
+#         N_samples (int): Number of GRF samples.
+#         l (np.ndarray): Length scale of GRF, shape (d,).
+#         d (int): Dimensionality of GRF.
+#         n_mus (int): Number of GRF sample locations per volume element 1/l^d.
+#         mus (np.ndarray): Sample locations, shape (n_mus, d).
+#         f_hat (np.ndarray): RBF interpolation coefficients, shape (N_samples, n_mus).
 #     """
-#     l = np.array(l)  # Length scale of GRF
-#     d = len(l)  # Dimensionality of GRF
-#     n_mus = np.array(np.ceil(1 / np.prod(l)), int)  # Number of GRF sample locations
-#     mus = np.random.uniform(size=(N_samples, n_mus, d))
 
-#     # key = jax.random.PRNGKey(0)
-#     # keys = jax.random.split(key, N_samples)
-#     # mus = np.stack([jax.random.uniform(k, shape=(n_mus, d)) for k in keys])
+#     def __init__(self, N_samples, l):
+#         """
+#         Initialize the GRF class.
 
-#     scaled_mus = mus / l[None, None, :]  # Scale mus by length scale
-#     diff = scaled_mus[:, None, :, :] - scaled_mus[:, :, None, :]  # Compute pairwise differences
-#     dist_sq = np.sum(diff**2, axis=-1)  # Compute squared distances
-#     cov = np.exp(-0.5 * dist_sq)  # Compute Gaussian covariance matrix
-#     L = np.linalg.cholesky(cov)  # Cholesky decomposition
-#     z = np.random.normal(size=(N_samples, n_mus))  # Generate random samples
-#     f = np.einsum('Nij,Nj->Ni', L, z, optimize=True)  # Sample from the GRF
-#     L_inv = np.linalg.inv(L)
-#     cov_inv = np.einsum('Nij,Njk->Nik', L_inv.transpose(0, 2, 1), L_inv, optimize=True)  # Inverse covariance
-#     f_n = np.einsum('Nij,Nj->Ni', cov_inv, f, optimize=True)  # Compute coefficients
-#     c = np.random.uniform(c_min, c_max, size=N_samples)  # Random scaling coefficients
-#     b = np.random.uniform(b_min, b_max, size=N_samples)  # Random translation coefficients
-#     l = np.tile(l,(N_samples, 1)) # Shape (N_samples, d) for broadcasting
-#     GRFparams = f_n, mus, l, c, b
-#     return GRFparams
+#         Args:
+#             N_samples (int): Number of GRF samples.
+#             l (list or np.ndarray): Length scale of GRF, shape (d,).
+#         """
+#         super().__init__()
+#         self.N_samples = N_samples 
+#         self.l = np.array(l)
+#         self.d = len(l)
+#         # self.n_mus = int(max(10,1/np.prod(self.l)))
+#         self.n_mus = int(max(10,1/np.prod(self.l)))
+#         self.mus = self.compute_mus()
+#         self.f_hat = self.compute_RBFintcoeffs()
+#         self.mus = np.array(self.mus)
 
-# def GRFs_forward(GRFparams, x):
-#     """
-#     Evaluate Gaussian Random Fields on a shared set of query points.
+#     def compute_mus(self):
+#         """
+#         Sample random points on the unit square.
+
+#         Returns:
+#             np.ndarray: Sample locations, shape (n_mus, d).
+#         """
+#         mus = np.random.uniform(0,1,size=(self.n_mus,self.d))
+#         return mus
+
+#     def compute_cov(self):
+#         """
+#         Compute Gaussian covariance matrix between points.
+
+#         Returns:
+#             np.ndarray: Covariance matrix, shape (n_mus, n_mus).
+#         """
+#         l = self.l
+#         cov = np.exp(-1/2*spsp.distance_matrix(self.mus/l[None,:], self.mus/l[None,:], p=2)**2)
+#         return cov
     
-#     Args:
-#         GRFparams: Tuple (f_n, mus, l, c, b)
-#             - f_n: (N_samples, n_mus)
-#             - mus: (N_samples, n_mus, d)
-#             - l: (N_samples,d,)
-#             - c: (N_samples,)
-#             - b: (N_samples,)
-#         x: (N_points, d)
-    
-#     Returns:
-#         GRF evaluations: (N_samples, N_points)
-#     """
-#     f_n, mus, l, c, b = GRFparams
-#     N_samples, n_mus, d = mus.shape
-#     N_points = x.shape[0]
-#     # Compute differences: (N_samples, N_points, n_mus, d)
-#     diff = (x[None, :, None, :] - mus[:, None, :, :]) / l[:, None, None, :]
-#     # Basis functions: (N_samples, N_points, n_mus)
-#     phi_n = np.exp(-0.5 * np.sum(diff**2, axis=-1))
-#     # Weighted sum with coefficients: (N_samples, N_points)
-#     f = np.einsum("Nn,Nqn->Nq", f_n, phi_n, optimize=True)
-#     # Scale and shift
-#     return c[:, None] * f + b[:, None]
+#     def compute_GRFpoints(self, cov):
+#         """
+#         Sample from a multivariate Gaussian with covariance cov.
 
-# def GRFs_grad(GRFparams, x):
-#     """
-#     Evaluate gradient of Gaussian Random Fields at shared query points.
-    
-#     Args:
-#         GRFparams: Tuple (f_n, mus, l, c, b)
-#             - f_n: (N_samples, n_mus)
-#             - mus: (N_samples, n_mus, d)
-#             - l: (d,)
-#             - c: (N_samples,)
-#             - b: (N_samples,)
-#         x: (N_points, d)
-    
-#     Returns:
-#         Gradients: (N_samples, N_points, d)
-#     """
-#     f_n, mus, l, c, b = GRFparams
-#     # Differences: (N_samples, N_points, n_mus, d)
-#     diff = (x[None, :, None, :] - mus[:, None, :, :]) / l[:, None, None, :]
-#     # Basis functions: (N_samples, N_points, n_mus)
-#     phi = np.exp(-0.5 * np.sum(diff**2, axis=-1))
-#     # Prefactor for derivative: (N_samples, N_points, n_mus, d)
-#     prefactor = -diff  / l[:, None, None, :]
-#     # Gradient contributions: (N_samples, N_points, n_mus, d)
-#     grad_terms = prefactor * phi[:, :, :, None]
-#     # Weighted sum: (N_samples, N_points, d)
-#     grad = np.einsum("Nn,Nqni->Nqi", f_n, grad_terms, optimize=True)
-#     return c[:, None, None] * grad
+#         Args:
+#             cov (np.ndarray): Covariance matrix, shape (n_mus, n_mus).
 
-# def GRFs_d2dxi2(GRFparams, x):
-#     """
-#     Evaluate the second derivative of the Gaussian Random Field w.r.t. each dimension.
+#         Returns:
+#             np.ndarray: Sampled GRF points, shape (N_samples, n_mus).
+#         """
+#         f = np.random.multivariate_normal(np.zeros(self.n_mus), cov=cov, size=self.N_samples)
+#         return f
     
-#     Args:
-#         GRFparams: Tuple (f_n, mus, l, c, b)
-#             - f_n: (N_samples, n_mus)
-#             - mus: (N_samples, n_mus, d)
-#             - l: (d,)
-#             - c: (N_samples,)
-#             - b: (N_samples,)
-#         x: (N_points, d)
+#     def compute_RBFintcoeffs(self):
+#         """
+#         Interpolate the GRF with Gaussian RBFs.
+
+#         Returns:
+#             np.ndarray: RBF interpolation coefficients, shape (N_samples, n_mus).
+#         """
+#         cov = self.compute_cov()
+#         f = self.compute_GRFpoints(cov)
+#         cov = np.array(cov)
+#         cov_inv = np.linalg.inv(cov)
+#         f = np.array(f)
+#         f_hat = opt_einsum.contract('ij,nj->ni', cov_inv, f)
+#         return f_hat
     
-#     Returns:
-#         Second derivatives: (N_samples, N_points, d)
+#     def phi_n(self, i, x):
+#         """
+#         Compute the RBF values at points x.
+
+#         Args:
+#             i (int): Index of the sample.
+#             x (np.ndarray): Input points, shape (N_points, d).
+
+#         Returns:
+#             np.ndarray: RBF values, shape (N_points, n_mus).
+#         """
+#         output = self.f_hat[i,None,:]*np.exp(-1/2*np.sum(((x[:,None,:] - self.mus[None,:,:])/self.l[None,None,:])**2, axis=-1))
+#         return output
+    
+#     def forward(self, i):
+#         """
+#         Forward evaluation of RBF interpolated GRF.
+
+#         Args:
+#             i (int): Index of the sample.
+
+#         Returns:
+#             function: A function that computes the GRF at a given point x.
+#         """
+#         def function(x):
+#             """ 
+#             Args:
+#                 x (np.ndarray): Input points, shape (N_points, d).
+
+#             Returns:
+#                 np.ndarray: GRF values, shape (N_points,).
+#             """
+#             phi_n = self.phi_n(i, x)
+#             return np.sum(phi_n, axis=1)
+#         return function
+    
+#     def grad(self, i):
+#         """
+#         Gradient of RBF interpolated GRF.
+
+#         Args:
+#             i (int): Index of the sample.
+
+#         Returns:
+#             function: A function that computes the gradient of the GRF at a given point x.
+#         """
+#         def function(x):
+#             """
+#             Args:
+#                 x (np.ndarray): Input points, shape (N_points, d).
+
+#             Returns:
+#                 np.ndarray: Gradient of the GRF, shape (N_points, d).
+#             """
+#             phi_n = self.phi_n(i, x)
+#             prefactor = -1/(self.l[None,None,:]**2)*(x[:,None,:] - self.mus[None,:,:])
+#             return np.sum(prefactor*phi_n[:,:,None], axis=1)
+#         return function
+
+#     def d2dxi2(self, i):
+#         """
+#         Laplacian of RBF interpolated GRF.
+
+#         Args:
+#             i (int): Index of the sample.
+
+#         Returns:
+#             function: A function that computes the Laplacian of the GRF at a given point x.
+#         """
+#         def function(x):
+#             """
+#             Args:
+#                 x (np.ndarray): Input points, shape (N_points, d).
+
+#             Returns:
+#                 np.ndarray: Laplacian of the GRF, shape (N_points,).
+#             """
+#             phi_n = self.phi_n(i, x)
+#             prefactor = (x[:,None,:] - self.mus[None,:,:])**2/self.l[None,None,:]**4 - 1/self.l[None,None,:]**2
+#             return np.sum(prefactor*phi_n[:,:,None], axis=1)
+#         return function
+        
+
+# class ScaledGRF:
 #     """
-#     f_n, mus, l, c, b = GRFparams
-#     # Differences: (N_samples, N_points, n_mus, d)
-#     diff = (x[None, :, None, :] - mus[:, None, :, :]) / l[:, None, None, :]
-#     # Basis functions: (N_samples, N_points, n_mus)
-#     phi = np.exp(-0.5 * np.sum(diff**2, axis=-1))
-#     # Second derivative prefactor per dimension: (N_samples, N_points, n_mus, d)
-#     prefactor = (diff**2 - 1) / l[:, None, None, :]**2
-#     # Multiply by basis
-#     d2_terms = prefactor * phi[:, :, :, None]
-#     # Sum over mus (keep dimension)
-#     d2_output = np.einsum("Nn,Nqni->Nqi", f_n, d2_terms, optimize=True)
-#     # Scale by c
-#     return c[:, None, None] * d2_output
+#     Class to generate scaled and translated Gaussian Random Fields (GRFs).
+
+#     Attributes:
+#         grf (GRF): GRF object.
+#         c (np.ndarray): Scaling factors, shape (N_samples,).
+#         b (np.ndarray): Translation/offset factors, shape (N_samples,).
+#     """
+
+#     def __init__(self, N_samples, l, c, b):
+#         """
+#         Initialize the ScaledGRF class.
+
+#         Args:
+#             N_samples (int): Number of GRF samples.
+#             l (list or np.ndarray): Length scale of GRF, shape (d,).
+#             c (np.ndarray): Scaling factors, shape (N_samples,).
+#             b (np.ndarray): Translation factors, shape (N_samples,).
+#         """
+#         super().__init__()
+#         self.grf = GRF(N_samples, l)
+#         self.c = c
+#         self.b = b
+    
+#     def forward(self, i):
+#         """
+#         Forward evaluation of scaled GRF.
+
+#         Args:
+#         i (int): Index of the sample.
+
+#         Returns:
+#         function: A function that computes the scaled GRF at a given point x.
+#         """
+#         def function(x):
+#             """
+#             Args:
+#             x (np.ndarray): Input points, shape (N_points, d).
+
+#             Returns:
+#             np.ndarray: Scaled GRF values, shape (N_points,).
+#             """
+#             return self.c[i]*self.grf.forward(i)(x) + self.b[i]
+#         return function
+    
+#     def grad(self, i):
+#         """
+#         Gradient of scaled GRF.
+
+#         Args:
+#             i (int): Index of the sample.
+
+#         Returns:
+#             function: A function that computes the gradient of the scaled GRF at a given point x.
+#         """
+#         def function(x):
+#             """
+#             Args:
+#                 x (np.ndarray): Input points, shape (N_points, d).
+
+#             Returns:
+#                 np.ndarray: Gradient of the scaled GRF, shape (N_points, d).
+#             """
+#             return self.c[i]*self.grf.grad(i)(x)
+#         return function
+    
+#     def d2dxi2(self, i):
+#         """
+#         Laplacian of scaled GRF.
+
+#         Args:
+#             i (int): Index of the sample.
+
+#         Returns:
+#             function: A function that computes the Laplacian of the scaled GRF at a given point x.
+#         """
+#         def function(x):
+#             """
+#             Args:
+#                 x (np.ndarray): Input points, shape (N_points, d).
+
+#             Returns:
+#                 np.ndarray: Laplacian of the scaled GRF, shape (N_points,).
+#             """
+#             return self.c[i]*self.grf.d2dxi2(i)(x)
+#         return function
 
 
 import numpy as np
 import scipy
 import opt_einsum
-<<<<<<< HEAD:trainingdata/GRF.py
 
-
-def generate_GRF_parameters(N_samples, l, c_min, c_max, b_min, b_max):
-    l = np.array(l) #Length scale of GRF
-    d = len(l) #Dimensionality of GRF
-    n_mus = int(np.ceil(1/np.prod(l))) #Number of GRF sample locations
-    mus = np.random.uniform(0,1,size=(N_samples,n_mus,d))
-    scaled_mus = mus / l[None, None, :]
-    diff = scaled_mus[:, None, :, :] - scaled_mus[:, :, None, :]
-    dist_sq = np.sum(diff**2, axis=-1)
-    cov = np.exp(-0.5 * dist_sq)
-    L = np.linalg.cholesky(cov)
-    z = np.random.normal(size=(N_samples, n_mus))
-    f = opt_einsum.contract('Nij,Nj->Ni', L, z)
-    L_inv = np.linalg.inv(L)
-    cov_inv = opt_einsum.contract('Nij,Njk->Nik', L_inv.transpose(0,2,1), L_inv)
-    f_n = opt_einsum.contract('Nij,Nj->Ni', cov_inv, f)
-    # f_n = np.linalg.solve(cov, f)          # (N, n)
-    c = np.random.uniform(c_min, c_max, size=N_samples)  # Random scaling coefficients
-    b = np.random.uniform(b_min, b_max, size=N_samples)  # Random translation coefficients
-    GRFparams = f_n, mus, l, c, b
-    return GRFparams
-
-def GRFs_forward(GRFparams, x): #N_samples, N_points, n_mus, d
-    f_n, mus, l, c, b = GRFparams
-    phi_n = f_n[:,None,:]*np.exp(-1/2*np.sum(((x[None,:,None,:] - mus[:,None,:,:])/l[None,None,None,:])**2, axis=-1))
-    return c[:,None]*np.sum(phi_n, axis=-1) + b[:,None]
-
-def GRFs_grad(GRFparams, x):
-    f_n, mus, l, c, b = GRFparams
-    phi_n = f_n[:,None,:]*np.exp(-1/2*np.sum(((x[None,:,None,:] - mus[:,None,:,:])/l[None,None,None,:])**2, axis=-1))
-    prefactor = -1/(l[None,None,None,:]**2)*(x[None,:,None,:] - mus[:,None,:,:])
-    return c[:,None,None]*np.sum(prefactor*phi_n[:,:,:,None], axis=-2)
-
-def GRFs_d2dxi2(GRFparams, x):
-    f_n, mus, l, c, b = GRFparams
-    phi_n = f_n[:,None,:]*np.exp(-1/2*np.sum(((x[None,:,None,:] - mus[:,None,:,:])/l[None,None,None,:])**2, axis=-1))
-    prefactor = (x[None,:,None,:] - mus[:,None,:,:])**2/l[None,None,None,:]**4 - 1/l[None,None,None,:]**2
-    return c[:,None,None]*np.sum(prefactor*phi_n[:,:,:,None], axis=-2)
-=======
-# 
-import jax
-import jax.numpy as jnp
-from jax import jit, vmap
->>>>>>> 7a5994f88f5c79a7900afdf8cc33f2d3149fd82d:src/ngo/trainingdata/GRF.py
 
 class GRF:
     def __init__(self, N_samples, l):

@@ -44,7 +44,7 @@ class DirichletBC:
         return function
 
 
-class ManufacturedSolutionsSetDarcy:
+class ManufacturedSolutionsSet:
     def __init__(self, N_samples, variables, l_min, l_max):
         super().__init__()
         self.N_samples = N_samples #Number of samples
@@ -70,10 +70,6 @@ class ManufacturedSolutionsSetDarcy:
         l_u = np.random.uniform(self.l_min/np.sqrt(2),self.l_max/np.sqrt(2), size=(self.N_samples,self.d))
         c_u = np.random.uniform(0,1, size=self.N_samples)
         b_u = np.random.uniform(-1,1, size=self.N_samples)
-        for i in range(1,len(self.variables)):
-            if self.variables[i]==self.variables[i-1]:
-                l_theta[:,i] = l_theta[:,i-1]
-                l_u[:,i] = l_u[:,i-1]
         #Neumann boundary normals
         n_b = numpy.array([0,-1])
         n_t = numpy.array([0,1])

@@ -1,148 +1,167 @@
-import functools
 import numpy as np
 import opt_einsum
 
 import sys
 sys.path.insert(0,'/home/prins/st8/prins/phd/git/ngo-pde-gk/trainingdata')
 from GRF import *
+# from numba import njit
 
 
-def u_forward(GRFparams_u, x):
-    """
-    Evaluate the solution u at given points x.
-    Args:
-        GRFparams_u: Tuple containing (f_n, mus, l, c, b) where:
-            - f_n: Coefficients of the GRF. Shape: (N_samples, n_mus).
-            - mus: Locations of the GRF samples. Shape: (N_samples, n_mus, d).
-            - l: Length scale of the GRF. Shape: (d,).
-            - c: Scaling coefficients. Shape: (N_samples,).
-            - b: Translation coefficients. Shape: (N_samples,).
-        x: Points at which to evaluate the solution u. Shape: (N_samples, d).
-    Returns:
-        The evaluated solution u at points x. Shape: (N_samples,).
-    """
-    u = GRFs_forward(GRFparams_u, x)
-    return u
-
-
-def theta_forward(GRFparams_theta, x):
-    """
-    Evaluate the theta function at given points x.
-    Args:
-        GRFparams_theta: Tuple containing (f_n, mus, l, c, b) where:
-            - f_n: Coefficients of the GRF. Shape: (N_samples, n_mus).
-            - mus: Locations of the GRF samples. Shape: (N_samples, n_mus, d).
-            - l: Length scale of the GRF. Shape: (d,).
-            - c: Scaling coefficients. Shape: (N_samples,).
-            - b: Translation coefficients. Shape: (N_samples,).
-        x: Points at which to evaluate the theta function. Shape: (N_samples, d).
-    Returns:
-        The evaluated theta function at points x. Shape: (N_samples,).
-    """
-    theta = GRFs_forward(GRFparams_theta, x) 
-    return theta
-
-
-def f_forward(GRFparams_theta, GRFparams_u, x):
-    """
-    Evaluate the forcing term f at given points x.
-    Args:
-        GRFparams_theta: Tuple containing (f_n, mus, l, c, b) for theta.
-        GRFparams_u: Tuple containing (f_n, mus, l, c, b) for u.
-        x: Points at which to evaluate the forcing term f. Shape: (N_samples, d).
-    Returns:
-        The evaluated forcing term f at points x. Shape: (N_samples,).
-    """
-    # dudt = GRFs_grad(GRFparams_u, x)[:,:,0]
-    # theta = GRFs_forward(GRFparams_theta, x)
-    # laplacian_u = np.sum(GRFs_d2dxi2(GRFparams_u, x)[:,:,1:], axis=-1) 
-    # grad_theta = GRFs_grad(GRFparams_theta, x)[:,:,1:]
-    # grad_u = GRFs_grad(GRFparams_u, x)[:,:,1:]
-    # return dudt - theta*laplacian_u - np.sum(grad_theta*grad_u, axis=-1)
-    return GRFs_grad(GRFparams_u,x)[:,:,0] - GRFs_forward(GRFparams_theta,x)*np.sum(GRFs_d2dxi2(GRFparams_u,x)[:,:,1:], axis=-1) - np.sum(GRFs_grad(GRFparams_theta,x)[:,:,1:]*GRFs_grad(GRFparams_u,x)[:,:,1:], axis=-1) 
-
-
-def eta_forward(GRFparams_theta, GRFparams_u, n, x):
-    """
-    Evaluate the eta function at given points x.
-    Args:
-        GRFparams_theta: Tuple containing (f_n, mus, l, c, b) for theta.
-        GRFparams_u: Tuple containing (f_n, mus, l, c, b) for u.
-        x: Points at which to evaluate the eta function. Shape: (N_samples, d).
-    Returns:
-        The evaluated eta function at points x. Shape: (N_samples,).
-    """
-    # theta = GRFs_forward(GRFparams_theta, x)
-    # grad_u = GRFs_grad(GRFparams_u, x)[:,:,1:]
-    # return np.einsum('i,Nq,Nqi->Nq', n, theta, grad_u, optimize=True)
-    return opt_einsum.contract('i,Nq,Nqi->Nq', n, GRFs_forward(GRFparams_theta,x), GRFs_grad(GRFparams_u,x)[:,:,1:])
-    # return np.sum(n[None,None,:]*GRFs_forward(GRFparams_theta,x)[:,:,None]*GRFs_grad(GRFparams_u,x)[:,:,1:], axis=-1)
-
-def g_forward(GRFparams_theta, GRFparams_u, x):
-    """
-    Evaluate the g function at given points x.
-    Args:
-        GRFparams_theta: Tuple containing (f_n, mus, l, c, b) for theta.
-        GRFparams_u: Tuple containing (f_n, mus, l, c, b) for u.
-        x: Points at which to evaluate the g function. Shape: (N_samples, d).
-    Returns:
-        The evaluated g function at points x. Shape: (N_samples,).
-    """
-    # theta = GRFs_forward(GRFparams_theta, x)
-    # u =  GRFs_forward(GRFparams_u, x)
-    # return theta*u
-    return GRFs_forward(GRFparams_theta, x)*GRFs_forward(GRFparams_u, x)
-
-
-def generate_manufactured_solutions(N_samples, l_min, l_max):
-    """
-    Generate manufactured solutions for the PDE problem.
-    Args:
-        N_samples: Number of samples to generate.
-        l_min: Minimum length scale for the GRF.
-        l_max: Maximum length scale for the GRF.
-    Returns:
-        A tuple containing:
-            - GRFparams_u: Parameters for the solution u.
-            - GRFparams_theta: Parameters for the theta function.
-    """
-
-    if l_min==l_max:    
-
-        # Generate parameters for theta
-        GRFparams_theta = generate_GRF_parameters(N_samples=N_samples, l=l_min, c_min=0, c_max=0.2, b_min=1, b_max=1)
-        # Generate parameters for u
-        GRFparams_u = generate_GRF_parameters(N_samples=N_samples, l=l_min, c_min=0, c_max=1, b_min=-1, b_max=1)
+class Forcing:
+    def __init__(self, theta, u):
+        super().__init__()
+        self.theta = theta
+        self.u = u
     
-    # if l_min!=l_max:
-    #     n_mus = int(np.ceil(1/np.prod(l_min)))
+    def forward(self, i):
+        def function(x):
+            return self.u.grad(i)(x)[:,0] - self.theta.forward(i)(x)*np.sum(self.u.d2dxi2(i)(x)[:,1:], axis=-1) - np.sum(self.theta.grad(i)(x)[:,1:]*self.u.grad(i)(x)[:,1:], axis=-1) 
+        return function
 
-    #     f_n_theta = np.zeros((N_samples, n_mus))
-    #     mus_theta = np.zeros((N_samples, n_mus, len(l_min)))
-    #     l_theta = np.random.uniform(l_min, l_max, size=(N_samples, len(l_min)))
-    #     n_mus_theta_i = np.array(np.ceil(1/np.prod(l_theta, axis=-1)), dtype=int)
-    #     c_theta = np.zeros((N_samples))
-    #     b_theta = np.zeros((N_samples))
 
-    #     f_n_u = np.zeros((N_samples, n_mus))
-    #     mus_u = np.zeros((N_samples, n_mus, len(l_min)))
-    #     l_u = np.random.uniform(l_min, l_max, size=(N_samples, len(l_min)))
-    #     n_mus_u_i = np.array(np.ceil(1/np.prod(l_u, axis=-1)), dtype=int)
-    #     c_u = np.zeros((N_samples))
-    #     b_u = np.zeros((N_samples))
+class NeumannBC:
+    def __init__(self, n, theta, u):
+        super().__init__()
+        self.n = n
+        self.theta = theta
+        self.u = u
 
-    #     for i in range(N_samples):
-    #         f_n_theta[i,:n_mus_theta_i[i]], mus_theta[i,:n_mus_theta_i[i]], l_theta[i], c_theta[i], b_theta[i] = generate_GRF_parameters(1, l_theta[i], c_min=0, c_max=0.2, b_min=1, b_max=1)
-    #         f_n_u[i,:n_mus_u_i[i]], mus_u[i,:n_mus_u_i[i]], l_u[i], c_u[i], b_u[i] = generate_GRF_parameters(1, l_u[i], c_min=0, c_max=1, b_min=-1, b_max=1)
+    def forward(self, i):
+        def function(x):
+            return opt_einsum.contract('i,N,Ni->N', self.n, self.theta.forward(i)(x), self.u.grad(i)(x)[:,1:])
+        return function
+    
 
-    #     GRFparams_theta = (f_n_theta, mus_theta, l_theta, c_theta, b_theta)
-    #     GRFparams_u = (f_n_u, mus_u, l_u, c_u, b_u)
+class DirichletBC:
+    def __init__(self, theta, u):
+        super().__init__()
+        self.theta = theta
+        self.u = u
 
-    theta = lambda x: theta_forward(GRFparams_theta, x)
-    f = lambda x: f_forward(GRFparams_theta, GRFparams_u, x)
-    eta = lambda n, x: eta_forward(GRFparams_theta, GRFparams_u, n, x)
-    g = lambda x: g_forward(GRFparams_theta, GRFparams_u, x)
-    u0 = lambda x: u_forward(GRFparams_u, x)
-    u = lambda x: u_forward(GRFparams_u, x)
+    def forward(self, i):
+        def function(x):
+            return self.theta.forward(i)(x)*self.u.forward(i)(x)
+        return function
+    
 
-    return theta, f, eta, eta, g, g, u0, u
+class IC:
+    def __init__(self, u):
+        super().__init__()
+        self.u = u
+
+    def forward(self, i):
+        def function(x):
+            return self.u.forward(i)(x)
+        return function
+    
+
+class ManufacturedSolutionsSet:
+    def __init__(self, N_samples, variables, l_min, l_max):
+        super().__init__()
+        self.N_samples = N_samples #Number of samples
+        self.variables = variables
+        self.d = len(l_min) #axisensionality of problem
+        self.l_min = l_min #Minimum GRF length scale
+        self.l_max = l_max #Maximum GRF length scale
+        self.generate_manufactured_solutions()
+        # self.sensornodes = np.random.uniform(0,1,size=(10000,self.d))
+        # self.evaluate_functions_at_sensors()
+
+    def generate_manufactured_solutions(self):
+        #Empty lists to be filled with functions
+        thetas = []
+        us = []
+        fs = []
+        eta_y0s = []
+        eta_yLs = []
+        g_x0s = []
+        g_xLs = []
+        u0s = []
+        gradus = []
+        #Lists of length scales l, scaling factors c and offsets b
+        l_theta = np.random.uniform(self.l_min/np.sqrt(2),self.l_max/np.sqrt(2), size=(self.N_samples,self.d))
+        c_theta = np.random.uniform(0,0.2,size=self.N_samples)
+        b_theta = np.ones(self.N_samples)
+        l_u = np.random.uniform(self.l_min/np.sqrt(2),self.l_max/np.sqrt(2), size=(self.N_samples,self.d))
+        c_u = np.random.uniform(0,1, size=self.N_samples)
+        b_u = np.random.uniform(-1,1, size=self.N_samples)
+        for i in range(1,len(self.variables)):
+            if self.variables[i]==self.variables[i-1]:
+                l_theta[:,i] = l_theta[:,i-1]
+                l_u[:,i] = l_u[:,i-1]
+        #Neumann boundary normals
+        n_b = np.array([0,-1])
+        n_t = np.array([0,1])
+        if self.l_min==self.l_max:
+            #Generate batches of GRFs with the same length scale
+            theta = ScaledGRF(N_samples=self.N_samples, l=self.l_min, c=c_theta, b=b_theta)
+            u = ScaledGRF(N_samples=self.N_samples, l=self.l_min, c=c_u, b=b_u)
+            f = Forcing(theta, u)
+            eta_y0 = NeumannBC(n_b, theta, u)
+            eta_yL = NeumannBC(n_t, theta, u)
+            g_x0 = DirichletBC(theta, u)
+            g_xL = DirichletBC(theta, u)
+            u0 = IC(u)
+            for i in range(self.N_samples):
+                #Collect functions
+                thetas.append(theta.forward(i))
+                us.append(u.forward(i))
+                fs.append(f.forward(i))
+                eta_y0s.append(eta_y0.forward(i))
+                eta_yLs.append(eta_yL.forward(i))
+                g_x0s.append(g_x0.forward(i))
+                g_xLs.append(g_xL.forward(i))
+                u0s.append(u0.forward(i))
+                gradus.append(u.grad(i))
+        if self.l_min!=self.l_max:
+            for i in range(self.N_samples):
+                # print(i)
+                #Define functions
+                theta = ScaledGRF(N_samples=1, l=l_theta[i], c=[c_theta[i]], b=[b_theta[i]])
+                u = ScaledGRF(N_samples=1, l=l_u[i], c=[c_u[i]], b=[b_u[i]])
+                f = Forcing(theta, u)
+                eta_y0 = NeumannBC(n_b, theta, u)
+                eta_yL = NeumannBC(n_t, theta, u)
+                g_x0 = DirichletBC(theta, u)
+                g_xL = DirichletBC(theta, u)
+                u0 = IC(u)
+                #Collect functions
+                thetas.append(theta.forward(0))
+                us.append(u.forward(0))
+                fs.append(f.forward(0))
+                eta_y0s.append(eta_y0.forward(0))
+                eta_yLs.append(eta_yL.forward(0))
+                g_x0s.append(g_x0.forward(0))
+                g_xLs.append(g_xL.forward(0))
+                u0s.append(u0.forward(0))
+                gradus.append(u.grad(0))
+        #Save set
+        self.theta = thetas
+        self.u = us
+        self.f = fs
+        self.eta_y0 = eta_y0s
+        self.eta_yL = eta_yLs
+        self.g_x0 = g_x0s
+        self.g_xL = g_xLs
+        self.u0 = u0s
+        self.gradu = gradus
+
+    def evaluate_functions_at_sensors(self):
+        self.theta_sensor = np.zeros((self.N_samples,self.sensornodes.shape[0]))
+        self.f_sensor = np.zeros((self.N_samples,self.sensornodes.shape[0]))
+        self.eta_y0_sensor = np.zeros((self.N_samples,self.sensornodes.shape[0]))
+        self.eta_yL_sensor = np.zeros((self.N_samples,self.sensornodes.shape[0]))
+        self.g_x0_sensor = np.zeros((self.N_samples,self.sensornodes.shape[0]))
+        self.g_xL_sensor = np.zeros((self.N_samples,self.sensornodes.shape[0]))
+        self.u0_sensor = np.zeros((self.N_samples,self.sensornodes.shape[0]))
+        self.u_sensor = np.zeros((self.N_samples,self.sensornodes.shape[0]))
+        #Evaluate input functions at sensor nodes
+        for i in range(self.N_samples):
+            self.theta_sensor[i] = self.theta[i](self.sensornodes)
+            self.f_sensor[i] = self.f[i](self.sensornodes)
+            self.eta_y0_sensor[i] = self.eta_y0[i](self.sensornodes)
+            self.eta_yL_sensor[i] = self.eta_yL[i](self.sensornodes)
+            self.g_x0_sensor[i] = self.g_x0[i](self.sensornodes)
+            self.g_xL_sensor[i] = self.g_xL[i](self.sensornodes)
+            self.u0_sensor[i] = self.u0[i](self.sensornodes)
+            self.u_sensor[i] = self.u[i](self.sensornodes)

@@ -8,8 +8,8 @@ import opt_einsum
 import neuralop
 
 # Local
-import ngo.ml.customlayers as customlayers
-
+# import ngo.ml.customlayers as customlayers
+import customlayers
 
 class MLP(nn.Module):
     """
@@ -20,7 +20,7 @@ class MLP(nn.Module):
         layers (nn.ModuleList): List of layers in the MLP.
         free_parameter (int): Free parameter (in this model, the number of neurons per hidden layer) 
         to adjust the number of trainable parameters,
-        adjusted incrementally to 'N_w' by the function balance_num_trainable_params.
+        adjusted incrementally to 'N_w' by the function customlayers.balance_num_trainable_params.
     """
     def __init__(self, hparams):
         """
@@ -86,7 +86,7 @@ class CNN(nn.Module):
         layers (nn.ModuleList): List of layers in the CNN.
         free_parameter (int): Free parameter (in this model, the number of channels) 
         to adjust the number of trainable parameters,
-        adjusted incrementally to 'N_w' by the function balance_num_trainable_params.
+        adjusted incrementally to 'N_w' by the function customlayers.balance_num_trainable_params.
         bottleneck_size (int): Size of the bottleneck dense layer.
     """
     def __init__(self, hparams):
@@ -175,7 +175,7 @@ class CNNNd(nn.Module):
     def __init__(self, hparams):
         super().__init__()
         self.hparams = hparams
-        self = balance_num_trainable_params(model=self, N_w=self.hparams['N_w'])
+        self = customlayers.balance_num_trainable_params(model=self, N_w=self.hparams['N_w'])
         self = self.to(torch.device(self.hparams['used_device']))
 
     def init_layers(self):
@@ -183,7 +183,7 @@ class CNNNd(nn.Module):
         self.kernel_sizes = self.hparams['kernel_sizes']
         self.bottleneck_size = self.hparams['bottleneck_size']
         #Layers
-        self.layers.append(ReshapeLayer(output_shape=self.hparams['input_shape']))
+        self.layers.append(customlayers.ReshapeLayer(output_shape=self.hparams['input_shape']))
         self.layers.append(ConvNd(in_channels=self.hparams['input_shape'][0], out_channels=self.free_parameter, kernel_size=self.kernel_sizes[0], stride=self.kernel_sizes[0], bias=self.hparams.get('bias', False)))
         self.layers.append(nn.ReLU())
         self.layers.append(ConvNd(in_channels=self.free_parameter, out_channels=self.free_parameter, kernel_size=self.kernel_sizes[1], stride=self.kernel_sizes[1], bias=self.hparams.get('bias', False)))
@@ -191,10 +191,10 @@ class CNNNd(nn.Module):
         self.layers.append(ConvNd(in_channels=self.free_parameter, out_channels=self.free_parameter, kernel_size=self.kernel_sizes[2], stride=self.kernel_sizes[2], bias=self.hparams.get('bias', False)))
         self.layers.append(nn.ReLU())
         self.layers.append(ConvNd(in_channels=self.free_parameter, out_channels=self.bottleneck_size, kernel_size=self.kernel_sizes[3], stride=self.kernel_sizes[3], bias=self.hparams.get('bias', False)))
-        self.layers.append(ReshapeLayer(output_shape=(int(self.bottleneck_size),)))
+        self.layers.append(customlayers.ReshapeLayer(output_shape=(int(self.bottleneck_size),)))
         self.layers.append(nn.Linear(in_features=int(self.bottleneck_size), out_features=int(self.bottleneck_size)))
         self.layers.append(nn.ReLU())
-        self.layers.append(ReshapeLayer(output_shape=(int(self.bottleneck_size),1,1)))
+        self.layers.append(customlayers.ReshapeLayer(output_shape=(int(self.bottleneck_size),1,1)))
         self.layers.append(nn.ConvTranspose2d(self.bottleneck_size, self.free_parameter, kernel_size=self.kernel_sizes[4], stride=self.kernel_sizes[4], bias=self.hparams.get('bias', False)))
         self.layers.append(nn.ReLU())
         self.layers.append(nn.ConvTranspose2d(self.free_parameter, self.free_parameter, kernel_size=self.kernel_sizes[5], stride=self.kernel_sizes[5], bias=self.hparams.get('bias', False)))
@@ -202,7 +202,7 @@ class CNNNd(nn.Module):
         self.layers.append(nn.ConvTranspose2d(self.free_parameter, self.free_parameter, kernel_size=self.kernel_sizes[6], stride=self.kernel_sizes[6], bias=self.hparams.get('bias', False)))
         self.layers.append(nn.ReLU())
         self.layers.append(nn.ConvTranspose2d(self.free_parameter, 1, kernel_size=self.kernel_sizes[7], stride=self.kernel_sizes[7], bias=self.hparams.get('bias', False)))
-        self.layers.append(ReshapeLayer(output_shape=self.hparams['output_shape']))           
+        self.layers.append(customlayers.ReshapeLayer(output_shape=self.hparams['output_shape']))           
         # if self.hparams['outputactivation'] is not None:
         #     self.layers.append(self.hparams['outputactivation'])
         if self.hparams.get('NLB_outputactivation',None) is not None:
@@ -246,14 +246,14 @@ class CNN_3dto2d(nn.Module):
     def __init__(self, hparams):
         super().__init__()
         self.hparams = hparams
-        self = balance_num_trainable_params(model=self, N_w=self.hparams['N_w'])
+        self = customlayers.balance_num_trainable_params(model=self, N_w=self.hparams['N_w'])
         
     def init_layers(self):
         self.layers = nn.ModuleList()
         self.kernel_sizes = self.hparams['kernel_sizes']
         self.bottleneck_size = self.hparams['bottleneck_size']
         #Layers
-        self.layers.append(ReshapeLayer(output_shape=self.hparams['input_shape']))
+        self.layers.append(customlayers.ReshapeLayer(output_shape=self.hparams['input_shape']))
         self.layers.append(nn.Conv3d(in_channels=self.hparams['input_shape'][0], out_channels=self.free_parameter, kernel_size=self.kernel_sizes[0], stride=self.kernel_sizes[0], bias=self.hparams.get('bias', False)))
         self.layers.append(nn.ReLU())
         self.layers.append(nn.Conv3d(in_channels=self.free_parameter, out_channels=self.free_parameter, kernel_size=self.kernel_sizes[1], stride=self.kernel_sizes[1], bias=self.hparams.get('bias', False)))
@@ -261,10 +261,10 @@ class CNN_3dto2d(nn.Module):
         self.layers.append(nn.Conv3d(in_channels=self.free_parameter, out_channels=self.free_parameter, kernel_size=self.kernel_sizes[2], stride=self.kernel_sizes[2], bias=self.hparams.get('bias', False)))
         self.layers.append(nn.ReLU())
         self.layers.append(nn.Conv3d(in_channels=self.free_parameter, out_channels=self.bottleneck_size, kernel_size=self.kernel_sizes[3], stride=self.kernel_sizes[3], bias=self.hparams.get('bias', False)))
-        self.layers.append(ReshapeLayer(output_shape=(int(self.bottleneck_size),)))
+        self.layers.append(customlayers.ReshapeLayer(output_shape=(int(self.bottleneck_size),)))
         self.layers.append(nn.Linear(in_features=int(self.bottleneck_size), out_features=int(self.bottleneck_size)))
         self.layers.append(nn.ReLU())
-        self.layers.append(ReshapeLayer(output_shape=(self.bottleneck_size,1,1)))
+        self.layers.append(customlayers.ReshapeLayer(output_shape=(self.bottleneck_size,1,1)))
         self.layers.append(nn.ConvTranspose2d(self.bottleneck_size, self.free_parameter, kernel_size=self.kernel_sizes[4], stride=self.kernel_sizes[4], bias=self.hparams.get('bias', False)))
         self.layers.append(nn.ReLU())
         self.layers.append(nn.ConvTranspose2d(self.free_parameter, self.free_parameter, kernel_size=self.kernel_sizes[5], stride=self.kernel_sizes[5], bias=self.hparams.get('bias', False)))
@@ -272,7 +272,7 @@ class CNN_3dto2d(nn.Module):
         self.layers.append(nn.ConvTranspose2d(self.free_parameter, self.free_parameter, kernel_size=self.kernel_sizes[6], stride=self.kernel_sizes[6], bias=self.hparams.get('bias', False)))
         self.layers.append(nn.ReLU())
         self.layers.append(nn.ConvTranspose2d(self.free_parameter, 1, kernel_size=self.kernel_sizes[7], stride=self.kernel_sizes[7], bias=self.hparams.get('bias', False)))
-        self.layers.append(ReshapeLayer(output_shape=self.hparams['output_shape']))           
+        self.layers.append(customlayers.ReshapeLayer(output_shape=self.hparams['output_shape']))           
         # if self.hparams['outputactivation'] is not None:
         #     self.layers.append(self.hparams['outputactivation'])
         if self.hparams.get('NLB_outputactivation',None) is not None:
@@ -318,14 +318,14 @@ class CNN_3dto3d(nn.Module):
     def __init__(self, hparams):
         super().__init__()
         self.hparams = hparams
-        self = balance_num_trainable_params(model=self, N_w=self.hparams['N_w'])
+        self = customlayers.balance_num_trainable_params(model=self, N_w=self.hparams['N_w'])
         
     def init_layers(self):
         self.layers = nn.ModuleList()
         self.kernel_sizes = self.hparams['kernel_sizes']
         self.bottleneck_size = self.hparams['bottleneck_size']
         #Layers
-        self.layers.append(ReshapeLayer(output_shape=self.hparams['input_shape']))
+        self.layers.append(customlayers.ReshapeLayer(output_shape=self.hparams['input_shape']))
         self.layers.append(nn.Conv3d(in_channels=self.hparams['input_shape'][0], out_channels=self.free_parameter, kernel_size=self.kernel_sizes[0], stride=self.kernel_sizes[0], bias=self.hparams.get('bias', False)))
         self.layers.append(nn.ReLU())
         self.layers.append(nn.Conv3d(in_channels=self.free_parameter, out_channels=self.free_parameter, kernel_size=self.kernel_sizes[1], stride=self.kernel_sizes[1], bias=self.hparams.get('bias', False)))
@@ -333,10 +333,10 @@ class CNN_3dto3d(nn.Module):
         self.layers.append(nn.Conv3d(in_channels=self.free_parameter, out_channels=self.free_parameter, kernel_size=self.kernel_sizes[2], stride=self.kernel_sizes[2], bias=self.hparams.get('bias', False)))
         self.layers.append(nn.ReLU())
         self.layers.append(nn.Conv3d(in_channels=self.free_parameter, out_channels=self.bottleneck_size, kernel_size=self.kernel_sizes[3], stride=self.kernel_sizes[3], bias=self.hparams.get('bias', False)))
-        self.layers.append(ReshapeLayer(output_shape=(int(self.bottleneck_size),)))
+        self.layers.append(customlayers.ReshapeLayer(output_shape=(int(self.bottleneck_size),)))
         self.layers.append(nn.Linear(in_features=int(self.bottleneck_size), out_features=int(self.bottleneck_size)))
         self.layers.append(nn.ReLU())
-        self.layers.append(ReshapeLayer(output_shape=(self.bottleneck_size,1,1,1)))
+        self.layers.append(customlayers.ReshapeLayer(output_shape=(self.bottleneck_size,1,1,1)))
         self.layers.append(nn.ConvTranspose3d(self.bottleneck_size, self.free_parameter, kernel_size=self.kernel_sizes[4], stride=self.kernel_sizes[4], bias=self.hparams.get('bias', False)))
         self.layers.append(nn.ReLU())
         self.layers.append(nn.ConvTranspose3d(self.free_parameter, self.free_parameter, kernel_size=self.kernel_sizes[5], stride=self.kernel_sizes[5], bias=self.hparams.get('bias', False)))
@@ -344,7 +344,7 @@ class CNN_3dto3d(nn.Module):
         self.layers.append(nn.ConvTranspose3d(self.free_parameter, self.free_parameter, kernel_size=self.kernel_sizes[6], stride=self.kernel_sizes[6], bias=self.hparams.get('bias', False)))
         self.layers.append(nn.ReLU())
         self.layers.append(nn.ConvTranspose3d(self.free_parameter, 1, kernel_size=self.kernel_sizes[7], stride=self.kernel_sizes[7], bias=self.hparams.get('bias', False)))
-        self.layers.append(ReshapeLayer(output_shape=self.hparams['output_shape']))           
+        self.layers.append(customlayers.ReshapeLayer(output_shape=self.hparams['output_shape']))           
         # if self.hparams['outputactivation'] is not None:
         #     self.layers.append(self.hparams['outputactivation'])
         if self.hparams.get('NLB_outputactivation',None) is not None:
@@ -388,13 +388,13 @@ class FNO(nn.Module):
     def __init__(self, hparams):
         super().__init__()
         self.hparams = hparams
-        self = balance_num_trainable_params(model=self, N_w=self.hparams['N_w'])
+        self = customlayers.balance_num_trainable_params(model=self, N_w=self.hparams['N_w'])
 
     def init_layers(self):
         self.layers = nn.ModuleList()
-        self.layers.append(ReshapeLayer(output_shape=self.hparams['input_shape']))
+        self.layers.append(customlayers.ReshapeLayer(output_shape=self.hparams['input_shape']))
         self.layers.append(neuralop.models.FNO(n_modes=self.hparams['h'], in_channels=self.hparams['input_shape'][0], out_channels=1, hidden_channels=self.free_parameter, domain_padding=0.2))
-        self.layers.append(ReshapeLayer(output_shape=self.hparams['output_shape']))
+        self.layers.append(customlayers.ReshapeLayer(output_shape=self.hparams['output_shape']))
 
     def forward(self, x):
         for layer in self.layers:
@@ -407,14 +407,14 @@ class InvNet(nn.Module):
     def __init__(self, hparams):
         super().__init__()
         self.hparams = hparams
-        self = balance_num_trainable_params(model=self, N_w=self.hparams['N_w'])
+        self = customlayers.balance_num_trainable_params(model=self, N_w=self.hparams['N_w'])
         
     def init_layers(self):
         self.layers = nn.ModuleList()
         self.kernel_sizes = self.hparams['kernel_sizes']
         self.bottleneck_size = self.hparams['bottleneck_size']
         #Layers
-        self.layers.append(ReshapeLayer(output_shape=(1,self.hparams['N_F'],self.hparams['N_F'])))
+        self.layers.append(customlayers.ReshapeLayer(output_shape=(1,self.hparams['N_F'],self.hparams['N_F'])))
         self.layers.append(nn.Conv2d(in_channels=1, out_channels=self.free_parameter, kernel_size=self.kernel_sizes[0], stride=self.kernel_sizes[0], bias=self.hparams.get('bias', False)))
         self.layers.append(nn.Conv2d(in_channels=self.free_parameter, out_channels=self.free_parameter, kernel_size=self.kernel_sizes[1], stride=self.kernel_sizes[1], bias=self.hparams.get('bias', False)))
         self.layers.append(nn.Conv2d(in_channels=self.free_parameter, out_channels=self.free_parameter, kernel_size=self.kernel_sizes[2], stride=self.kernel_sizes[2], bias=self.hparams.get('bias', False)))
@@ -427,7 +427,7 @@ class InvNet(nn.Module):
         self.layers.append(nn.ConvTranspose2d(self.free_parameter, self.free_parameter, kernel_size=self.kernel_sizes[6], stride=self.kernel_sizes[6], bias=self.hparams.get('bias', False)))
         #self.layers.append(nn.Tanh())
         self.layers.append(nn.ConvTranspose2d(self.free_parameter, 1, kernel_size=self.kernel_sizes[7], stride=self.kernel_sizes[7], bias=self.hparams.get('bias', False)))
-        self.layers.append(ReshapeLayer(output_shape=(self.hparams['N'],self.hparams['N'])))
+        self.layers.append(customlayers.ReshapeLayer(output_shape=(self.hparams['N'],self.hparams['N'])))
         if self.hparams['outputactivation'] is not None:
             self.layers.append(self.hparams['outputactivation'])
 
@@ -468,7 +468,7 @@ class PNet(nn.Module):
         self.kernel_sizes = self.hparams['kernel_sizes']
         self.bottleneck_size = self.hparams['bottleneck_size']
         #Layers
-        self.layers.append(ReshapeLayer(output_shape=(1,self.hparams['h_F'][0],self.hparams['h_F'][1])) if self.hparams['modeltype']=='data NGO' else ReshapeLayer(output_shape=(1,self.hparams['N_F'],self.hparams['N_F'])))
+        self.layers.append(customlayers.ReshapeLayer(output_shape=(1,self.hparams['h_F'][0],self.hparams['h_F'][1])) if self.hparams['modeltype']=='data NGO' else customlayers.ReshapeLayer(output_shape=(1,self.hparams['N_F'],self.hparams['N_F'])))
         self.layers.append(nn.ConvTranspose2d(1, self.free_parameter, kernel_size=self.kernel_sizes[0], stride=self.kernel_sizes[0], bias=self.hparams.get('bias_NLBranch', True)))
         # self.layers.append(nn.ReLU())
         self.layers.append(nn.ConvTranspose2d(self.free_parameter, self.free_parameter, kernel_size=self.kernel_sizes[1], stride=self.kernel_sizes[1], bias=self.hparams.get('bias', False)))
@@ -476,7 +476,7 @@ class PNet(nn.Module):
         self.layers.append(nn.ConvTranspose2d(self.free_parameter, self.free_parameter, kernel_size=self.kernel_sizes[2], stride=self.kernel_sizes[2], bias=self.hparams.get('bias', False)))
         # self.layers.append(nn.ReLU())
         self.layers.append(nn.ConvTranspose2d(self.free_parameter, 1, kernel_size=self.kernel_sizes[3], stride=self.kernel_sizes[3], bias=self.hparams.get('bias', False)))
-        self.layers.append(ReshapeLayer(output_shape=(self.hparams['N'],self.hparams['N'])))
+        self.layers.append(customlayers.ReshapeLayer(output_shape=(self.hparams['N'],self.hparams['N'])))
         if self.hparams['outputactivation'] is not None:
             self.layers.append(self.hparams['outputactivation'])
 
@@ -524,7 +524,7 @@ class SPCNN(nn.Module):
         self.free_parameter =self.hparams['free_parameter']
     
         # Adjusted convolutional layers
-        self.layers.append(ReshapeLayer(output_shape=(1,self.hparams['N'],self.hparams['N'])))
+        self.layers.append(customlayers.ReshapeLayer(output_shape=(1,self.hparams['N'],self.hparams['N'])))
         self.layers.append(nn.ConvTranspose2d(in_channels=1, out_channels=self.free_parameter, kernel_size=self.kernel_size, stride=1, bias=self.hparams.get('bias', False)))
         self.layers.append(nn.ReLU())
         
@@ -549,7 +549,7 @@ class SPCNN(nn.Module):
 
         #self.layers.append(nn.BatchNorm2d(num_features=self.free_parameter, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True))
         self.layers.append(nn.Conv2d(in_channels=self.free_parameter, out_channels=1, kernel_size=self.kernel_size, stride=1, bias=self.hparams.get('bias', False)))
-        self.layers.append(ReshapeLayer(output_shape=(64,64)))
+        self.layers.append(customlayers.ReshapeLayer(output_shape=(64,64)))
         if self.hparams['outputactivation'] is not None:
             self.layers.append(self.hparams['outputactivation'])
 
@@ -581,7 +581,7 @@ class AcCNN(nn.Module):
         self.kernel_sizes = self.hparams['kernel_sizes']
         self.bottleneck_size = self.hparams['bottleneck_size']
         #Layers
-        self.layers.append(ReshapeLayer(output_shape=(1,self.hparams['h'][0],self.hparams['h'][1])) if self.hparams['model/data']=='data' else ReshapeLayer(output_shape=(1,self.hparams['N'],self.hparams['N'])))
+        self.layers.append(customlayers.ReshapeLayer(output_shape=(1,self.hparams['h'][0],self.hparams['h'][1])) if self.hparams['model/data']=='data' else customlayers.ReshapeLayer(output_shape=(1,self.hparams['N'],self.hparams['N'])))
         self.layers.append(nn.Conv2d(in_channels=1, out_channels=self.free_parameter, kernel_size=self.kernel_sizes[0], stride=self.kernel_sizes[0], bias=self.hparams.get('bias_NLBranch', True)))
         self.layers.append(nn.ReLU())
         # self.layers.append(nn.BatchNorm2d(num_features=self.free_parameter, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True))
@@ -592,7 +592,7 @@ class AcCNN(nn.Module):
         self.layers.append(nn.ReLU())
         # self.layers.append(nn.BatchNorm2d(num_features=self.free_parameter, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True))
         self.layers.append(nn.Conv2d(in_channels=self.free_parameter, out_channels=self.free_parameter, kernel_size=self.kernel_sizes[3], stride=self.kernel_sizes[3], bias=self.hparams.get('bias_NLBranch', True)))
-        self.layers.append(ReshapeLayer(output_shape=(int(self.free_parameter),)))
+        self.layers.append(customlayers.ReshapeLayer(output_shape=(int(self.free_parameter),)))
         self.layers.append(nn.Linear(in_features=int(self.free_parameter), out_features=int(self.free_parameter)))
         self.layers.append(nn.ReLU())
         # self.layers.append(nn.Linear(in_features=int(self.free_parameter), out_features=int(self.free_parameter)))
