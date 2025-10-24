@@ -26,7 +26,6 @@ def initialize_logger(logdir, sublogdir, label):
     """
     if not os.path.isdir(logdir + '/' + sublogdir):
         os.makedirs(logdir + '/' + sublogdir, exist_ok=True)
-        
     checkpoint_path = logdir + '/' + sublogdir + '/' + label
     checkpoint_callback = ModelCheckpoint(
         dirpath=checkpoint_path, 

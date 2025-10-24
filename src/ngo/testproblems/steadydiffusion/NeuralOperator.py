@@ -1,46 +1,59 @@
+# Copyright 2025 Joost Prins
+
+# 3rd Party
 import torch
 import numpy as np
-from torch import nn
 import pytorch_lightning as pl
-import numpy as np
 import opt_einsum
 
-import sys
-sys.path.insert(0, '../../ml')
-from systemnets import MLP, CNN, FNO, LBranchNet
-from basisfunctions import *
-from quadrature import *
-from customlayers import *
-from customlosses import *
-from modelloader import *
+# Local
+from ngo.ml.systemnets import MLP, LBranchNet # , CNN, FNO
+from ngo.ml.basisfunctions import TensorizedBasis
+from ngo.ml.customlayers import discretize_functions
+from ngo.ml.quadrature import GaussLegendreQuadrature, UniformQuadrature
 
 class NeuralOperator(pl.LightningModule):
+    """
+    Neural Operator class for solving a steady diffusion equation.
+    Mainly for the use of Neural Green's Operators (NGOs), and to benchmark these against other models from literature.
+    modeltype options are: 'NN', 'DeepONet', 'VarMiON', 'data NGO', 'model NGO', 'FEM' and 'projection'.
+
+    Attributes:
+        hparams (dict): Hyperparameters for the model.
+        systemnet (torch.nn.Module): The system network.
+        basis_test (TensorizedBasis): Basis functions for testing.
+        basis_trial (TensorizedBasis): Basis functions for trial.
+        Identity (torch.Tensor): Identity matrix, shape (N, N).
+    """
+
     def __init__(self, hparams):
+        """
+        Initialize the NeuralOperator class.
+
+        Args:
+        hparams (dict): Hyperparameters for the model.
+        """
         super().__init__()
         self.hparams.update(hparams)
         self.to(self.hparams['device'])
         self.to(self.hparams['dtype'])
-        #compute_quadrature
         self.compute_quadrature()
-        #Model type
         self.init_modeltype()
-        #System net
-        self.hparams['N_w_real'] = sum(p.numel() for p in self.parameters())
+        self.hparams['N_w_real'] = sum(p.numel() for p in self.parameters()) #True number of trainable parameters
         self.systemnet = self.hparams['systemnet'](self.hparams).to(self.device)
-        #Bases
-        if self.hparams.get('POD',False)==False:
-            self.basis_test = TensorizedBasis(self.hparams['test_bases']) 
-            self.basis_trial = TensorizedBasis(self.hparams['trial_bases'])
-        if self.hparams.get('POD',False)==True:
-            self.basis_test = BSplineInterpolatedPOD2D(N_samples=self.hparams['N_samples_train'], variables=hparams['variables'], l_min=self.hparams['l_min'], l_max=self.hparams['l_max'], w=self.w_Omega, xi=self.xi_Omega, N=self.hparams['N'], device=self.device)
-            self.basis_trial = BSplineInterpolatedPOD2D(N_samples=self.hparams['N_samples_train'], variables=hparams['variables'], l_min=self.hparams['l_min'], l_max=self.hparams['l_max'], w=self.w_Omega, xi=self.xi_Omega, N=self.hparams['N'], device=self.device)
-        #Relevant matrices
-        # if self.hparams['Neumannseries']==True:
-        self.compute_F_0_A_0()
-        #Identity
+        self.basis_test = TensorizedBasis(self.hparams['test_bases']) 
+        self.basis_trial = TensorizedBasis(self.hparams['trial_bases'])
+        if self.hparams['Neumannseries']==True:
+            self.compute_F_0_A_0() #Neumann preconditioner
         self.Identity = torch.eye(self.hparams['N'], dtype=self.dtype, device=self.device)
 
     def init_modeltype(self):
+        """
+        Initialize the model type and set the forward functions and corresponding input and output shapes.
+
+        Returns:
+            None
+        """
         if self.hparams['modeltype']=='NN':
             self.forwardfunction = self.NN_forward
             self.simforwardfunction = self.NN_simforward
@@ -76,7 +89,22 @@ class NeuralOperator(pl.LightningModule):
             self.forwardfunction = self.projection_forward
             self.simforwardfunction = self.projection_simforward
 
-    def discretize_input_functions(self, theta, f, eta_y0, eta_yL, g_x0, gr):
+    def discretize_input_functions(self, theta, f, eta_y0, eta_yL, g_x0, g_xL):
+        """
+        Discretize the input functions.
+
+        Args:
+            theta (list of functions): Input function theta, shape len(N_samples).
+            f (list of functions): Input function f, shape len(N_samples).
+            eta_y0 (list of functions): Input function eta_y0, shape len(N_samples).
+            eta_yL (list of functions): Input function eta_yL, shape len(N_samples).
+            g_x0 (list of functions): Input function g_x0, shape len(N_samples).
+            g_xL (list of functions): Input function g_xL, shape len(N_samples).
+
+        Returns:
+            tuple of np.ndarrays: Discretized input functions (theta_q, theta_x0_q, theta_xL_q, f_q, eta_y0_q, eta_yL_q, g_x0_q, g_xL_q),
+            each with shape (N_samples, self.xi_i.shape[0]).
+        """
         theta_q = discretize_functions(theta, self.xi_Omega)
         theta_x0_q = discretize_functions(theta, self.xi_Gamma_x0)
         theta_xL_q = discretize_functions(theta, self.xi_Gamma_xL)
@@ -84,14 +112,35 @@ class NeuralOperator(pl.LightningModule):
         eta_y0_q = discretize_functions(eta_y0, self.xi_Gamma_y0)
         eta_yL_q = discretize_functions(eta_yL, self.xi_Gamma_yL)
         g_x0_q = discretize_functions(g_x0, self.xi_Gamma_x0)
-        g_xL_q = discretize_functions(gr, self.xi_Gamma_xL)
+        g_xL_q = discretize_functions(g_xL, self.xi_Gamma_xL)
         return theta_q, theta_x0_q, theta_xL_q, f_q, eta_y0_q, eta_yL_q, g_x0_q, g_xL_q
     
     def discretize_output_function(self, u):
+        """
+        Discretize the output function.
+
+        Args:
+            u (list of functions): Output function u, shape len(N_samples).
+
+        Returns:
+            np.ndarray: Discretized output function u_d, shape (N_samples, self.xi_Omega_L.shape[0]).
+        """
         u_q = discretize_functions(u, self.xi_Omega_L)
         return u_q
 
     def compute_F(self, theta_q, theta_x0_q, theta_xL_q):
+        """
+        Compute the system matrix (model NGO or FEM) or mesh-shaped system vector (data NGO) F based on the discretized input functions.
+        Optionally adds a stabilization term to ensure positive definiteness of the matrix.
+
+        Args:
+            theta_q (np.ndarray):Discretized input function theta, shape (N_samples, self.xi_Omega.shape[0]).
+            theta_x0_q (np.ndarray): Discretized iput function theta at x0, shape (N_samples, self.xi_Gamma_x0.shape[0]).
+            theta_xL_q (np.ndarray): Discretized iput function theta at xL, shape (N_samples, self.xi_Gamma_xL.shape[0]).
+
+        Returns:
+            np.ndarray: Computed matrix F, shape (N_samples, N, N) (for model NGO, FEM) or shape (N_samples, h[0], h[1]) (for data NGO)
+        """
         if  self.hparams['modeltype']=='data NGO':
             basis_test = self.basis_test.forward(self.xi_Omega)
             F = opt_einsum.contract('q,qm,Nq->Nm', self.w_Omega, basis_test, theta_q)
@@ -118,54 +167,68 @@ class NeuralOperator(pl.LightningModule):
         return F
     
     def compute_F_0_A_0(self):
-        theta = np.ones(self.w_Omega.shape)
-        theta_x0 = np.ones(self.w_Gamma_x0.shape)
-        theta_xL = np.ones(self.w_Gamma_xL.shape)
-        gradbasis_test = self.basis_test.grad(self.xi_Omega)
-        gradbasis_trial = self.basis_trial.grad(self.xi_Omega)
-        basis_test_x0 = self.basis_test.forward(self.xi_Gamma_x0)
-        gradbasis_test_x0 = self.basis_test.grad(self.xi_Gamma_x0)
-        basis_trial_x0 = self.basis_trial.forward(self.xi_Gamma_x0)
-        gradbasis_trial_x0 = self.basis_trial.grad(self.xi_Gamma_x0)
-        basis_test_xL = self.basis_test.forward(self.xi_Gamma_xL)
-        gradbasis_test_xL = self.basis_test.grad(self.xi_Gamma_xL)
-        basis_trial_xL = self.basis_trial.forward(self.xi_Gamma_xL)
-        gradbasis_trial_xL = self.basis_trial.grad(self.xi_Gamma_xL)
-        F_0 = opt_einsum.contract('q,q,qmx,qnx->mn', self.w_Omega, theta, gradbasis_test, gradbasis_trial)
-        F_0 += -opt_einsum.contract('q,qm,x,q,qnx->mn', self.w_Gamma_x0, basis_test_x0, self.n_x0, theta_x0, gradbasis_trial_x0)
-        F_0 += -opt_einsum.contract('q,qm,x,q,qnx->mn', self.w_Gamma_xL, basis_test_xL, self.n_xL, theta_xL, gradbasis_trial_xL)
-        F_0 += -opt_einsum.contract('q,qn,x,q,qmx->mn', self.w_Gamma_x0, basis_trial_x0, self.n_x0, theta_x0, gradbasis_test_x0)
-        F_0 += -opt_einsum.contract('q,qn,x,q,qmx->mn', self.w_Gamma_xL, basis_trial_xL, self.n_xL, theta_xL, gradbasis_test_xL)
-        if self.hparams.get('gamma_stabilization',0)!=0:
-            F_0 += self.hparams['gamma_stabilization']*opt_einsum.contract('q,qm,q,qn->mn', self.w_Gamma_x0, basis_test_x0, theta_x0, basis_trial_x0)
-            F_0 += self.hparams['gamma_stabilization']*opt_einsum.contract('q,qm,q,qn->mn', self.w_Gamma_xL, basis_test_xL, theta_xL, basis_trial_xL)
-        self.F_0 = torch.tensor(F_0, dtype=self.dtype, device=self.device)
+        """
+        Compute the matrices F_0 and A_0 for the Neumann series.
+
+        Returns:
+            None
+        """
+        theta_q = np.ones(self.w_Omega.shape)
+        theta_x0_q = np.ones(self.w_Gamma_x0.shape)
+        theta_xL_q = np.ones(self.w_Gamma_xL.shape)
+        self.F_0 = torch.tensor(self.compute_F(theta_q, theta_x0_q, theta_xL_q), dtype=self.dtype, device=self.device)
         self.A_0 = torch.linalg.inv(self.F_0)
     
     def compute_d(self, f_q, eta_y0_q, eta_yL_q, g_x0_q, g_xL_q):
+        """
+        Compute the right hand side vector d based on the discretized input functions.
+
+        Args:
+            f_q (np.ndarray): Input function f, shape (N_samples, self.xi_Omega.shape[0]).
+            eta_y0_q (np.ndarray): Input function eta_y0, shape (N_samples, self.xi_Gamma_y0.shape[0]).
+            eta_yL_q (np.ndarray): Input function eta_yL, shape (N_samples, self.xi_Gamma_yL.shape[0]).
+            g_x0_q (np.ndarray): Input function g_x0, shape (N_samples, self.xi_Gamma_x0.shape[0]).
+            g_xL_q (np.ndarray): Input function g_xL, shape (N_samples, self.xi_Gamma_xL.shape[0]).
+
+        Returns:
+            np.ndarray: Computed vector d, shape (N_samples, N).
+        """
         basis_test = self.basis_test.forward(self.xi_Omega)
-        basis_test_b = self.basis_test.forward(self.xi_Gamma_y0)
-        basis_test_t = self.basis_test.forward(self.xi_Gamma_yL)
-        basis_test_l = self.basis_test.forward(self.xi_Gamma_x0)
-        basis_test_r = self.basis_test.forward(self.xi_Gamma_xL)
-        gradbasis_test_l = self.basis_test.grad(self.xi_Gamma_x0)
-        gradbasis_test_r = self.basis_test.grad(self.xi_Gamma_xL)
+        basis_test_y0 = self.basis_test.forward(self.xi_Gamma_y0)
+        basis_test_yL = self.basis_test.forward(self.xi_Gamma_yL)
+        basis_test_x0 = self.basis_test.forward(self.xi_Gamma_x0)
+        basis_test_xL = self.basis_test.forward(self.xi_Gamma_xL)
+        gradbasis_test_x0 = self.basis_test.grad(self.xi_Gamma_x0)
+        gradbasis_test_xL = self.basis_test.grad(self.xi_Gamma_xL)
         d = opt_einsum.contract('q,qm,Nq->Nm', self.w_Omega, basis_test, f_q)
-        d += opt_einsum.contract('q,qm,Nq->Nm', self.w_Gamma_y0, basis_test_b, eta_y0_q)
-        d += opt_einsum.contract('q,qm,Nq->Nm', self.w_Gamma_yL, basis_test_t, eta_yL_q)
-        d -= opt_einsum.contract('q,x,qmx,Nq->Nm', self.w_Gamma_x0, self.n_x0, gradbasis_test_l, g_x0_q)
-        d -= opt_einsum.contract('q,x,qmx,Nq->Nm', self.w_Gamma_xL, self.n_xL, gradbasis_test_r, g_xL_q)
+        d += opt_einsum.contract('q,qm,Nq->Nm', self.w_Gamma_y0, basis_test_y0, eta_y0_q)
+        d += opt_einsum.contract('q,qm,Nq->Nm', self.w_Gamma_yL, basis_test_yL, eta_yL_q)
+        d -= opt_einsum.contract('q,x,qmx,Nq->Nm', self.w_Gamma_x0, self.n_x0, gradbasis_test_x0, g_x0_q)
+        d -= opt_einsum.contract('q,x,qmx,Nq->Nm', self.w_Gamma_xL, self.n_xL, gradbasis_test_xL, g_xL_q)
         if self.hparams.get('gamma_stabilization',0)!=0:
-            d += self.hparams['gamma_stabilization']*opt_einsum.contract('q,qm,Nq->Nm', self.w_Gamma_x0, basis_test_l, g_x0_q)
-            d += self.hparams['gamma_stabilization']*opt_einsum.contract('q,qm,Nq->Nm', self.w_Gamma_xL, basis_test_r, g_xL_q)                 
+            d += -self.hparams['gamma_stabilization']*opt_einsum.contract('q,qm,Nq->Nm', self.w_Gamma_x0, basis_test_x0, g_x0_q)
+            d += -self.hparams['gamma_stabilization']*opt_einsum.contract('q,qm,Nq->Nm', self.w_Gamma_xL, basis_test_xL, g_xL_q)                 
         return d
     
     def NN_forward(self, theta_q, f_q, eta_y0_q, eta_yL_q, g_x0_q, g_xL_q):
-        theta_q = theta_q.reshape((theta_q.shape[0],)+(self.hparams['Q']))
-        f_q = f_q.reshape((f_q.shape[0],)+(self.hparams['Q']))
-        eta_y0_q = eta_y0_q.reshape((eta_y0_q.shape[0],)+(self.hparams['Q'][0],))
-        eta_yL_q = eta_yL_q.reshape((eta_yL_q.shape[0],)+(self.hparams['Q'][0],))
-        eta_q = torch.zeros((eta_y0_q.shape[0],)+(self.hparams['Q']), dtype=self.dtype, device=self.device)
+        """
+        Forward pass for the NN model.
+        The boundary conditions are treated as 2D zero tensors with the BC values on the boundaries.
+
+        Args:
+            theta_q (torch.tensor):Discretized input function theta, shape (N_samples, self.xi_Omega.shape[0]).
+            f_q (torch.tensor): Input function f, shape (N_samples, self.xi_Omega.shape[0]).
+            eta_y0_q (torch.tensor): Input function eta_y0, shape (N_samples, self.xi_Gamma_y0.shape[0]).
+            eta_yL_q (torch.tensor): Input function eta_yL, shape (N_samples, self.xi_Gamma_yL.shape[0]).
+            g_x0_q (torch.tensor): Input function g_x0, shape (N_samples, self.xi_Gamma_x0.shape[0]).
+            g_xL_q (torch.tensor): Input function g_xL, shape (N_samples, self.xi_Gamma_xL.shape[0]).
+
+        Returns:
+            torch.Tensor: Predicted output u_q_hat, shape (N_samples,)+Q_L.
+        """
+        theta_q = theta_q.reshape((theta_q.shape[0],)+self.hparams['Q'])
+        f_q = f_q.reshape((f_q.shape[0],)+self.hparams['Q'])
+        eta_q = torch.zeros((eta_y0_q.shape[0],)+self.hparams['Q'], dtype=self.dtype, device=self.device)
         eta_q[:,:,0] = eta_y0_q
         eta_q[:,:,-1] = eta_yL_q
         g_x0_q = g_x0_q.reshape((g_x0_q.shape[0],)+(self.hparams['Q'][1],))
@@ -180,6 +243,21 @@ class NeuralOperator(pl.LightningModule):
         return u_q_hat
     
     def NN_simforward(self, theta, f, eta_y0, eta_yL, g_x0, g_xL, u):
+        """
+        Simulation forward pass for the NN model (input functions -> solution).
+
+        Args:
+            theta (list of functions): Input function theta, shape len(N_samples).
+            f (list of functions): Input function f, shape len(N_samples).
+            eta_y0 (list of functions): Input function eta_y0, shape len(N_samples).
+            eta_yL (list of functions): Input function eta_yL, shape len(N_samples).
+            g_x0 (list of functions): Input function g_x0, shape len(N_samples).
+            g_xL (list of functions): Input function g_xL, shape len(N_samples).
+            u (list of functions): Output function u, shape len(N_samples).
+
+        Returns:
+            np.ndarray: Predicted output u_q_hat, shape (N_samples,)+Q_L.
+        """
         theta_q, theta_x0_q, theta_xL_q, f_q, eta_y0_q, eta_yL_q, g_x0_q, g_xL_q = self.discretize_input_functions(theta, f, eta_y0, eta_yL, g_x0, g_xL)
         theta_q = torch.tensor(theta_q, dtype=self.dtype, device=self.device)
         f_q = torch.tensor(f_q, dtype=self.dtype, device=self.device)
@@ -191,6 +269,21 @@ class NeuralOperator(pl.LightningModule):
         return u_q_hat
     
     def DeepONet_forward(self, theta_q, f_q, eta_y0_q, eta_yL_q, g_x0_q, g_xL_q):
+        """
+        Forward pass for the DeepONet model.
+        The boundary conditions are treated as 2D zero tensors with the BC values on the boundaries.
+
+        Args:
+            theta_q (torch.tensor):Discretized input function theta, shape (N_samples, self.xi_Omega.shape[0]).
+            f_q (torch.tensor): Input function f, shape (N_samples, self.xi_Omega.shape[0]).
+            eta_y0_q (torch.tensor): Input function eta_y0, shape (N_samples, self.xi_Gamma_y0.shape[0]).
+            eta_yL_q (torch.tensor): Input function eta_yL, shape (N_samples, self.xi_Gamma_yL.shape[0]).
+            g_x0_q (torch.tensor): Input function g_x0, shape (N_samples, self.xi_Gamma_x0.shape[0]).
+            g_xL_q (torch.tensor): Input function g_xL, shape (N_samples, self.xi_Gamma_xL.shape[0]).
+
+        Returns:
+            torch.Tensor: Predicted output u_q_hat, shape (N_samples,)+(x.shape[0],).
+        """
         theta_q = theta_q.reshape((theta_q.shape[0],)+(self.hparams['Q']))
         f_q = f_q.reshape((f_q.shape[0],)+(self.hparams['Q']))
         eta_y0_q = eta_y0_q.reshape((eta_y0_q.shape[0],)+(self.hparams['Q'][0],))
@@ -207,10 +300,25 @@ class NeuralOperator(pl.LightningModule):
         if self.hparams['systemnet']==MLP:
             inputfuncs = torch.cat((theta_q.flatten(-2,-1),f_q.flatten(-2,-1),eta_y0_q,eta_yL_q,g_x0_q,g_xL_q), dim=1)
         u_n = self.systemnet.forward(inputfuncs).reshape((theta_q.shape[0],self.hparams['N']))
-        u_hat = opt_einsum.contract('Nn,qn->Nq', u_n, self.psix)
-        return u_hat
+        u_q_hat = opt_einsum.contract('Nn,qn->Nq', u_n, self.psix)
+        return u_q_hat
     
     def DeepONet_simforward(self, theta, f, eta_y0, eta_yL, g_x0, g_xL, u):
+        """
+        Simulation forward pass for the DeepONet model (input functions -> solution).
+
+        Args:
+            theta (list of functions): Input function theta, shape len(N_samples).
+            f (list of functions): Input function f, shape len(N_samples).
+            eta_y0 (list of functions): Input function eta_y0, shape len(N_samples).
+            eta_yL (list of functions): Input function eta_yL, shape len(N_samples).
+            g_x0 (list of functions): Input function g_x0, shape len(N_samples).
+            g_xL (list of functions): Input function g_xL, shape len(N_samples).
+            u (list of functions): Output function u, shape len(N_samples).
+
+        Returns:
+            np.ndarray: Predicted output u_q_hat, shape (N_samples,)+(x.shape[0],).
+        """
         theta_q, theta_x0_q, theta_xL_q, f_q, eta_y0_q, eta_yL_q, g_x0_q, g_xL_q = self.discretize_input_functions(theta, f, eta_y0, eta_yL, g_x0, g_xL)
         theta_q = torch.tensor(theta_q, dtype=self.dtype, device=self.device)
         f_q = torch.tensor(f_q, dtype=self.dtype, device=self.device)
@@ -218,10 +326,25 @@ class NeuralOperator(pl.LightningModule):
         eta_yL_q = torch.tensor(eta_yL_q, dtype=self.dtype, device=self.device)
         g_x0_q = torch.tensor(g_x0_q, dtype=self.dtype, device=self.device)
         g_xL_q = torch.tensor(g_xL_q, dtype=self.dtype, device=self.device)   
-        u_hat = self.DeepONet_forward(theta_q, f_q, eta_y0_q, eta_yL_q, g_x0_q, g_xL_q).detach().cpu().numpy()
-        return u_hat
+        u_q_hat = self.DeepONet_forward(theta_q, f_q, eta_y0_q, eta_yL_q, g_x0_q, g_xL_q).detach().cpu().numpy()
+        return u_q_hat
     
     def VarMiON_forward(self, theta_q, f_q, eta_y0_q, eta_yL_q, g_x0_q, g_xL_q):
+        """
+        Forward pass for the VarMiON model.
+        The boundary conditions are treated as 2D zero tensors with the BC values on the boundaries.
+
+        Args:
+            theta_q (torch.tensor):Discretized input function theta, shape (N_samples, self.xi_Omega.shape[0]).
+            f_q (torch.tensor): Input function f, shape (N_samples, self.xi_Omega.shape[0]).
+            eta_y0_q (torch.tensor): Input function eta_y0, shape (N_samples, self.xi_Gamma_y0.shape[0]).
+            eta_yL_q (torch.tensor): Input function eta_yL, shape (N_samples, self.xi_Gamma_yL.shape[0]).
+            g_x0_q (torch.tensor): Input function g_x0, shape (N_samples, self.xi_Gamma_x0.shape[0]).
+            g_xL_q (torch.tensor): Input function g_xL, shape (N_samples, self.xi_Gamma_xL.shape[0]).
+
+        Returns:
+            torch.Tensor: Predicted output u_q_hat, shape (N_samples,)+(x.shape[0],).
+        """
         eta_q = torch.zeros((eta_y0_q.shape[0],2*eta_y0_q.shape[1]), dtype=self.dtype, device=self.device)
         eta_q[:,:eta_y0_q.shape[1]] = eta_y0_q
         eta_q[:,eta_y0_q.shape[1]:] = eta_yL_q
@@ -231,10 +354,25 @@ class NeuralOperator(pl.LightningModule):
         systemnet = self.systemnet.forward(theta_q)
         LBranch = self.LBranch_f.forward(f_q) + self.LBranch_eta.forward(eta_q) + self.LBranch_g.forward(g_q)
         u_n = opt_einsum.contract('nij,nj->ni', systemnet, LBranch)
-        u_hat = opt_einsum.contract('Nn,qn->Nq', u_n, self.psix)
-        return u_hat
+        u_q_hat = opt_einsum.contract('Nn,qn->Nq', u_n, self.psix)
+        return u_q_hat
     
     def VarMiON_simforward(self, theta, f, eta_y0, eta_yL, g_x0, g_xL, u):
+        """
+        Simulation forward pass for the VarMiON model (input functions -> solution).
+
+        Args:
+            theta (list of functions): Input function theta, shape len(N_samples).
+            f (list of functions): Input function f, shape len(N_samples).
+            eta_y0 (list of functions): Input function eta_y0, shape len(N_samples).
+            eta_yL (list of functions): Input function eta_yL, shape len(N_samples).
+            g_x0 (list of functions): Input function g_x0, shape len(N_samples).
+            g_xL (list of functions): Input function g_xL, shape len(N_samples).
+            u (list of functions): Output function u, shape len(N_samples).
+
+        Returns:
+            np.ndarray: Predicted output u_q_hat, shape (N_samples,)+(x.shape[0],).
+        """
         theta_q, theta_x0_q, theta_xL_q, f_q, eta_y0_q, eta_yL_q, g_x0_q, g_xL_q = self.discretize_input_functions(theta, f, eta_y0, eta_yL, g_x0, g_xL)
         theta_q = torch.tensor(theta_q, dtype=self.dtype, device=self.device)
         f_q = torch.tensor(f_q, dtype=self.dtype, device=self.device)
@@ -242,10 +380,21 @@ class NeuralOperator(pl.LightningModule):
         eta_yL_q = torch.tensor(eta_yL_q, dtype=self.dtype, device=self.device)
         g_x0_q = torch.tensor(g_x0_q, dtype=self.dtype, device=self.device)
         g_xL_q = torch.tensor(g_xL_q, dtype=self.dtype, device=self.device)   
-        u_hat = self.VarMiON_forward(theta_q, f_q, eta_y0_q, eta_yL_q, g_x0_q, g_xL_q).detach().cpu().numpy()
-        return u_hat
+        u_q_hat = self.VarMiON_forward(theta_q, f_q, eta_y0_q, eta_yL_q, g_x0_q, g_xL_q).detach().cpu().numpy()
+        return u_q_hat
 
     def NGO_forward(self, scaling, F, d):
+        """
+        Forward pass for the NGO model.
+
+        Args:
+            scaling (torch.Tensor): Scaling factor, shape (N_samples,).
+            F (torch.Tensor): Input matrix F, shape (N_samples, N, N) (for model NGO) or (N_samples, h[0], h[1]) (for data NGO).
+            d (torch.Tensor): Input vector d, shape (N_samples, N).
+
+        Returns:
+            torch.Tensor: Predicted output u_q_hat, shape (N_samples,)+(x.shape[0],).
+        """
         if self.hparams.get('scale_equivariance',False)==True:
             F = F/scaling[:,None,None]
         if self.hparams.get('Neumannseries', False)==False:
@@ -261,18 +410,43 @@ class NeuralOperator(pl.LightningModule):
         if self.hparams.get('scale_equivariance',False)==True:
             A = A/scaling[:,None,None]        
         u_n = opt_einsum.contract('nij,nj->ni', A, d)
-        u_hat = opt_einsum.contract('Nn,qn->Nq', u_n, self.psix)
-        return u_hat
+        u_q_hat = opt_einsum.contract('Nn,qn->Nq', u_n, self.psix)
+        return u_q_hat
     
     def NGO_simforward(self, theta, f, eta_y0, eta_yL, g_x0, g_xL, u):
+        """
+        Simulation forward pass for the NGO model (input functions -> solution).
+
+        Args:
+            theta (list of functions): Input function theta, shape len(N_samples).
+            f (list of functions): Input function f, shape len(N_samples).
+            eta_y0 (list of functions): Input function eta_y0, shape len(N_samples).
+            eta_yL (list of functions): Input function eta_yL, shape len(N_samples).
+            g_x0 (list of functions): Input function g_x0, shape len(N_samples).
+            g_xL (list of functions): Input function g_xL, shape len(N_samples).
+            u (list of functions): Output function u, shape len(N_samples).
+
+        Returns:
+            np.ndarray: Predicted output u_q_hat, shape (N_samples,)+(x.shape[0],).
+        """
         theta_q, theta_x0_q, theta_xL_q, f_q, eta_y0_q, eta_yL_q, g_x0_q, g_xL_q = self.discretize_input_functions(theta, f, eta_y0, eta_yL, g_x0, g_xL)
         F = torch.tensor(self.compute_F(theta_q, theta_x0_q, theta_xL_q), dtype=self.dtype, device=self.device)
         d = torch.tensor(self.compute_d(f_q, eta_y0_q, eta_yL_q, g_x0_q, g_xL_q), dtype=self.dtype, device=self.device)
         scaling = torch.tensor(np.sum(self.w_Omega[None,:]*theta_q, axis=-1), dtype=self.dtype, device=self.device)
-        u_hat = self.NGO_forward(scaling, F, d).detach().cpu().numpy()
-        return u_hat
+        u_q_hat = self.NGO_forward(scaling, F, d).detach().cpu().numpy()
+        return u_q_hat
     
     def FEM_forward(self, F, d):
+        """
+        Forward pass for the FEM model.
+
+        Args:
+            F (torch.Tensor): Input matrix F, shape (N_samples, N, N).
+            d (torch.Tensor): Input vector d, shape (N_samples, N).
+
+        Returns:
+            torch.Tensor: Predicted output u_q_hat, shape (N_samples,)+(x.shape[0],).
+        """
         if self.hparams.get('Neumannseries', False)==False:
             K_inv = torch.linalg.pinv(F)
         if self.hparams.get('Neumannseries', False)==True:
@@ -284,17 +458,41 @@ class NeuralOperator(pl.LightningModule):
                 T = T + Ti
             K_inv = self.A_0@(self.Identity + T)
         u_n = opt_einsum.contract('nij,nj->ni', K_inv, d)
-        u_hat = opt_einsum.contract('Nn,qn->Nq', u_n, self.psix)
-        return u_hat
+        u_q_hat = opt_einsum.contract('Nn,qn->Nq', u_n, self.psix)
+        return u_q_hat
     
     def FEM_simforward(self, theta, f, eta_y0, eta_yL, g_x0, g_xL, u):
+        """
+        Simulation forward pass for the FEM model (input functions -> solution).
+
+        Args:
+            theta (list of functions): Input function theta, shape len(N_samples).
+            f (list of functions): Input function f, shape len(N_samples).
+            eta_y0 (list of functions): Input function eta_y0, shape len(N_samples).
+            eta_yL (list of functions): Input function eta_yL, shape len(N_samples).
+            g_x0 (list of functions): Input function g_x0, shape len(N_samples).
+            g_xL (list of functions): Input function g_xL, shape len(N_samples).
+            u (list of functions): Output function u, shape len(N_samples).
+
+        Returns:
+            np.ndarray: Predicted output u_q_hat, shape (N_samples,)+(x.shape[0],).
+        """
         theta_q, theta_x0_q, theta_xL_q, f_q, eta_y0_q, eta_yL_q, g_x0_q, g_xL_q = self.discretize_input_functions(theta, f, eta_y0, eta_yL, g_x0, g_xL)
         F = torch.tensor(self.compute_F(theta_q, theta_x0_q, theta_xL_q), dtype=self.dtype, device=self.device)
         d = torch.tensor(self.compute_d(f_q, eta_y0_q, eta_yL_q, g_x0_q, g_xL_q), dtype=self.dtype, device=self.device)
-        u_hat = self.FEM_forward(F, d).detach().cpu().numpy()
-        return u_hat
+        u_q_hat = self.FEM_forward(F, d).detach().cpu().numpy()
+        return u_q_hat
     
     def projection_forward(self, u):
+        """
+        Forward pass for the projection model.
+
+        Args:
+            u (list of functions): Output function u, shape (N_samples, ...).
+
+        Returns:
+            torch.Tensor: Predicted output u_q_hat, shape (N_samples,)+(x.shape[0],).
+        """
         u_q = discretize_functions(u, self.xi_Omega)
         basis_trial = self.basis_trial.forward(self.xi_Omega)
         u_w = opt_einsum.contract('q,qm,Nq->Nm', self.w_Omega, basis_trial, u_q)
@@ -305,14 +503,49 @@ class NeuralOperator(pl.LightningModule):
         return u_hat
     
     def projection_simforward(self, theta, f, eta_y0, eta_yL, g_x0, g_xL, u):
+        """
+        Simulation forward pass for the projection model (input functions -> solution).
+
+        Args:
+            u (list of functions): Output function u, shape len(N_samples).
+            
+        Returns:
+            np.ndarray: Predicted output u_q_hat, shape (N_samples,)+(x.shape[0],).
+        """
         u_hat = self.projection_forward(u).detach().cpu().numpy()
         return u_hat
     
     def forward(self, *args):
-        u_hat = self.forwardfunction(*args)
-        return u_hat
+        """
+        Training forward pass for the model, set in the function self.init_modeltype(),
+        based on the selected hparams['modeltype'].
+
+        Args:
+            *args: Variable length argument list.
+
+        Returns:
+            torch.Tensor: Predicted output u_q_hat, shape (N_samples,)+(x.shape[0],).
+        """
+        u_q_hat = self.forwardfunction(*args)
+        return u_q_hat
     
     def simforward(self, theta, f, eta_y0, eta_yL, g_x0, g_xL, x, u):
+        """
+        Simulation forward pass for the model (input functions -> solution),
+        set in the function self.init_modeltype(), based on the selected hparams['modeltype'].
+
+        Args:
+            theta (list of functions): Input function theta, shape len(N_samples).
+            f (list of functions): Input function f, shape len(N_samples).
+            eta_y0 (list of functions): Input function eta_y0, shape len(N_samples).
+            eta_yL (list of functions): Input function eta_yL, shape len(N_samples).
+            g_x0 (list of functions): Input function g_x0, shape len(N_samples).
+            g_xL (list of functions): Input function g_xL, shape len(N_samples).
+            u (list of functions): Output function u, shape len(N_samples).
+            x (np.ndarray): (Quadrature) points to evaluate the solution u, shape (N_points,dimension).
+        Returns:
+            np.ndarray: Predicted output u_q_hat, shape (N_samples,)+(x.shape[0],).
+        """
         self.psix = torch.tensor(self.basis_trial.forward(x), dtype=self.dtype, device=self.device)
         u_hat = self.simforwardfunction(theta, f, eta_y0, eta_yL, g_x0, g_xL, u)
         return u_hat
@@ -331,6 +564,12 @@ class NeuralOperator(pl.LightningModule):
         return spectralradius
     
     def compute_quadrature(self):
+        """
+        Compute the quadrature points and weights, and the geometry outward normal.
+
+        Returns:
+            None
+        """
         #Quadrature
         if self.hparams['quadrature']=='uniform':
             quad_Omega = UniformQuadrature(Q=self.hparams['Q'])
@@ -370,10 +609,26 @@ class NeuralOperator(pl.LightningModule):
         self.n_xL = np.array([1,0])
 
     def configure_optimizers(self):
+        """
+        Configure the optimizer.
+
+        Returns:
+            torch.optim.Optimizer: Configured optimizer.
+        """
         optimizer = self.hparams['optimizer'](self.parameters(), lr=self.hparams['learning_rate'])
         return optimizer
     
     def training_step(self, train_batch, batch_idx):
+        """
+        Definition of the training step (called under the hood by pytorch lightning).
+
+        Args:
+            train_batch (tuple): Batch of training data.
+            batch_idx (int): Index of the batch.
+
+        Returns:
+            torch.Tensor: Computed loss.
+        """
         inputs = train_batch[:-1]
         loss = 0
         if self.hparams.get('solution_loss',None)!=None:
@@ -397,6 +652,16 @@ class NeuralOperator(pl.LightningModule):
         return loss
 
     def validation_step(self, val_batch, batch_idx):
+        """
+        Definition of the validation step (called under the hood by pytorch lightning).
+
+        Args:
+            train_batch (tuple): Batch of training data.
+            batch_idx (int): Index of the batch.
+
+        Returns:
+            None
+        """
         inputs = val_batch[:-1]
         u = val_batch[-1]
         u_hat = self.forward(*inputs)
@@ -421,9 +686,24 @@ class NeuralOperator(pl.LightningModule):
         self.log('metric', self.metric)
 
     def on_save_checkpoint(self, checkpoint):
+        """
+        Save hyperparameters to the checkpoint (hook called by pytorch lightning under the hood).
+
+        Args:
+            checkpoint (dict): Checkpoint dictionary.
+
+        Returns:
+            None
+        """
         checkpoint['hparams'] = self.hparams
         
     def on_fit_start(self):
+        """
+        Perform actions at the start of fitting (hook called by pytorch lightning under the hood).
+
+        Returns:
+            None
+        """
         torch.set_num_threads(2)
         #Basis evaluation at loss quadrature points
         self.psix = torch.tensor(self.basis_trial.forward(self.xi_Omega_L), dtype=self.dtype, device=self.device).to(self.device)
@@ -431,4 +711,10 @@ class NeuralOperator(pl.LightningModule):
         self.systemnet.device = self.device
 
     def on_validation_epoch_end(self):
-        print(self.metric)
+        """
+        Perform actions at the end of a validation epoch (hook called by pytorch lightning under the hood).
+
+        Returns:
+            None
+        """
+        print("Training metric: " +str(self.metric))
