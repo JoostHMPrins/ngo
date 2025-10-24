@@ -137,6 +137,7 @@
 import numpy as np
 import scipy
 import opt_einsum
+<<<<<<< HEAD:trainingdata/GRF.py
 
 
 def generate_GRF_parameters(N_samples, l, c_min, c_max, b_min, b_max):
@@ -176,6 +177,12 @@ def GRFs_d2dxi2(GRFparams, x):
     phi_n = f_n[:,None,:]*np.exp(-1/2*np.sum(((x[None,:,None,:] - mus[:,None,:,:])/l[None,None,None,:])**2, axis=-1))
     prefactor = (x[None,:,None,:] - mus[:,None,:,:])**2/l[None,None,None,:]**4 - 1/l[None,None,None,:]**2
     return c[:,None,None]*np.sum(prefactor*phi_n[:,:,:,None], axis=-2)
+=======
+# 
+import jax
+import jax.numpy as jnp
+from jax import jit, vmap
+>>>>>>> 7a5994f88f5c79a7900afdf8cc33f2d3149fd82d:src/ngo/trainingdata/GRF.py
 
 class GRF:
     def __init__(self, N_samples, l):

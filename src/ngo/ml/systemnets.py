@@ -1,33 +1,67 @@
+# Copyright 2025 Joost Prins
+
+# 3rd Party
+import numpy as np
 import torch
-from torch import nn
+import torch.nn as nn
 import opt_einsum
 import neuralop
-from customlayers import *
+
+# Local
+import ngo.ml.customlayers as customlayers
 
 
 class MLP(nn.Module):
+    """
+    A Multi-Layer Perceptron (MLP) model.
+
+    Attributes:
+        hparams (dict): Hyperparameters for the MLP model.
+        layers (nn.ModuleList): List of layers in the MLP.
+        free_parameter (int): Free parameter (in this model, the number of neurons per hidden layer) 
+        to adjust the number of trainable parameters,
+        adjusted incrementally to 'N_w' by the function balance_num_trainable_params.
+    """
     def __init__(self, hparams):
+        """
+        Initialize the MLP model.
+
+        Args:
+            hparams (dict): Hyperparameters for the MLP model.
+        """
         super().__init__()
         self.hparams = hparams
-        self = balance_num_trainable_params(model=self, N_w=self.hparams['N_w'])
+        self = customlayers.balance_num_trainable_params(model=self, N_w=self.hparams['N_w'])
         
     def init_layers(self):
+        """
+        Initialize the layers of the MLP model.
+        """
         self.layers = nn.ModuleList()
         self.kernel_sizes = self.hparams['kernel_sizes']
         #Layers
-        self.layers.append(ReshapeLayer(output_shape=(int(np.prod(self.hparams['input_shape'])),)))
-        self.layers.append(nn.Linear(in_features=int(np.prod(self.hparams['input_shape'])), out_features=self.free_parameter, bias=self.hparams.get('bias', False)))
+        self.layers.append(customlayers.ReshapeLayer(output_shape=(int(np.prod(self.hparams['input_shape'])),)))
+        self.layers.append(nn.Linear(in_features=int(np.prod(self.hparams['input_shape'])), out_features=self.free_parameter, bias=False))
         self.layers.append(nn.ReLU())
-        self.layers.append(nn.Linear(in_features=self.free_parameter, out_features=self.free_parameter, bias=self.hparams.get('bias', False)))
+        self.layers.append(nn.Linear(in_features=self.free_parameter, out_features=self.free_parameter, bias=False))
         self.layers.append(nn.ReLU())
-        self.layers.append(nn.Linear(in_features=self.free_parameter, out_features=self.free_parameter, bias=self.hparams.get('bias', False)))
+        self.layers.append(nn.Linear(in_features=self.free_parameter, out_features=self.free_parameter, bias=False))
         self.layers.append(nn.ReLU())
-        self.layers.append(nn.Linear(in_features=self.free_parameter, out_features=int(np.prod(self.hparams['output_shape'])), bias=self.hparams.get('bias', False)))
-        self.layers.append(ReshapeLayer(output_shape=self.hparams['output_shape']))        
+        self.layers.append(nn.Linear(in_features=self.free_parameter, out_features=int(np.prod(self.hparams['output_shape'])), bias=False))
+        self.layers.append(customlayers.ReshapeLayer(output_shape=self.hparams['output_shape']))        
         if self.hparams['outputactivation'] is not None:
             self.layers.append(self.hparams['outputactivation'])
 
     def forward(self, x):
+        """
+        Forward pass through the MLP model.
+
+        Args:
+            x (torch.Tensor): Input tensor. Shape: (batch_size, *input_shape).
+
+        Returns:
+            torch.Tensor: Output tensor. Shape: (batch_size, *output_shape).
+        """
         x0 = x
         x1 = self.layers[0](x0)
         x2 = self.layers[1](x1)
@@ -44,44 +78,68 @@ class MLP(nn.Module):
 
 
 class CNN(nn.Module):
+    """
+    A Convolutional Neural Network (CNN) model that maps a 2D tensor onto a 2D tensor.
+
+    Attributes:
+        hparams (dict): Hyperparameters for the CNN model.
+        layers (nn.ModuleList): List of layers in the CNN.
+        free_parameter (int): Free parameter (in this model, the number of channels) 
+        to adjust the number of trainable parameters,
+        adjusted incrementally to 'N_w' by the function balance_num_trainable_params.
+        bottleneck_size (int): Size of the bottleneck dense layer.
+    """
     def __init__(self, hparams):
+        """
+        Initialize the CNN model.
+        Args:
+            hparams (dict): Hyperparameters for the CNN model.
+        """
         super().__init__()
         self.hparams = hparams
-        self = balance_num_trainable_params(model=self, N_w=self.hparams['N_w'])
+        self = customlayers.balance_num_trainable_params(model=self, N_w=self.hparams['N_w'])
         
     def init_layers(self):
+        """
+        Initialize the layers of the CNN model.
+        """
         self.layers = nn.ModuleList()
         self.kernel_sizes = self.hparams['kernel_sizes']
         self.bottleneck_size = self.hparams['bottleneck_size']
         #Layers
-        self.layers.append(ReshapeLayer(output_shape=self.hparams['input_shape']))
-        self.layers.append(nn.Conv2d(in_channels=self.hparams['input_shape'][0], out_channels=self.free_parameter, kernel_size=self.kernel_sizes[0], stride=self.kernel_sizes[0], bias=self.hparams.get('bias', False)))
+        self.layers.append(customlayers.ReshapeLayer(output_shape=self.hparams['input_shape']))
+        self.layers.append(nn.Conv2d(in_channels=self.hparams['input_shape'][0], out_channels=self.free_parameter, kernel_size=self.kernel_sizes[0], stride=self.kernel_sizes[0], bias=False))
         self.layers.append(nn.ReLU())
-        self.layers.append(nn.Conv2d(in_channels=self.free_parameter, out_channels=self.free_parameter, kernel_size=self.kernel_sizes[1], stride=self.kernel_sizes[1], bias=self.hparams.get('bias', False)))
+        self.layers.append(nn.Conv2d(in_channels=self.free_parameter, out_channels=self.free_parameter, kernel_size=self.kernel_sizes[1], stride=self.kernel_sizes[1], bias=False))
         self.layers.append(nn.ReLU())
-        self.layers.append(nn.Conv2d(in_channels=self.free_parameter, out_channels=self.free_parameter, kernel_size=self.kernel_sizes[2], stride=self.kernel_sizes[2], bias=self.hparams.get('bias', False)))
+        self.layers.append(nn.Conv2d(in_channels=self.free_parameter, out_channels=self.free_parameter, kernel_size=self.kernel_sizes[2], stride=self.kernel_sizes[2], bias=False))
         self.layers.append(nn.ReLU())
-        self.layers.append(nn.Conv2d(in_channels=self.free_parameter, out_channels=self.bottleneck_size, kernel_size=self.kernel_sizes[3], stride=self.kernel_sizes[3], bias=self.hparams.get('bias', False)))
-        self.layers.append(ReshapeLayer(output_shape=(int(self.bottleneck_size),)))
+        self.layers.append(nn.Conv2d(in_channels=self.free_parameter, out_channels=self.bottleneck_size, kernel_size=self.kernel_sizes[3], stride=self.kernel_sizes[3], bias=False))
+        self.layers.append(customlayers.ReshapeLayer(output_shape=(int(self.bottleneck_size),)))
         self.layers.append(nn.Linear(in_features=int(self.bottleneck_size), out_features=int(self.bottleneck_size)))
         self.layers.append(nn.ReLU())
-        self.layers.append(ReshapeLayer(output_shape=(self.bottleneck_size,1,1)))
-        self.layers.append(nn.ConvTranspose2d(self.bottleneck_size, self.free_parameter, kernel_size=self.kernel_sizes[4], stride=self.kernel_sizes[4], bias=self.hparams.get('bias', False)))
+        self.layers.append(customlayers.ReshapeLayer(output_shape=(self.bottleneck_size,1,1)))
+        self.layers.append(nn.ConvTranspose2d(self.bottleneck_size, self.free_parameter, kernel_size=self.kernel_sizes[4], stride=self.kernel_sizes[4], bias=False))
         self.layers.append(nn.ReLU())
-        self.layers.append(nn.ConvTranspose2d(self.free_parameter, self.free_parameter, kernel_size=self.kernel_sizes[5], stride=self.kernel_sizes[5], bias=self.hparams.get('bias', False)))
+        self.layers.append(nn.ConvTranspose2d(self.free_parameter, self.free_parameter, kernel_size=self.kernel_sizes[5], stride=self.kernel_sizes[5], bias=False))
         self.layers.append(nn.ReLU())
-        self.layers.append(nn.ConvTranspose2d(self.free_parameter, self.free_parameter, kernel_size=self.kernel_sizes[6], stride=self.kernel_sizes[6], bias=self.hparams.get('bias', False)))
+        self.layers.append(nn.ConvTranspose2d(self.free_parameter, self.free_parameter, kernel_size=self.kernel_sizes[6], stride=self.kernel_sizes[6], bias=False))
         self.layers.append(nn.ReLU())
-        self.layers.append(nn.ConvTranspose2d(self.free_parameter, 1, kernel_size=self.kernel_sizes[7], stride=self.kernel_sizes[7], bias=self.hparams.get('bias', False)))
-        self.layers.append(ReshapeLayer(output_shape=self.hparams['output_shape']))           
-        # if self.hparams['outputactivation'] is not None:
-        #     self.layers.append(self.hparams['outputactivation'])
-        if self.hparams.get('NLB_outputactivation',None) is not None:
-            self.layers.append(self.hparams['NLB_outputactivation'])
+        self.layers.append(nn.ConvTranspose2d(self.free_parameter, 1, kernel_size=self.kernel_sizes[7], stride=self.kernel_sizes[7], bias=False))
+        self.layers.append(customlayers.ReshapeLayer(output_shape=self.hparams['output_shape']))           
         if self.hparams.get('outputactivation',None) is not None:
             self.layers.append(self.hparams['outputactivation'])
 
     def forward(self, x):
+        """
+        Forward pass through the CNN model.
+
+        Args:
+            x (torch.Tensor): Input tensor. Shape: (batch_size, *input_shape).
+
+        Returns:
+            torch.Tensor: Output tensor. Shape: (batch_size, *output_shape).
+        """
         x0 = x
         x1 = self.layers[0](x0)
         x2 = self.layers[1](x1)

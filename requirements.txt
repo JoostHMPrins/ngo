@@ -1,0 +1,16 @@
+# NOTE: requires python>=3.9,<3.11
+numpy~=1.26.4
+scipy~=1.13.1
+matplotlib
+torch~=2.5.1
+tensorboard~=2.13.0
+pytorch-lightning~=2.3.0
+opt-einsum~=3.3.0
+wandb~=0.19.4
+torch_harmonics~=0.7.3
+neuraloperator~=0.3.0
+dill~=0.3.6
+ipywidgets
+ipykernel
+ipython
+joblib
