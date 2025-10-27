@@ -633,30 +633,6 @@ class TensorizedBasis:
                 ax.set_ylabel('y')
         plt.tight_layout()
         plt.show()
-
-
-class BSplineInterpolator2D:
-    def __init__(self, x_data, u_data, knots_x, knots_y, polynomial_order):
-        self.basis_2d = BSplineBasis2D(knots_x, knots_y, polynomial_order)
-        self.coeffs = self.compute_coeffs(x_data, u_data)
-        
-    def compute_X(self, x_data):
-        return self.basis_2d.forward(x_data)
-    
-    def compute_coeffs(self, x_data, u_data):
-        X = self.compute_X(x_data)
-        coeffs = np.linalg.lstsq(X, u_data)[0]
-        return coeffs
-        
-    def forward(self, x):
-        psi = self.basis_2d.forward(x)
-        output = opt_einsum.contract('n,Nn->N', self.coeffs, psi)
-        return output
-    
-    def grad(self, x):
-        gradpsi = self.basis_2d.grad(x)
-        output = opt_einsum.contract('n,Nni->Ni', self.coeffs, gradpsi)
-        return output
     
 
 class BSplineInterpolatedPOD2D:
