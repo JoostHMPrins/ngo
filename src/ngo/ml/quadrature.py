@@ -1,8 +1,5 @@
 # Copyright 2025 Joost Prins
 
-# Standard
-from itertools import product
-
 # 3rd Party
 import numpy as np
 import matplotlib.pyplot as plt

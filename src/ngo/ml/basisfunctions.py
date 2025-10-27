@@ -8,9 +8,8 @@ from scipy.interpolate import BSpline
 import torch
 
 # Local
-import customlayers
-# from ngo.ml.customlayers import discretize_functions
-from customlayers import discretize_functions
+from ngo.ml.customlayers import discretize_functions
+
 
 class BSplineBasis1D:
     """

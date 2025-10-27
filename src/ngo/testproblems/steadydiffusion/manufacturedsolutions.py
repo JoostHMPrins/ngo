@@ -2,9 +2,7 @@ import numpy as np
 import numpy
 import opt_einsum
 
-import sys
-sys.path.insert(0,'/home/prins/st8/prins/phd/git/ngo-pde-gk/trainingdata')
-from GRF import *
+from ngo.trainingdata.GRF import ScaledGRF
 
 
 class Forcing:

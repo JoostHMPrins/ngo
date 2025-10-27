@@ -173,9 +173,9 @@ class NeuralOperator(pl.LightningModule):
         Returns:
             None
         """
-        theta_q = np.ones(self.w_Omega.shape)
-        theta_x0_q = np.ones(self.w_Gamma_x0.shape)
-        theta_xL_q = np.ones(self.w_Gamma_xL.shape)
+        theta_q = np.ones((1,)+self.w_Omega.shape)
+        theta_x0_q = np.ones((1,)+self.w_Gamma_x0.shape)
+        theta_xL_q = np.ones((1,)+self.w_Gamma_xL.shape)
         self.F_0 = torch.tensor(self.compute_F(theta_q, theta_x0_q, theta_xL_q), dtype=self.dtype, device=self.device)
         self.A_0 = torch.linalg.inv(self.F_0)
     
