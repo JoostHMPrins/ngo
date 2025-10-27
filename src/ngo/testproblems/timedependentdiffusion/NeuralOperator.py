@@ -27,8 +27,8 @@ class NeuralOperator(pl.LightningModule):
     Attributes:
         hparams (dict): Hyperparameters for the model.
         systemnet (torch.nn.Module): The system network.
-        basis_test (TensorizedBasis): Basis functions for testing.
-        basis_trial (TensorizedBasis): Basis functions for trial.
+        basis_test (TensorizedBasis): Test basis functions.
+        basis_trial (TensorizedBasis): Trial basis functions.
         Identity (torch.Tensor): Identity matrix, shape (N, N).
     """
     def __init__(self, hparams):

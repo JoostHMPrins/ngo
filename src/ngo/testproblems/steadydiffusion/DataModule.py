@@ -13,7 +13,7 @@ from ngo.testproblems.steadydiffusion.manufacturedsolutions import ManufacturedS
 
 class DataModule(pl.LightningDataModule):
     """
-    LightningDataModule for handling data loading and preprocessing for the neural operator model.
+    LightningDataModule for handling data generation and preprocessing for the neural operator model.
 
     Attributes:
         hparams (dict): Hyperparameter dictionary.

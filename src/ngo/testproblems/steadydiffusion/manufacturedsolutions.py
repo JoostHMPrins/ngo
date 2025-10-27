@@ -1,7 +1,11 @@
+# Copyright 2025 Joost Prins
+
+# 3rd Party
 import numpy as np
 import numpy
 import opt_einsum
 
+#Local
 from ngo.trainingdata.GRF import ScaledGRF
 
 
