@@ -97,6 +97,96 @@ def balance_num_trainable_params(model, N_w):
     return model  
 
 
+def Neumann_preconditioner_forward(model, F):
+    """
+    Apply Neumann series preconditioning to the input tensor F using the model's preconditioner A_0.
+    Args:
+        model (torch.nn.Module): The model containing the necessary matrices.
+        F (torch.Tensor): Input matrix.
+    Returns:
+        torch.Tensor: Preconditioned output of the system net A_hat.
+    """
+    T = torch.zeros(F.shape, dtype=model.dtype, device=model.device)
+    Ti = model.Identity
+    T1 = -F@model.A_0 + model.Identity
+    for i in range(0, model.hparams['Neumannseries_order']):
+        Ti = T1@Ti
+        T = T + Ti
+    A_hat = model.A_0@(model.Identity + T + model.systemnet.forward(T1))
+    return A_hat
+
+
+def conserve_mass(C_m, C, u_m_hat):
+    """
+    Enforces mass conservation constraint on model predictions.
+    This function modifies the model predictions to ensure they satisfy mass conservation.
+
+    Args:
+        C_m (torch.Tensor): Mass conservation constraint vector, shape (N, n)
+        C (torch.Tensor): Mass conservation constant, shape (N,)
+        u_m_hat (torch.Tensor): Model prediction to be constrained, shape (N, n)
+
+    Returns:
+        torch.Tensor: Modified prediction u_m_hat satisfying mass conservation, shape (N, n)    
+    """
+    #Predicted conservation constant
+    C_hat = opt_einsum.contract('Nn,Nn->N', u_m_hat, C_m)
+    #Scalar correction factor
+    l = (C - C_hat)/opt_einsum.contract('Nn,Nn->N', C_m, C_m)
+     #Apply mass conservation correction
+    u_m_hat = u_m_hat + l[:,None]*C_m
+    return u_m_hat
+
+
+def conserve_energy(model, F, d_x, u_0_m, u_m_hat):
+    """
+    Enforces energy conservation constraint on model predictions using a quadratic programming approach.
+    
+    This function modifies the model predictions to ensure they satisfy energy conservation laws
+    by solving a quadratic problem. It uses the model's mass matrix to compute
+    energy-preserving scaling factors.
+
+    Args:
+        model (nn.Module): Neural network model containing mass matrix M_rr
+        F (torch.Tensor): NGO input, shape (N, n)
+        d_x (torch.Tensor): Spatial part of the right-hand side vector, shape (N, n)
+        u_0_m (torch.Tensor): Initial condition, shape (N, n)
+        u_m_hat (torch.Tensor): Model prediction to be constrained, shape (N, n)
+    
+    Returns:
+        torch.Tensor: Modified prediction u_m_hat satisfying energy conservation, shape (N, n)
+        
+    Note:
+        N is the batch size, n is the number of Galerkin dofs
+    """
+    # Get mass matrix from model
+    M = model.M_rr
+    # Calculate energy conservation constraint terms
+    uTd = opt_einsum.contract('Nn,Nn->N', u_m_hat, d_x)
+    uTMu = opt_einsum.contract('Nn,mn,Nn->N', u_m_hat, M, u_m_hat)
+    uTu = opt_einsum.contract('Nn,Nn->N', u_m_hat, u_m_hat)
+    u_im1TMu_im1 = opt_einsum.contract('Nn,mn,Nn->N', u_0_m, M, u_0_m)
+    # Identify non-dissipative solutions that violate energy conservation
+    non_dissipative = 1/2*uTMu - 1/2*u_im1TMu_im1 > -model.hparams['alpha']/model.hparams['Dt']*uTu + uTd
+    # Compute quadratic programming coefficients A, B, C for energy conservation
+    A = 1/2*uTMu + model.hparams['alpha']/model.hparams['Dt']*uTu
+    B = -uTd
+    C = -1/2*u_im1TMu_im1
+    # Solve quadratic equation for scaling factors
+    a1 = 1/torch.clamp(2*A, min=1e-7)*(-B + torch.sqrt(B**2 - 4*A*C))
+    a2 = 1/torch.clamp(2*A, min=1e-7)*(-B - torch.sqrt(B**2 - 4*A*C))
+    # Select valid scaling factor (non-negative and minimal)
+    a1[a1<0]=torch.inf
+    a2[a2<0]=torch.inf
+    a_plus = torch.min(a1,a2)
+    # Apply conservation constraints only to non-dissipative solutions
+    a = torch.ones(u_m_hat.shape[0], dtype=model.dtype, device=model.device)   
+    a[non_dissipative] = a_plus[non_dissipative]
+    # Compute final correction coefficients and apply to solution
+    u_m_hat = a[:,None]*u_m_hat
+    return u_m_hat
+
+
 def conserve_mass_and_energy(model, d_x, u_0_m, C_m, C, u_m_hat):
     """
     Enforces both mass and energy conservation constraints on model predictions using a quadratic programming approach.
@@ -124,110 +214,43 @@ def conserve_mass_and_energy(model, d_x, u_0_m, C_m, C, u_m_hat):
     C_m = C_m
     C = C
     M = model.M_rr
-
     # Calculate conservation constraint terms
     CTC = opt_einsum.contract('Nn,Nn->N', C_m, C_m)
     CTd = opt_einsum.contract('Nn,Nn->N', C_m, d_x)
     uTd = opt_einsum.contract('Nn,Nn->N', u_m_hat, d_x)
     C_hat = opt_einsum.contract('Nn,Nn->N', u_m_hat, C_m)
     u_im1TMu_im1 = opt_einsum.contract('Nn,mn,Nn->N', u_0_m, M, u_0_m)
-
  # Get dissipation parameter and construct augmented mass matrix Q
     alpha =  model.hparams['alpha']
     Q = 1/2*M + alpha*model.Identity/model.hparams['Dt']
-
     # Calculate quadratic terms for optimization
     uTQu = opt_einsum.contract('Nm,mn,Nn->N', u_m_hat, Q, u_m_hat)
     uTQC = opt_einsum.contract('Nm,mn,Nn->N', u_m_hat, Q, C_m)
     CTQu = opt_einsum.contract('Nm,mn,Nn->N', C_m, Q, u_m_hat)
     CTQC = opt_einsum.contract('Nn,mn,Nn->N', C_m, Q, C_m)
-
     # Identify non-dissipative solutions that violate energy conservation
     non_dissipative = uTQu > 1/2*u_im1TMu_im1 + uTd
-
     # Compute quadratic programming coefficients A, B, D for conservation constraints
     A = opt_einsum.contract('Nm,mn,Nn->N', u_m_hat - (C_hat/CTC)[:,None]*C_m, Q, u_m_hat - (C_hat/CTC)[:,None]*C_m)
     B = C/CTC*(uTQC + CTQu) - 2*C*C_hat/CTC**2*CTQC - uTd + C_hat/CTC*CTd
     D = (C/CTC)**2*CTQC - C/CTC*CTd - 1/2*u_im1TMu_im1
-
     # Solve quadratic equation for scaling factors
     a1 = 1/torch.clamp(2*A, min=1e-7)*(-B + torch.sqrt(B**2 - 4*A*D))
     a2 = 1/torch.clamp(2*A, min=1e-7)*(-B - torch.sqrt(B**2 - 4*A*D))
-
     # Select valid scaling factor (non-negative and minimal)
     a1[a1<0]=torch.inf
     a2[a2<0]=torch.inf
     a_plus = torch.min(a1,a2)
-
     # Apply conservation constraints only to non-dissipative solutions
     a = torch.ones(u_m_hat.shape[0], dtype=model.dtype, device=model.device)
     a[non_dissipative] = a_plus[non_dissipative]
-
     # Compute final correction coefficients and apply to solution
     b = C/CTC - C_hat/CTC*a
     u_m_hat = a[:,None]*u_m_hat + b[:,None]*C_m
-
     return u_m_hat
 
 
-def conserve_energy(model, F, d_x, u_0_m, u_m_hat):
-    """
-    Enforces energy conservation constraint on model predictions using a quadratic programming approach.
-    
-    This function modifies the model predictions to ensure they satisfy energy conservation laws
-    by solving a quadratic problem. It uses the model's mass matrix to compute
-    energy-preserving scaling factors.
-
-    Args:
-        model (nn.Module): Neural network model containing mass matrix M_rr
-        F (torch.Tensor): NGO input, shape (N, n)
-        d_x (torch.Tensor): Spatial part of the right-hand side vector, shape (N, n)
-        u_0_m (torch.Tensor): Initial condition, shape (N, n)
-        u_m_hat (torch.Tensor): Model prediction to be constrained, shape (N, n)
-    
-    Returns:
-        torch.Tensor: Modified prediction u_m_hat satisfying energy conservation, shape (N, n)
-        
-    Note:
-        N is the batch size, n is the number of Galerkin dofs
-    """
-    # Get mass matrix from model
-    M = model.M_rr
-
-    # Calculate energy conservation constraint terms
-    uTd = opt_einsum.contract('Nn,Nn->N', u_m_hat, d_x)
-    uTMu = opt_einsum.contract('Nn,mn,Nn->N', u_m_hat, M, u_m_hat)
-    uTu = opt_einsum.contract('Nn,Nn->N', u_m_hat, u_m_hat)
-    u_im1TMu_im1 = opt_einsum.contract('Nn,mn,Nn->N', u_0_m, M, u_0_m)
-
-    # Identify non-dissipative solutions that violate energy conservation
-    non_dissipative = 1/2*uTMu - 1/2*u_im1TMu_im1 > -model.hparams['alpha']/model.hparams['Dt']*uTu + uTd
-
-    # Compute quadratic programming coefficients A, B, C for energy conservation
-    A = 1/2*uTMu + model.hparams['alpha']/model.hparams['Dt']*uTu
-    B = -uTd
-    C = -1/2*u_im1TMu_im1
-
-    # Solve quadratic equation for scaling factors
-    a1 = 1/torch.clamp(2*A, min=1e-7)*(-B + torch.sqrt(B**2 - 4*A*C))
-    a2 = 1/torch.clamp(2*A, min=1e-7)*(-B - torch.sqrt(B**2 - 4*A*C))
-
-    # Select valid scaling factor (non-negative and minimal)
-    a1[a1<0]=torch.inf
-    a2[a2<0]=torch.inf
-    a_plus = torch.min(a1,a2)
-
-    # Apply conservation constraints only to non-dissipative solutions
-    a = torch.ones(u_m_hat.shape[0], dtype=model.dtype, device=model.device)   
-    a[non_dissipative] = a_plus[non_dissipative]
-
-    # Compute final correction coefficients and apply to solution
-    u_m_hat = a[:,None]*u_m_hat
-
-    return u_m_hat
-
-
-def two_norm_power_iteration(B, norm2_0, x_0, tol, max_iterations, dtype, device, model):
+def two_norm_power_iteration(B, norm2_0, x_0, tol, max_iterations, dtype, device):
     """
     Estimate the 2-norm (largest singular value) of a batch of matrices 
     using power iteration on B^* B implicitly.
@@ -255,57 +278,61 @@ def two_norm_power_iteration(B, norm2_0, x_0, tol, max_iterations, dtype, device
             Approximate right singular vector for the first matrix.
     """
     N, M, K = B.shape
-
     norm2 = norm2_0 * torch.ones(N, dtype=dtype, device=device)
-
-    # norm2 = norm2 + x_0.T @ model.C_0 @ model.M_rr22 @ (B - model.C_0) @ x_0
-
     x = x_0 / torch.clamp(torch.linalg.norm(x_0), min=1e-7)
     x = x.repeat(N, 1)  # Shape: (N, K)
-
     for i in range(max_iterations):
         # 1) y = B x          shape (N, M)
         y = torch.einsum('nij,nj->ni', B, x)
-
         # 2) norm of y (for each matrix in batch)
         norm_y = torch.linalg.norm(y, dim=1)
-
         # 3) z = B^* y         shape (N, K)
         z = torch.einsum('nij,ni->nj', B, y)
-
         # Normalize z to get next x
         z_norm = torch.linalg.norm(z, dim=1)
         z_norm = torch.clamp(z_norm, min=1e-7)
         x_new = z / z_norm[:, None]
-
         # Update norm2 estimate
         norm2_new = norm_y
-
         # Relative difference for convergence check
         reldiff = torch.abs((norm2_new - norm2) / torch.clamp(norm2, min=1e-7))
-
         # Update norm2 and x only where not converged
         not_converged = reldiff > tol
-        # norm2[not_converged] = norm2_new[not_converged]
-        # x[not_converged] = x_new[not_converged]
         x = torch.where(not_converged[:, None], x_new, x)
         norm2 = torch.where(not_converged, norm2_new, norm2)
-
         if torch.sum(not_converged) == 0:
             break
-
     print(f"Total iterations: {i+1}")
-
     if i == max_iterations - 1:
         print('Power iteration did not fully converge within max_iterations. Number of non-converged matrices:', torch.sum(reldiff > tol).item())
         # Fall back to exact computation for non-converged matrices
         norm2[not_converged] = torch.linalg.norm(B[not_converged], ord=2, dim=(1, 2))
-
     # Return the right singular vector for the first matrix
     v = x[0] / torch.linalg.norm(x[0])
-
     return norm2, v
-    
+
+
+def M_norm_scaling(model, A_hat):
+    """
+    Scale the operator A_hat based on the 2-norm of a transformed version of A_hat.
+    Args:
+        model (nn.Module): The model containing necessary matrices and hyperparameters.
+        A_hat (torch.Tensor): Input operator to be scaled, shape (N, M, K).
+    Returns:
+        torch.Tensor: Scaled operator A_hat.
+    """
+    #Compute update matrix
+    B = A_hat@model.M_lr
+    #Extract bottom-right block
+    B = B[:,int(A_hat.shape[1]/2):,int(A_hat.shape[2]/2):]
+    #Transform with mass matrix
+    M_rr22_05TBM_rr22_05_inv = model.M_rr22_05 @ B @ model.M_rr22_05_inv
+    #Estimate 2-norm via power iteration
+    Mnorm, v = two_norm_power_iteration(B=M_rr22_05TBM_rr22_05_inv, norm2_0=model.Mnorm_0, x_0=model.x_0, tol=model.hparams['tol'], max_iterations=model.hparams['max_iterations'], dtype=model.dtype, device=model.device)
+    #Scale A_hat based on estimated norm
+    scaling = torch.maximum(model.hparams['Mnorm_max']*torch.ones_like(Mnorm),Mnorm)/model.hparams['Mnorm_max']
+    A_hat = A_hat/scaling[:,None,None]
+    return A_hat
     
 class InversionLayer(nn.Module):
     """

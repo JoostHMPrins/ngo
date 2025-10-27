@@ -7,9 +7,9 @@ import pytorch_lightning as pl
 import opt_einsum
 
 # Local
-from ngo.ml.systemnets import MLP, LBranchNet # , CNN, FNO
+from ngo.ml.systemnets import MLP, LBranchNet
 from ngo.ml.basisfunctions import TensorizedBasis
-from ngo.ml.customlayers import discretize_functions
+from ngo.ml.customlayers import Neumann_preconditioner_forward, discretize_functions
 from ngo.ml.quadrature import GaussLegendreQuadrature, UniformQuadrature
 
 class NeuralOperator(pl.LightningModule):
@@ -25,7 +25,6 @@ class NeuralOperator(pl.LightningModule):
         basis_trial (TensorizedBasis): Basis functions for trial.
         Identity (torch.Tensor): Identity matrix, shape (N, N).
     """
-
     def __init__(self, hparams):
         """
         Initialize the NeuralOperator class.
@@ -400,13 +399,7 @@ class NeuralOperator(pl.LightningModule):
         if self.hparams.get('Neumannseries', False)==False:
             A = self.systemnet.forward(F)
         if self.hparams.get('Neumannseries', False)==True:
-            T = torch.zeros(F.shape, dtype=self.dtype, device=self.device)
-            Ti = self.Identity
-            T1 = -F@self.A_0 + self.Identity
-            for i in range(0, self.hparams['Neumannseries_order']):
-                Ti = T1@Ti
-                T = T + Ti
-            A = self.A_0@(self.Identity + T + self.systemnet.forward(T1))
+            A_hat = Neumann_preconditioner_forward(self, F)
         if self.hparams.get('scale_equivariance',False)==True:
             A = A/scaling[:,None,None]        
         u_n = opt_einsum.contract('nij,nj->ni', A, d)
@@ -448,16 +441,10 @@ class NeuralOperator(pl.LightningModule):
             torch.Tensor: Predicted output u_q_hat, shape (N_samples,)+(x.shape[0],).
         """
         if self.hparams.get('Neumannseries', False)==False:
-            K_inv = torch.linalg.pinv(F)
+            F_inv = torch.linalg.pinv(F)
         if self.hparams.get('Neumannseries', False)==True:
-            T = torch.zeros(F.shape, dtype=self.dtype, device=self.device)
-            Ti = self.Identity
-            T1 = -F@self.A_0 + self.Identity
-            for i in range(0, self.hparams['Neumannseries_order']):
-                Ti = T1@Ti
-                T = T + Ti
-            K_inv = self.A_0@(self.Identity + T)
-        u_n = opt_einsum.contract('nij,nj->ni', K_inv, d)
+            F_inv = Neumann_preconditioner_forward(self, F)
+        u_n = opt_einsum.contract('nij,nj->ni', F_inv, d)
         u_q_hat = opt_einsum.contract('Nn,qn->Nq', u_n, self.psix)
         return u_q_hat
     
@@ -485,7 +472,7 @@ class NeuralOperator(pl.LightningModule):
     
     def projection_forward(self, u):
         """
-        Forward pass for the projection model.
+        L2 projection of the solution onto the trial basis functions.
 
         Args:
             u (list of functions): Output function u, shape (N_samples, ...).
@@ -551,6 +538,15 @@ class NeuralOperator(pl.LightningModule):
         return u_hat
 
     def Neumann_criterion(self, theta):
+        """
+        Compute the spectral radius of the operator T1 = -F*A_0 to check the Neumann series convergence criterion.
+        
+        Args:
+            theta (list of functions): Input function theta, shape len(N_samples).
+
+        Returns:
+            torch.Tensor: Spectral radius of T1, shape (N_samples,).
+        """
         theta_q = discretize_functions(theta, self.xi_Omega)
         theta_x0_q = discretize_functions(theta, self.xi_Gamma_x0)
         theta_xL_q = discretize_functions(theta, self.xi_Gamma_xL)
@@ -640,13 +636,7 @@ class NeuralOperator(pl.LightningModule):
             if self.hparams.get('Neumannseries', False)==False:
                 A_hat = self.systemnet.forward(F)
             if self.hparams.get('Neumannseries', False)==True:
-                T = torch.zeros(F.shape, dtype=self.dtype, device=self.device)
-                Ti = self.Identity
-                T1 = - (F - self.F_0)@self.A_0
-                for i in range(0, self.hparams['Neumannseries_order']):
-                    Ti = T1@Ti
-                    T = T + Ti
-                A_hat = self.A_0@(self.Identity + T + self.systemnet.forward(T1))
+                A_hat = Neumann_preconditioner_forward(self, F)
             loss += self.hparams['matrix_loss'](torch.matmul(F, torch.matmul(A_hat,F)), F)
         self.log('train_loss', loss)
         return loss
@@ -673,13 +663,7 @@ class NeuralOperator(pl.LightningModule):
             if self.hparams.get('Neumannseries',False)==False:
                 A_hat = self.systemnet.forward(F)
             if self.hparams.get('Neumannseries',False)==True:
-                T = torch.zeros(F.shape, dtype=self.dtype, device=self.device)
-                Ti = self.Identity
-                T1 = - (F - self.F_0)@self.A_0
-                for i in range(0, self.hparams['Neumannseries_order']):
-                    Ti = T1@Ti
-                    T = T + Ti
-                A_hat = self.A_0@(self.Identity + T + self.systemnet.forward(T1))
+                A_hat = Neumann_preconditioner_forward(self, F)
             loss += self.hparams['matrix_loss'](torch.matmul(F, torch.matmul(A_hat,F)), F)
         self.metric = self.hparams['metric'](self.w_Omega_L, u_hat, u)
         self.log('val_loss', loss)
