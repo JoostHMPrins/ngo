@@ -1169,29 +1169,25 @@ class NeuralOperator(pl.LightningModule):
         Returns:
             torch.Tensor: Computed loss.
         """
-        opt = self.optimizers()[self.optimizer_idx]
         inputs = train_batch[:-1]
-        def closure():
-            opt.zero_grad()
-            loss = 0
-            if self.hparams.get('solution_loss',None)!=None:
-                u = train_batch[-1]
-                u_hat = self.forward(*inputs)
-                if self.hparams['output_coefficients']==True:
-                    loss += self.hparams['solution_loss'](self.M_phiphi, u_hat, u)
-                if self.hparams['output_coefficients']==False:
-                    loss += self.hparams['solution_loss'](self.w_OmegaT_L, u_hat, u)
-            if self.hparams.get('matrix_loss',None)!=None:
-                F = inputs[0]
-                if self.hparams.get('Neumannseries', False)==False:
-                    A_hat = self.systemnet.forward(F)
-                if self.hparams.get('Neumannseries', False)==True:
-                    A_hat = Neumann_preconditioner_forward(self, F)
-                loss += self.hparams['matrix_loss'](torch.matmul(F, torch.matmul(A_hat,F)), F)
+        loss = 0
+        if self.hparams.get('solution_loss',None)!=None:
+            u = train_batch[-1]
+            u_hat = self.forward(*inputs)
+            if self.hparams['output_coefficients']==True:
+                loss += self.hparams['solution_loss'](self.M_phiphi, u_hat, u)
+            if self.hparams['output_coefficients']==False:
+                loss += self.hparams['solution_loss'](self.w_OmegaT_L, u_hat, u)
+        if self.hparams.get('matrix_loss',None)!=None:
+            F = inputs[0]
+            if self.hparams.get('Neumannseries', False)==False:
+                A_hat = self.systemnet.forward(F)
+            if self.hparams.get('Neumannseries', False)==True:
+                A_hat = Neumann_preconditioner_forward(self, F)
+            loss += self.hparams['matrix_loss'](torch.matmul(F, torch.matmul(A_hat,F)), F)
             self.manual_backward(loss)
             self.log('train_loss', loss)
-            return loss
-        opt.step(closure=closure)
+        return loss
 
     def validation_step(self, val_batch, batch_idx):
         """

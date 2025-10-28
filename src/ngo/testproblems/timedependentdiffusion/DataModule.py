@@ -57,10 +57,10 @@ class DataModule(pl.LightningDataModule):
         dataset = ManufacturedSolutionsSet(N_samples=self.N_samples, variables=self.hparams['variables'], l_min=self.hparams['l_min'], l_max=self.hparams['l_max'])
         theta = dataset.theta
         f = dataset.f
-        eta_y0 = dataset.etab
-        eta_yL = dataset.etat
-        g_x0 = dataset.gl
-        g_xL = dataset.gr
+        eta_y0 = dataset.eta_y0
+        eta_yL = dataset.eta_yL
+        g_x0 = dataset.g_x0
+        g_xL = dataset.g_xL
         u = dataset.u
         u0 = dataset.u0
         #Discretize input functions
