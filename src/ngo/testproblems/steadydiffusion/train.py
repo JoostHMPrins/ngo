@@ -9,8 +9,8 @@ from DataModule import DataModule
 
 #Training data
 hparams = {}
-hparams['N_samples_train'] = 10000 #Number of training samples
-hparams['N_samples_val'] = 1000 #Number of validation samples
+hparams['N_samples_train'] = 100 #Number of training samples
+hparams['N_samples_val'] = 100 #Number of validation samples
 hparams['variables'] = ['x','x'] #Variable types. 'x' for spatial variable, 't' for temporal variable
 hparams['d'] = len(hparams['variables']) #Dimensionality of solution
 hparams['l_min'] = [0.5,0.5] #Minimum GRF length scale per dimension
@@ -26,7 +26,7 @@ hparams['metric'] = weightedrelativeL2
 hparams['optimizer'] = torch.optim.Adam
 hparams['learning_rate'] = 1e-3
 hparams['batch_size'] = 100
-hparams['epochs'] = 5000
+hparams['epochs'] = 10
 
 #Bases
 hparams['h'] = (10,10) #Number of basis functions per dimension
@@ -62,8 +62,8 @@ hparams['Neumannseries'] = True
 hparams['Neumannseries_order'] = 1
 hparams['scale_equivariance'] = False
 
-logdir = '../../../../nnlogs' #Location for the tensorboard log files
-sublogdir = 'steadydiffusion_modelNGOs' #Folder name in the "logs" directory
+logdir = '../../../../../../nnlogs' #Location for the tensorboard log files
+sublogdir = 'testsnellius' #Folder name in the "logs" directory
 # sublogdir = 'test'
 # hparams['N_samples_train'] = 10
 # hparams['N_samples_val'] = 10

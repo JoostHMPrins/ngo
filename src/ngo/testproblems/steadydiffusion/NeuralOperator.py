@@ -397,13 +397,13 @@ class NeuralOperator(pl.LightningModule):
         if self.hparams.get('scale_equivariance',False)==True:
             F = F/scaling[:,None,None]
         if self.hparams.get('Neumannseries', False)==False:
-            A = self.systemnet.forward(F)
+            A_hat = self.systemnet.forward(F)
         if self.hparams.get('Neumannseries', False)==True:
             A_hat = Neumann_preconditioner_forward(self, F)
         if self.hparams.get('scale_equivariance',False)==True:
-            A = A/scaling[:,None,None]        
-        u_n = opt_einsum.contract('nij,nj->ni', A, d)
-        u_q_hat = opt_einsum.contract('Nn,qn->Nq', u_n, self.psix)
+            A_hat = A_hat/scaling[:,None,None]        
+        u_n_hat = opt_einsum.contract('nij,nj->ni', A_hat, d)
+        u_q_hat = opt_einsum.contract('Nn,qn->Nq', u_n_hat, self.psix)
         return u_q_hat
     
     def NGO_simforward(self, theta, f, eta_y0, eta_yL, g_x0, g_xL, u):
