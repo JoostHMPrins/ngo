@@ -52,11 +52,11 @@ def discretize_functions(f_list, x):
     Returns:
         np.ndarray: Discretized function values. Shape: (len(f_list), n_points).
     """
-    # f_discretized = np.zeros((len(f_list),x.shape[0]))
-    # for i in range(len(f_list)):
-    #     f_discretized[i] = f_list[i](x)
-    f_discretized = Parallel(n_jobs=-1)(delayed(f)(x) for f in f_list)
-    f_discretized = np.array(f_discretized)
+    f_discretized = np.zeros((len(f_list),x.shape[0]))
+    for i in range(len(f_list)):
+        f_discretized[i] = f_list[i](x)
+    # f_discretized = Parallel(n_jobs=-1)(delayed(f)(x) for f in f_list)
+    # f_discretized = np.array(f_discretized)
     return f_discretized
 
 
