@@ -633,7 +633,7 @@ class TensorizedBasis:
                 ax.set_ylabel('y')
         plt.tight_layout()
         plt.show()
-    
+
 
 class BSplineInterpolatedPOD2D:
     def __init__(self, N_samples, variables, l_min, l_max, w, xi, N, device):
