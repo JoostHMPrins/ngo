@@ -635,6 +635,101 @@ class TensorizedBasis:
         plt.show()
 
 
+class TensorProductBasis:
+    """
+    Tensor-product (Kronecker) basis built from multiple 1D basis objects.
+
+    This class combines several 1D basis objects into a d-dimensional basis by
+    taking tensor products of the 1D basis functions. It evaluates a field
+    given modal coefficients `u_m` at tensor-product evaluation points and
+    computes partial derivatives by replacing a 1D basis with its derivative
+    in the corresponding dimension.
+
+    Requirements for each 1D basis object:
+      - .h attribute: number of basis functions in that 1D basis
+      - .forward(xi): returns shape (n_basis_i, n_points_i)
+      - .grad(xi): returns shape (n_basis_i, n_points_i)
+
+    Attributes:
+        bases (tuple): Sequence of 1D basis objects.
+        d (int): Number of dimensions (len(bases)).
+        h (tuple): Number of basis functions per dimension (h1, ..., hd).
+    """
+    def __init__(self, bases):
+        """
+        Initialize the tensorized basis.
+
+        Args:
+            bases (list): A list of 1D basis objects.
+        """
+        self.bases = bases
+        self.d = len(bases)
+        self.h = ()
+        for i in range(len(bases)):
+            self.h += (bases[i].h,)
+
+    def forward(self, u_m, x):
+        """
+        Evaluate the tensor-product expansion at provided points.
+
+        Args:
+            u_m (np.ndarray): Modal coefficients with shape (N_samples, prod(h)) or
+                              (N_samples, h1, h2, ..., hd). N_samples is batch size.
+            x (tuple/list): Sequence of point arrays for each dimension.
+                            x[i] has shape (n_points_i,).
+
+        Returns:
+            np.ndarray: Evaluated values at tensor-product grid points,
+                        shape (N, n_points_1, ..., n_points_d).
+        """
+        # reshape coefficients into (N_samples, h1, h2, ..., hd)
+        u_q = u_m.reshape(u_m.shape[0],*self.h)
+        # sequentially contract coefficient tensor with each 1D basis evaluation
+        for i in range(self.d):
+           # compute basis evaluation matrix of dimension i
+           Phi_i = self.bases[i].forward(x[i]).T
+            # tensordot contracts the basis index (axis 1 of u_q) with axis 0 of Phi_i
+           u_q = np.tensordot(u_q, Phi_i, axes=(1,0))
+        # final shape is (N_samples, n_points_1, ..., n_points_d)
+        return u_q
+
+    def grad(self, u_m, x):
+        """
+        Compute partial derivatives of the tensor-product expansion.
+        For each spatial dimension i the method replaces the 1D basis eval in
+        that dimension with its derivative and contracts as in `forward`.
+
+        Args:
+            u_m (np.ndarray): Modal coefficients, shape (N, prod(h)) or (N, h1, ..., hd).
+            x (tuple/list): Sequence of point arrays for each dimension.
+                            x[i] has shape (n_points_i,).
+        Returns:
+            np.ndarray: Gradients at tensor-product points with shape
+                        (N, n_points_1, ..., n_points_d, d). The last axis indexes
+                        partial derivatives w.r.t. each coordinate.
+        """
+        #Compute function evaluation and gradient matrices
+        Phi_i = tuple(b.forward(xi).T for b, xi in zip(self.bases, x))
+        dPhi_i = tuple(b.grad(xi).T for b, xi in zip(self.bases, x))
+        # Compute derivative for each dimension by contracting with dPhi in that dim.
+        gradu_q = ()
+        for i in range(self.d):
+            # start from coefficients reshaped to (N, h1, ..., hd)
+            u_q = u_m.reshape(u_m.shape[0],*self.h)
+            for j in range(self.d):
+                if j==i:
+                    # use derivative matrix in the i-th dimension
+                    u_q = np.tensordot(u_q, dPhi_i[j], axes=(1,0))
+                else:
+                    # use value matrix in other dimensions
+                    u_q = np.tensordot(u_q, Phi_i[j], axes=(1,0))
+            # append gradient in direction i to gradu_q tuple
+            gradu_q += (u_q,)
+        #Reshape such that the last axis indexes the coordinate to which derivative has been taken
+        gradu_q = np.stack(gradu_q, axis=-1)
+        return gradu_q
+
+
 class BSplineInterpolatedPOD2D:
     def __init__(self, N_samples, variables, l_min, l_max, w, xi, N, device):
         self.basis_1d = BSplineBasis1D(h=31,p=3,C=2)
