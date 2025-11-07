@@ -75,26 +75,26 @@ class BSplineBasis1D:
     A class to represent 1D B-spline basis functions.
 
     Attributes:
-        h (int): Number of basis functions.
+        n (int): Number of basis functions.
         p (int): Polynomial degree.
         C (int): Continuity.
         knot_vector (np.ndarray): Knot vector for the B-spline basis.
     """
 
-    def __init__(self, h, p, C):
+    def __init__(self, n, p, C):
         """
         Initialize the B-spline basis.
         
         Args:
-            h (int): Number of basis functions.
+            n (int): Number of basis functions.
             p (int): Polynomial degree.
             C (int): Continuity.
         """
-        self.h = h
+        self.n = n
         self.p = p  
         self.C = C 
         self.knot_vector = np.zeros(self.p+1)
-        self.knot_vector = np.append(self.knot_vector, np.repeat(np.linspace(0, 1, int((self.h - self.p - 1)/(self.p - self.C)) + 2)[1:-1], self.p - self.C))
+        self.knot_vector = np.append(self.knot_vector, np.repeat(np.linspace(0, 1, int((self.n - self.p - 1)/(self.p - self.C)) + 2)[1:-1], self.p - self.C))
         self.knot_vector = np.append(self.knot_vector, np.ones(self.p+1))
     
     def forward(self, x):
@@ -105,7 +105,7 @@ class BSplineBasis1D:
             x (np.ndarray): Input points. Shape: (n_points,).
 
         Returns:
-            np.ndarray: Basis values at the input points. Shape: (h,n_points).
+            np.ndarray: Basis values at the input points. Shape: (n,n_points).
         """
         basis_values = BSpline.design_matrix(x, self.knot_vector, self.p).toarray().T
         return basis_values
@@ -118,11 +118,11 @@ class BSplineBasis1D:
             x (np.ndarray): Input points. Shape: (n_points,).
 
         Returns:
-            np.ndarray: Gradients of the basis functions at the input points. Shape: (h,n_points).
+            np.ndarray: Gradients of the basis functions at the input points. Shape: (n,n_points).
         """
-        coeffs = np.eye(self.h)
+        coeffs = np.eye(self.n)
         derivative_basis_functions = 0 if self.p==0 else [BSpline(self.knot_vector, coeffs[i], self.p).derivative() for i in range(self.h)]
-        basis_gradients = np.zeros((len(x),self.h)) if self.p==0 else np.vstack([dbf(x) for dbf in derivative_basis_functions])
+        basis_gradients = np.zeros((len(x),self.n)) if self.p==0 else np.vstack([dbf(x) for dbf in derivative_basis_functions])
         return basis_gradients
 
 
@@ -131,16 +131,16 @@ class ChebyshevTBasis1D:
     A class to represent 1D Chebyshev polynomial basis functions of the first kind.
 
     Attributes:
-        h (int): Number of basis functions.
+        n (int): Number of basis functions.
     """
-    def __init__(self, h):
+    def __init__(self, n):
         """
         Initialize the Chebyshev basis.
 
         Args:
-            h (int): Number of basis functions.
+            n (int): Number of basis functions.
         """
-        self.h = h
+        self.n = n
 
     def basis_function(self, n):
         """
@@ -152,7 +152,7 @@ class ChebyshevTBasis1D:
         Returns:
             np.polynomial.chebyshev.Chebyshev: The nth Chebyshev basis function.
         """
-        c = np.zeros(self.h)
+        c = np.zeros(self.n)
         c[n] = 1
         basisfunction = np.polynomial.chebyshev.Chebyshev(coef=c,domain=[0,1])
         return basisfunction
@@ -165,10 +165,10 @@ class ChebyshevTBasis1D:
             x (np.ndarray): Input points. Shape: (n_points,).
 
         Returns:
-            np.ndarray: Basis values at the input points. Shape: (n_points, h).
+            np.ndarray: Basis values at the input points. Shape: (n_points, n).
         """
-        basis_values = np.zeros((x.shape[0],self.h))
-        for n in range(self.h):
+        basis_values = np.zeros((x.shape[0],self.n))
+        for n in range(self.n):
             basis_values[:, n] = self.basis_function(n)(x)
         return basis_values
     
@@ -194,10 +194,10 @@ class ChebyshevTBasis1D:
             x (np.ndarray): Input points. Shape: (n_points,).
 
         Returns:
-            np.ndarray: Gradients of the basis functions at the input points. Shape: (n_points, h).
+            np.ndarray: Gradients of the basis functions at the input points. Shape: (n_points, n).
         """
-        basis_gradients = np.zeros((x.shape[0],self.h))
-        for n in range(self.h):
+        basis_gradients = np.zeros((x.shape[0],self.n))
+        for n in range(self.n):
             basis_grad = self.basis_gradient(n)(x)
             basis_gradients[:, n] = basis_grad
         return basis_gradients
@@ -208,21 +208,21 @@ class SincBasis1D:
     A class to represent 1D sinc basis functions (sin(x)/x).
 
     Attributes:
-        h (int): Number of basis functions.
+        n (int): Number of basis functions.
         Dx (float): Spacing between grid points.
-        grid (np.ndarray): Grid points for the basis functions. Shape: (h,).
+        grid (np.ndarray): Grid points for the basis functions. Shape: (n,).
     """
 
-    def __init__(self, h):
+    def __init__(self, n):
         """
         Initialize the sinc basis.
 
         Args:
-            h (int): Number of basis functions.
+            n (int): Number of basis functions.
         """
-        self.h = h
-        self.Dx = 1/(h-1)
-        self.grid = np.linspace(0,1,self.h)
+        self.n = n
+        self.Dx = 1/(n-1)
+        self.grid = np.linspace(0,1,self.n)
 
     def sinc(self, x):
         """
@@ -260,10 +260,10 @@ class SincBasis1D:
             x (np.ndarray): Input points. Shape: (n_points,).
 
         Returns:
-            np.ndarray: Basis values at the input points. Shape: (n_points, h).
+            np.ndarray: Basis values at the input points. Shape: (n_points, n).
         """
-        basis_values = np.zeros((x.shape[0],self.h))
-        for n in range(self.h):
+        basis_values = np.zeros((x.shape[0],self.n))
+        for n in range(self.n):
             x_scaled = np.pi*(x - self.grid[n])/self.Dx
             basis_values[:, n] = self.sinc(x_scaled)
         return basis_values
@@ -276,10 +276,10 @@ class SincBasis1D:
             x (np.ndarray): Input points. Shape: (n_points,).
 
         Returns:
-            np.ndarray: Gradients of the basis functions at the input points. Shape: (n_points, h).
+            np.ndarray: Gradients of the basis functions at the input points. Shape: (n_points, n).
         """
-        basis_gradients = np.zeros((x.shape[0],self.h))
-        for n in range(self.h):
+        basis_gradients = np.zeros((x.shape[0],self.n))
+        for n in range(self.n):
             x_scaled = np.pi*(x - self.grid[n])/self.Dx
             basis_gradients[:, n] = np.pi/self.Dx*self.dsincdx(x_scaled)
         return basis_gradients
@@ -289,21 +289,21 @@ class PolynomialBasis1D:
     """
     A class to represent 1D polynomial basis functions.
     The basis functions are defined as:
-    phi_0 = c_0, phi_1 = c_1 * x, phi_2 = c_2 * x^2, ..., phi_h = c_h * x^h.
+    phi_0 = c_0, phi_1 = c_1 * x, phi_2 = c_2 * x^2, ..., phi_n = c_n * x^n.
 
     Attributes:
-        h (int): Number of basis functions.
+        n (int): Number of basis functions.
         exponents (np.ndarray): Array of the exponents of the individual basis functions.
     """
-    def __init__(self, h):
+    def __init__(self, n):
         """
         Initialize the polynomial basis.
 
         Args:
-            h (int): Number of basis functions.
+            n (int): Number of basis functions.
         """
-        self.h = h
-        self.exponents = np.arange(0,self.h)
+        self.n = n
+        self.exponents = np.arange(0,self.n)
     
     def forward(self, x):
         """
@@ -313,7 +313,7 @@ class PolynomialBasis1D:
             x (np.ndarray): Input points. Shape: (n_points,).
 
         Returns:
-            np.ndarray: Basis values at the input points. Shape: (n_points, h).
+            np.ndarray: Basis values at the input points. Shape: (n_points, n).
         """
         basis_values = x[:,None]**self.exponents[None,:]
         return basis_values
@@ -326,7 +326,7 @@ class PolynomialBasis1D:
             x (np.ndarray): Input points. Shape: (n_points,).
 
         Returns:
-            np.ndarray: Gradients of the basis functions at the input points. Shape: (n_points, h).
+            np.ndarray: Gradients of the basis functions at the input points. Shape: (n_points, n).
         """
         basis_gradients = self.exponents[None,:]*x[:,None]**(self.exponents-1)
         basis_gradients[:,0] = 0
@@ -341,20 +341,20 @@ class FourierBasis1D:
     alternating between cosine and sine terms.
 
     Attributes:
-        h (int): Number of basis functions.
+        n (int): Number of basis functions.
         n (np.ndarray): Array of indices for the basis functions.
         L (float): Length of the domain (should be unequal to 1 to allow for aperiodicity).
         k_n (np.ndarray): Wave numbers for the basis functions.
     """
-    def __init__(self, h):
+    def __init__(self, n):
         """
         Initialize the Fourier basis.
 
         Args:
-            h (int): Number of basis functions.
+            n (int): Number of basis functions.
         """
-        self.h = h
-        self.n = np.arange(0,self.h)
+        self.n = n
+        self.n = np.arange(0,self.n)
         self.L = 1.2
         self.k_n = 2*np.pi*self.n/self.L
     
@@ -366,15 +366,15 @@ class FourierBasis1D:
             x (np.ndarray): Input points. Shape: (n_points,).
 
         Returns:
-            np.ndarray: Basis values at the input points. Shape: (n_points, h).
+            np.ndarray: Basis values at the input points. Shape: (n_points, n).
         """
-        basis_values = np.zeros((x.shape[0],self.h))
+        basis_values = np.zeros((x.shape[0],self.n))
         n = 0
-        for i in np.arange(0,self.h,2):
+        for i in np.arange(0,self.n,2):
             basis_values[:,i] = np.cos(self.k_n[n]*x)
             n+=1
         n = 1
-        for i in np.arange(1,self.h,2):
+        for i in np.arange(1,self.n,2):
             basis_values[:,i] = np.sin(self.k_n[n]*x)
             n+=1
         return basis_values
@@ -387,15 +387,15 @@ class FourierBasis1D:
             x (np.ndarray): Input points. Shape: (n_points,).
 
         Returns:
-            np.ndarray: Gradients of the basis functions at the input points. Shape: (n_points, h).
+            np.ndarray: Gradients of the basis functions at the input points. Shape: (n_points, n).
         """
-        basis_gradients = np.zeros((x.shape[0],self.h))
+        basis_gradients = np.zeros((x.shape[0],self.n))
         n = 0
-        for i in np.arange(0,self.h,2):
+        for i in np.arange(0,self.n,2):
             basis_gradients[:,i] = -self.k_n[n]*np.sin(self.k_n[n]*x)
             n+=1
         n = 1
-        for i in np.arange(1,self.h,2):
+        for i in np.arange(1,self.n,2):
             basis_gradients[:,i] = self.k_n[n]*np.cos(self.k_n[n]*x)
             n+=1
         return basis_gradients
@@ -422,7 +422,7 @@ class TensorizedBasis:
         self.d = len(bases)
         self.n_basisfunctions = 1
         for i in range(len(bases)):
-            self.n_basisfunctions *= bases[i].h
+            self.n_basisfunctions *= bases[i].n
     
     def forward(self, x):
         """
@@ -548,9 +548,9 @@ class TensorProductBasis:
         """
         self.bases = bases
         self.d = len(bases)
-        self.h = ()
+        self.n = ()
         for i in range(len(bases)):
-            self.h += (bases[i].h,)
+            self.n += (bases[i].n,)
 
     def forward(self, u_m, x):
         """
@@ -567,7 +567,7 @@ class TensorProductBasis:
                         shape (N, n_points_1, ..., n_points_d).
         """
         # reshape coefficients into (N_samples, h1, h2, ..., hd)
-        u_q = u_m.reshape(u_m.shape[0],*self.h)
+        u_q = u_m.reshape(u_m.shape[0],*self.n)
         # sequentially contract coefficient tensor with each 1D basis evaluation
         for i in range(self.d):
            # compute basis evaluation matrix of dimension i
@@ -599,7 +599,7 @@ class TensorProductBasis:
         gradu_q = ()
         for i in range(self.d):
             # start from coefficients reshaped to (N, h1, ..., hd)
-            u_q = u_m.reshape(u_m.shape[0],*self.h)
+            u_q = u_m.reshape(u_m.shape[0],*self.n)
             for j in range(self.d):
                 if j==i:
                     # use derivative matrix in the i-th dimension
