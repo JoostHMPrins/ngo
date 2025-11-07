@@ -11,6 +11,65 @@ import torch
 from ngo.ml.customlayers import discretize_functions
 
 
+class GaussianRBFBasis:
+    """
+    1D Gaussian radial-basis-function (RBF) basis.
+
+    This class defines a set of Gaussian basis functions with fixed centers (mus)
+    and shared width (sigma). It provides methods to evaluate the basis and its
+    derivative at given points, and simple plotting helpers.
+
+    Attributes:
+        sigma (float): Standard deviation (width) of the Gaussian bumps. Must be > 0.
+        mus (np.ndarray): 1D array of centers of the Gaussians, shape (n,).
+        n (int): Number of basis functions (len(mus)).
+    """
+    def __init__(self, sigmas, mus):
+        self.sigmas = sigmas
+        self.mus = mus
+        self.n = mus.shape[0]
+    
+    def forward(self, x):
+        """
+        Evaluate the Gaussian RBFs at points x.
+
+        Args:
+            x (np.ndarray): 1D array of evaluation points, shape (n_points,).
+
+        Returns:
+            np.ndarray: Matrix of basis values, shape (n,n_points),
+                        where column row is exp(-0.5 * ((x - mus[j]) / sigma)**2).
+        """
+        basis_values = np.exp(-0.5 * ((x[None, None, :] - self.mus[:, :, None]) / self.sigmas[:,None,None]) ** 2)
+        return basis_values
+    
+    def grad(self, x):
+        """
+        Compute derivative of each Gaussian basis function w.r.t. x.
+
+        Args:
+            x (np.ndarray): 1D array of evaluation points, shape (n_points,).
+
+        Returns:
+            np.ndarray: Matrix of basis derivatives, shape (n,n_points).
+        """
+        basis_gradients = -((x[None, None, :]  - self.mus[:, :, None]) / (self.sigmas[:,None,None] ** 2)) * self.forward(x)
+        return basis_gradients
+    
+    def laplacian(self, x):
+        """
+        Compute second derivative (Laplacian) of each Gaussian basis function w.r.t. x.
+
+        Args:
+            x (np.ndarray): 1D array of evaluation points, shape (n_points,).
+
+        Returns:
+            np.ndarray: Matrix of basis second derivatives, shape (n,n_points).
+        """
+        basis_laplacians = (((x[None, None, :] - self.mus[:, :, None]) ** 2) / (self.sigmas[:,None,None] ** 4) - 1 / (self.sigmas[:,None,None] ** 2)) * self.forward(x)
+        return basis_laplacians
+
+
 class BSplineBasis1D:
     """
     A class to represent 1D B-spline basis functions.
@@ -46,9 +105,9 @@ class BSplineBasis1D:
             x (np.ndarray): Input points. Shape: (n_points,).
 
         Returns:
-            np.ndarray: Basis values at the input points. Shape: (n_points, h).
+            np.ndarray: Basis values at the input points. Shape: (h,n_points).
         """
-        basis_values = BSpline.design_matrix(x, self.knot_vector, self.p).toarray()
+        basis_values = BSpline.design_matrix(x, self.knot_vector, self.p).toarray().T
         return basis_values
     
     def grad(self, x):
@@ -59,51 +118,12 @@ class BSplineBasis1D:
             x (np.ndarray): Input points. Shape: (n_points,).
 
         Returns:
-            np.ndarray: Gradients of the basis functions at the input points. Shape: (n_points, h).
+            np.ndarray: Gradients of the basis functions at the input points. Shape: (h,n_points).
         """
         coeffs = np.eye(self.h)
         derivative_basis_functions = 0 if self.p==0 else [BSpline(self.knot_vector, coeffs[i], self.p).derivative() for i in range(self.h)]
-        basis_gradients = np.zeros((len(x),self.h)) if self.p==0 else np.vstack([dbf(x) for dbf in derivative_basis_functions]).T
+        basis_gradients = np.zeros((len(x),self.h)) if self.p==0 else np.vstack([dbf(x) for dbf in derivative_basis_functions])
         return basis_gradients
-
-    def plot_1d_basis(self):
-        """
-        Plot the 1D B-spline basis functions.
-        """
-        knots = self.knot_vector
-        resolution = 1000
-        x_values = np.linspace(knots[self.p], knots[-self.p-1], resolution) # Adjusted range for x_values
-        basis_matrix = self.forward(x_values)
-        plt.figure(figsize=(8, 6))
-        for i in range(self.h):
-            plt.plot(x_values, basis_matrix[:,i], label=f'Basis {i}')
-        plt.title(f'1D Basis Functions')
-        plt.xlabel('x')
-        plt.ylabel('Basis Values')
-        plt.xticks(np.array([0,1,2,3,4])/4)
-        plt.legend()
-        plt.grid(True)
-        plt.show()
-        
-    def plot_1d_basis_gradients(self):
-        """
-        Plot the gradients of the 1D B-spline basis functions.
-        """
-        knots = self.knot_vector
-        resolution = 1000
-        min_knot = knots[self.p]
-        max_knot = knots[-self.p-1]
-        x_values = np.linspace(min_knot, max_knot, resolution)  # Use full knot span for x_values
-        basis_gradients_matrix = self.grad(x_values)
-        plt.figure(figsize=(8, 6))
-        for i in range(self.h):
-            plt.plot(x_values, basis_gradients_matrix[:, i], label=f'Gradient {i}')
-        plt.title(f'Gradients of 1D Basis Functions')
-        plt.xlabel('x')
-        plt.ylabel('Gradient Values')
-        plt.legend()
-        plt.grid(True)
-        plt.show()
 
 
 class ChebyshevTBasis1D:
@@ -181,40 +201,6 @@ class ChebyshevTBasis1D:
             basis_grad = self.basis_gradient(n)(x)
             basis_gradients[:, n] = basis_grad
         return basis_gradients
-
-    def plot_1d_basis(self):
-        """
-        Plot the 1D Chebyshev basis functions.
-        """
-        resolution = 1000
-        x_values = np.linspace(0, 1, resolution)  # Adjusted range for x_values
-        basis_matrix = self.forward(x_values)
-        plt.figure(figsize=(8, 6))
-        for i in range(self.h):
-            plt.plot(x_values, basis_matrix[:,i], label=f'Basis {i}')
-        plt.title(f'1D Basis Functions')
-        plt.xlabel('x')
-        plt.ylabel('Basis Values')
-        plt.legend()
-        plt.grid(True)
-        plt.show()
-        
-    def plot_1d_basis_gradients(self):
-        """
-        Plot the gradients of the 1D Chebyshev basis functions.
-        """
-        resolution = 1000
-        x_values = np.linspace(0, 1, resolution)  # Use full knot span for x_values
-        basis_gradients_matrix = self.grad(x_values)
-        plt.figure(figsize=(8, 6))
-        for i in range(self.h):
-            plt.plot(x_values, basis_gradients_matrix[:, i], label=f'Gradient {i}')
-        plt.title(f'Gradients of 1D Basis Functions')
-        plt.xlabel('x')
-        plt.ylabel('Gradient Values')
-        plt.legend()
-        plt.grid(True)
-        plt.show()
 
 
 class SincBasis1D:
@@ -298,40 +284,6 @@ class SincBasis1D:
             basis_gradients[:, n] = np.pi/self.Dx*self.dsincdx(x_scaled)
         return basis_gradients
 
-    def plot_1d_basis(self):
-        """
-        Plot the 1D sinc basis functions.
-        """
-        resolution = 1000
-        x_values = np.linspace(0, 1, resolution)  # Adjusted range for x_values
-        basis_matrix = self.forward(x_values)
-        plt.figure(figsize=(8, 6))
-        for i in range(self.h):
-            plt.plot(x_values, basis_matrix[:,i], label=f'Basis {i}')
-        plt.title(f'1D Basis Functions')
-        plt.xlabel('x')
-        plt.ylabel('Basis Values')
-        plt.legend()
-        plt.grid(True)
-        plt.show()
-        
-    def plot_1d_basis_gradients(self):
-        """
-        Plot the gradients of the 1D sinc basis functions.
-        """
-        resolution = 1000
-        x_values = np.linspace(0, 1, resolution)  # Use full knot span for x_values
-        basis_gradients_matrix = self.grad(x_values)
-        plt.figure(figsize=(8, 6))
-        for i in range(self.h):
-            plt.plot(x_values, basis_gradients_matrix[:, i], label=f'Gradient {i}')
-        plt.title(f'Gradients of 1D Basis Functions')
-        plt.xlabel('x')
-        plt.ylabel('Gradient Values')
-        plt.legend()
-        plt.grid(True)
-        plt.show()
-
 
 class PolynomialBasis1D:
     """
@@ -379,40 +331,6 @@ class PolynomialBasis1D:
         basis_gradients = self.exponents[None,:]*x[:,None]**(self.exponents-1)
         basis_gradients[:,0] = 0
         return basis_gradients
-
-    def plot_1d_basis(self):
-        """
-        Plot the 1D polynomial basis functions.
-        """
-        resolution = 1000
-        x_values = np.linspace(0, 1, resolution)  # Adjusted range for x_values
-        basis_matrix = self.forward(x_values)
-        plt.figure(figsize=(8, 6))
-        for i in range(self.h):
-            plt.plot(x_values, basis_matrix[:,i], label=f'Basis {i}')
-        plt.title(f'1D Basis Functions')
-        plt.xlabel('x')
-        plt.ylabel('Basis Values')
-        plt.legend()
-        plt.grid(True)
-        plt.show()
-        
-    def plot_1d_basis_gradients(self):
-        """
-        Plot the gradients of the 1D polynomial basis functions.
-        """
-        resolution = 1000
-        x_values = np.linspace(0, 1, resolution)  # Use full knot span for x_values
-        basis_gradients_matrix = self.grad(x_values)
-        plt.figure(figsize=(8, 6))
-        for i in range(self.h):
-            plt.plot(x_values, basis_gradients_matrix[:, i], label=f'Gradient {i}')
-        plt.title(f'Gradients of 1D Basis Functions')
-        plt.xlabel('x')
-        plt.ylabel('Gradient Values')
-        plt.legend()
-        plt.grid(True)
-        plt.show()
 
 
 class FourierBasis1D:
@@ -481,40 +399,6 @@ class FourierBasis1D:
             basis_gradients[:,i] = self.k_n[n]*np.cos(self.k_n[n]*x)
             n+=1
         return basis_gradients
-
-    def plot_1d_basis(self):
-        """
-        Plot the 1D Fourier basis functions.
-        """
-        resolution = 1000
-        x_values = np.linspace(0, 1, resolution)  # Adjusted range for x_values
-        basis_matrix = self.forward(x_values)
-        plt.figure(figsize=(8, 6))
-        for i in range(self.h):
-            plt.plot(x_values, basis_matrix[:,i], label=f'Basis {i}')
-        plt.title(f'1D Basis Functions')
-        plt.xlabel('x')
-        plt.ylabel('Basis Values')
-        plt.legend()
-        plt.grid(True)
-        plt.show()
-        
-    def plot_1d_basis_gradients(self):
-        """
-        Plot the gradients of the 1D Fourier basis functions.
-        """
-        resolution = 1000
-        x_values = np.linspace(0, 1, resolution)  # Use full knot span for x_values
-        basis_gradients_matrix = self.grad(x_values)
-        plt.figure(figsize=(8, 6))
-        for i in range(self.h):
-            plt.plot(x_values, basis_gradients_matrix[:, i], label=f'Gradient {i}')
-        plt.title(f'Gradients of 1D Basis Functions')
-        plt.xlabel('x')
-        plt.ylabel('Gradient Values')
-        plt.legend()
-        plt.grid(True)
-        plt.show()
 
 
 class TensorizedBasis:
@@ -687,7 +571,7 @@ class TensorProductBasis:
         # sequentially contract coefficient tensor with each 1D basis evaluation
         for i in range(self.d):
            # compute basis evaluation matrix of dimension i
-           Phi_i = self.bases[i].forward(x[i]).T
+           Phi_i = self.bases[i].forward(x[i])
             # tensordot contracts the basis index (axis 1 of u_q) with axis 0 of Phi_i
            u_q = np.tensordot(u_q, Phi_i, axes=(1,0))
         # final shape is (N_samples, n_points_1, ..., n_points_d)
@@ -709,8 +593,8 @@ class TensorProductBasis:
                         partial derivatives w.r.t. each coordinate.
         """
         #Compute function evaluation and gradient matrices
-        Phi_i = tuple(b.forward(xi).T for b, xi in zip(self.bases, x))
-        dPhi_i = tuple(b.grad(xi).T for b, xi in zip(self.bases, x))
+        Phi_i = tuple(b.forward(xi) for b, xi in zip(self.bases, x))
+        dPhi_i = tuple(b.grad(xi) for b, xi in zip(self.bases, x))
         # Compute derivative for each dimension by contracting with dPhi in that dim.
         gradu_q = ()
         for i in range(self.d):
