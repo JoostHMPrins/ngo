@@ -19,7 +19,7 @@ def kron_matvec(A_i, x):
     b: Result of applying the Kronecker-product matrix to x, with shape
        (B, n_0, n_1, ..., n_{d-1}).
 
-    Notes
+    Notes:
     - Implementation uses einsum to rely on per-batch operations. 
       An torch.vmap + torch.tensordot variant is kept commented for reference.
     """
