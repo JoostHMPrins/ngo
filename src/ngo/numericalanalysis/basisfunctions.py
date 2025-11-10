@@ -121,7 +121,7 @@ class BSplineBasis1D:
             np.ndarray: Gradients of the basis functions at the input points. Shape: (n,n_points).
         """
         coeffs = np.eye(self.n)
-        derivative_basis_functions = 0 if self.p==0 else [BSpline(self.knot_vector, coeffs[i], self.p).derivative() for i in range(self.h)]
+        derivative_basis_functions = 0 if self.p==0 else [BSpline(self.knot_vector, coeffs[i], self.p).derivative() for i in range(self.n)]
         basis_gradients = np.zeros((len(x),self.n)) if self.p==0 else np.vstack([dbf(x) for dbf in derivative_basis_functions])
         return basis_gradients
 
@@ -435,9 +435,9 @@ class TensorizedBasis:
             np.ndarray: Tensorized basis values at the input points. Shape: (n_points, n_basisfunctions).
         """
         tensorproduct = self.bases[0].forward(x[:,0])
-        newsize = self.bases[0].h
+        newsize = self.bases[0].n
         for i in range(1,self.d):
-            newsize = newsize*self.bases[i].h
+            newsize = newsize*self.bases[i].n
             tensorproduct = opt_einsum.contract('Nm,Nn->Nmn', tensorproduct, self.bases[i].forward(x[:,i])).reshape(x.shape[0], newsize)
         return tensorproduct
     
@@ -458,9 +458,9 @@ class TensorizedBasis:
                 tensorproduct_i = self.bases[0].grad(x[:,0])
             else:
                 tensorproduct_i = self.bases[0].forward(x[:,0])
-            newsize = self.bases[0].h
+            newsize = self.bases[0].n
             for j in range(1,self.d):
-                newsize = newsize*self.bases[j].h
+                newsize = newsize*self.bases[j].n
                 if j==i:
                     tensorproduct_i = opt_einsum.contract('Nm,Nn->Nmn', tensorproduct_i, self.bases[j].grad(x[:,j])).reshape(x.shape[0], newsize)
                 else: 
@@ -477,8 +477,8 @@ class TensorizedBasis:
         x_0, x_1 = np.mgrid[0:1:resolution*1j, 0:1:resolution*1j]
         x = np.vstack([x_0.ravel(), x_1.ravel()]).T
         basis_values_2d = self.forward(x)
-        h_x = self.bases[0].h
-        h_y = self.bases[1].h
+        h_x = self.bases[0].n
+        h_y = self.bases[1].n
         fig, axes = plt.subplots(h_x, h_y, figsize=(h_y*4, h_x*3))
         for i in range(h_x):
             for j in range(h_y):
@@ -502,8 +502,8 @@ class TensorizedBasis:
         x_0, x_1 = np.mgrid[0:1:resolution*1j, 0:1:resolution*1j]
         x = np.vstack([x_0.ravel(), x_1.ravel()]).T
         basis_gradients_2d = self.grad(x)
-        h_x = self.bases[0].h
-        h_y = self.bases[1].h
+        h_x = self.bases[0].n
+        h_y = self.bases[1].n
         fig, axes = plt.subplots(h_x, h_y, figsize=(h_y*4, h_x*3))
         for i in range(h_x):
             for j in range(h_y):
@@ -530,7 +530,7 @@ class TensorProductBasis:
     in the corresponding dimension.
 
     Requirements for each 1D basis object:
-      - .h attribute: number of basis functions in that 1D basis
+      - .n attribute: number of basis functions in that 1D basis
       - .forward(xi): returns shape (n_basis_i, n_points_i)
       - .grad(xi): returns shape (n_basis_i, n_points_i)
 

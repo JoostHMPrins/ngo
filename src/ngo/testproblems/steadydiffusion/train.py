@@ -1,16 +1,17 @@
-import sys
-sys.path.insert(0, '../../ml')
-from trainer import train
-from customlosses import *
-from systemnets import *
-from basisfunctions import *
-from NeuralOperator import NeuralOperator
-from DataModule import DataModule
+# Copyright 2025 Joost Prins
+
+# Local
+from ngo.ml.trainer import train
+from ngo.ml.customlosses import *
+from ngo.ml.systemnets import *
+from ngo.numericalanalysis.basisfunctions import *
+from ngo.testproblems.steadydiffusion.NeuralOperator import NeuralOperator
+from ngo.testproblems.steadydiffusion.DataModule import DataModule
 
 #Training data
 hparams = {}
 hparams['N_samples_train'] = 100 #Number of training samples
-hparams['N_samples_val'] = 100 #Number of validation samples
+hparams['N_samples_val'] = 10 #Number of validation samples
 hparams['variables'] = ['x','x'] #Variable types. 'x' for spatial variable, 't' for temporal variable
 hparams['d'] = len(hparams['variables']) #Dimensionality of solution
 hparams['l_min'] = [0.5,0.5] #Minimum GRF length scale per dimension
@@ -29,12 +30,12 @@ hparams['batch_size'] = 100
 hparams['epochs'] = 10
 
 #Bases
-hparams['h'] = (10,10) #Number of basis functions per dimension
+hparams['n'] = (10,10) #Number of basis functions per dimension
 hparams['p'] = (3,3) #Polynomial order per dimension (in case of B-spline basis)
 hparams['C'] = (2,2) #Continuity along elements per dimension (in case of B-spline basis)
-hparams['N'] = np.prod(hparams['h']) #Number of  basis degrees of freedom
-hparams['test_bases'] = [BSplineBasis1D(h=hparams['h'][0], p=hparams['p'][0], C=hparams['C'][0]),
-                         BSplineBasis1D(h=hparams['h'][1], p=hparams['p'][1], C=hparams['C'][1])] #See basisfunctions.py for the options
+hparams['N'] = np.prod(hparams['n']) #Number of  basis degrees of freedom
+hparams['test_bases'] = [BSplineBasis1D(n=hparams['n'][0], p=hparams['p'][0], C=hparams['C'][0]),
+                         BSplineBasis1D(n=hparams['n'][1], p=hparams['p'][1], C=hparams['C'][1])] #See basisfunctions.py for the options
 hparams['trial_bases'] = hparams['test_bases']
 
 #Quadrature

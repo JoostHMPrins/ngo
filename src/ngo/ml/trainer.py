@@ -34,8 +34,9 @@ def train(model, datamodule, hparams, logdir, sublogdir, label):
     start = time.time() 
     trainer = pl.Trainer(logger=logger, 
                          accelerator='gpu', 
-                         devices=[int(str(MLmodel.device).split(':')[1])],
-                        #  strategy="ddp",
+                         num_workers=0,
+                         devices=1,#[int(str(MLmodel.device).split(':')[1])],
+                         strategy="auto",
                          precision=hparams['precision'], 
                          max_epochs=hparams['epochs'], 
                          check_val_every_n_epoch=1,

@@ -9,11 +9,9 @@ import opt_einsum
 import os
 
 # Local
-import sys
-sys.path.insert(0, '/home/prins/st8/prins/phd/git/ngo-pde-gk/ml')
+from ngo.numericalanalysis.basisfunctions import *
+from ngo.numericalanalysis.quadrature import *
 from ngo.ml.systemnets import MLP, CNN, FNO, LBranchNet
-from ngo.ml.basisfunctions import *
-from ngo.ml.quadrature import *
 from ngo.ml.customlayers import *
 from ngo.ml.customlosses import *
 from ngo.ml.modelloader import *

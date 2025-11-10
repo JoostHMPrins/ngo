@@ -7,10 +7,10 @@ import pytorch_lightning as pl
 import opt_einsum
 
 # Local
+from ngo.numericalanalysis.basisfunctions import TensorizedBasis
+from ngo.numericalanalysis.quadrature import GaussLegendreQuadrature, UniformQuadrature
 from ngo.ml.systemnets import MLP, LBranchNet
-from ngo.ml.basisfunctions import TensorizedBasis
 from ngo.ml.customlayers import Neumann_preconditioner_forward, discretize_functions
-from ngo.ml.quadrature import GaussLegendreQuadrature, UniformQuadrature
 
 class NeuralOperator(pl.LightningModule):
     """
