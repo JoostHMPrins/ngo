@@ -50,7 +50,6 @@ class ManufacturedSolutionsSet:
     def __init__(self, N_samples, variables, l_min, l_max):
         super().__init__()
         self.N_samples = N_samples #Number of samples
-        self.variables = variables
         self.d = len(l_min) #axisensionality of problem
         self.l_min = l_min #Minimum GRF length scale
         self.l_max = l_max #Maximum GRF length scale

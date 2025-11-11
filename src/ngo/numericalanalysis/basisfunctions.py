@@ -20,12 +20,12 @@ class GaussianRBFBasis:
     derivative at given points, and simple plotting helpers.
 
     Attributes:
-        sigma (float): Standard deviation (width) of the Gaussian bumps. Must be > 0.
+        lambdas (float): Standard deviation (width) of the Gaussian bumps. Must be > 0.
         mus (np.ndarray): 1D array of centers of the Gaussians, shape (n,).
         n (int): Number of basis functions (len(mus)).
     """
-    def __init__(self, sigmas, mus):
-        self.sigmas = sigmas
+    def __init__(self, lambdas, mus):
+        self.lambdas = lambdas
         self.mus = mus
         self.n = mus.shape[0]
     
@@ -40,7 +40,7 @@ class GaussianRBFBasis:
             np.ndarray: Matrix of basis values, shape (n,n_points),
                         where column row is exp(-0.5 * ((x - mus[j]) / sigma)**2).
         """
-        basis_values = np.exp(-0.5 * ((x[None, None, :] - self.mus[:, :, None]) / self.sigmas[:,None,None]) ** 2)
+        basis_values = torch.exp(-0.5 * ((x[None, :] - self.mus[:, None]) / self.lambdas[:,None]) ** 2)
         return basis_values
     
     def grad(self, x):
@@ -53,7 +53,7 @@ class GaussianRBFBasis:
         Returns:
             np.ndarray: Matrix of basis derivatives, shape (n,n_points).
         """
-        basis_gradients = -((x[None, None, :]  - self.mus[:, :, None]) / (self.sigmas[:,None,None] ** 2)) * self.forward(x)
+        basis_gradients = -((x[None, None, :]  - self.mus[:, :, None]) / (self.lambdas[:,None,None] ** 2)) * self.forward(x)
         return basis_gradients
     
     def laplacian(self, x):
@@ -66,7 +66,7 @@ class GaussianRBFBasis:
         Returns:
             np.ndarray: Matrix of basis second derivatives, shape (n,n_points).
         """
-        basis_laplacians = (((x[None, None, :] - self.mus[:, :, None]) ** 2) / (self.sigmas[:,None,None] ** 4) - 1 / (self.sigmas[:,None,None] ** 2)) * self.forward(x)
+        basis_laplacians = (((x[None, None, :] - self.mus[:, :, None]) ** 2) / (self.lambdas[:,None,None] ** 4) - 1 / (self.lambdas[:,None,None] ** 2)) * self.forward(x)
         return basis_laplacians
 
 
@@ -401,124 +401,6 @@ class FourierBasis1D:
         return basis_gradients
 
 
-class TensorizedBasis:
-    """
-    A class to represent tensorized basis functions.
-    This class combines multiple 1D basis functions into a higher-dimensional tensorized/Kronecker product basis.
-
-    Attributes:
-        bases (list): A list of 1D basis objects.
-        d (int): Dimensionality of the tensorized basis (number of 1D bases).
-        n_basisfunctions (int): Total number of basis functions in the tensorized basis.
-    """
-    def __init__(self, bases):
-        """
-        Initialize the tensorized basis.
-
-        Args:
-            bases (list): A list of 1D basis objects.
-        """
-        self.bases = bases
-        self.d = len(bases)
-        self.n_basisfunctions = 1
-        for i in range(len(bases)):
-            self.n_basisfunctions *= bases[i].n
-    
-    def forward(self, x):
-        """
-        Compute the tensorized basis values at given points.
-
-        Args:
-            x (np.ndarray): Input points. Shape: (n_points, d).
-
-        Returns:
-            np.ndarray: Tensorized basis values at the input points. Shape: (n_points, n_basisfunctions).
-        """
-        tensorproduct = self.bases[0].forward(x[:,0])
-        newsize = self.bases[0].n
-        for i in range(1,self.d):
-            newsize = newsize*self.bases[i].n
-            tensorproduct = opt_einsum.contract('Nm,Nn->Nmn', tensorproduct, self.bases[i].forward(x[:,i])).reshape(x.shape[0], newsize)
-        return tensorproduct
-    
-    def grad(self, x):
-        """
-        Compute the gradients of the tensorized basis functions.
-
-        Args:
-            x (np.ndarray): Input points. Shape: (n_points, d).
-            
-        Returns:
-            np.ndarray: Gradients of the tensorized basis functions at the input points.
-                        Shape: (n_points, n_basisfunctions, d).
-        """
-        tensorproduct = np.zeros((x.shape[0], self.n_basisfunctions, self.d))
-        for i in range(self.d):
-            if i==0:
-                tensorproduct_i = self.bases[0].grad(x[:,0])
-            else:
-                tensorproduct_i = self.bases[0].forward(x[:,0])
-            newsize = self.bases[0].n
-            for j in range(1,self.d):
-                newsize = newsize*self.bases[j].n
-                if j==i:
-                    tensorproduct_i = opt_einsum.contract('Nm,Nn->Nmn', tensorproduct_i, self.bases[j].grad(x[:,j])).reshape(x.shape[0], newsize)
-                else: 
-                    tensorproduct_i = opt_einsum.contract('Nm,Nn->Nmn', tensorproduct_i, self.bases[j].forward(x[:,j])).reshape(x.shape[0], newsize)
-            tensorproduct[:,:,i] = tensorproduct_i
-        return tensorproduct
-    
-    def plot_2d_basis(self):
-        """
-        Plot the 2D tensorized basis functions.
-        This method assumes the tensorized basis is 2D (d=2).
-        """
-        resolution = 100
-        x_0, x_1 = np.mgrid[0:1:resolution*1j, 0:1:resolution*1j]
-        x = np.vstack([x_0.ravel(), x_1.ravel()]).T
-        basis_values_2d = self.forward(x)
-        h_x = self.bases[0].n
-        h_y = self.bases[1].n
-        fig, axes = plt.subplots(h_x, h_y, figsize=(h_y*4, h_x*3))
-        for i in range(h_x):
-            for j in range(h_y):
-                ax = axes[i, j] if h_x > 1 and h_y > 1 else axes[max(i, j)]
-                idx = i * h_y + j
-                z = basis_values_2d[:, idx]
-                c = ax.tripcolor(x[:,0], x[:,1], z)
-                fig.colorbar(c, ax=ax)
-                ax.set_title(f'Basis ({i},{j})')
-                ax.set_xlabel('x')
-                ax.set_ylabel('y')
-        plt.tight_layout()
-        plt.show()
-        
-    def plot_2d_basis_gradients(self):
-        """
-        Plot the gradients of the 2D tensorized basis functions.
-        This method assumes the tensorized basis is 2D (d=2).
-        """
-        resolution = 100
-        x_0, x_1 = np.mgrid[0:1:resolution*1j, 0:1:resolution*1j]
-        x = np.vstack([x_0.ravel(), x_1.ravel()]).T
-        basis_gradients_2d = self.grad(x)
-        h_x = self.bases[0].n
-        h_y = self.bases[1].n
-        fig, axes = plt.subplots(h_x, h_y, figsize=(h_y*4, h_x*3))
-        for i in range(h_x):
-            for j in range(h_y):
-                ax = axes[i, j] if h_x > 1 and h_y > 1 else axes[max(i, j)]
-                idx = i * h_y + j
-                z = np.sum(basis_gradients_2d[:, idx, :]**2, axis=-1)**(1/2)
-                c = ax.tripcolor(x[:,0], x[:,1], z)
-                fig.colorbar(c, ax=ax)
-                ax.set_title(f'Gradient ({i},{j})')
-                ax.set_xlabel('x')
-                ax.set_ylabel('y')
-        plt.tight_layout()
-        plt.show()
-
-
 class TensorProductBasis:
     """
     Tensor-product (Kronecker) basis built from multiple 1D basis objects.
@@ -573,7 +455,7 @@ class TensorProductBasis:
            # compute basis evaluation matrix of dimension i
            Phi_i = self.bases[i].forward(x[i])
             # tensordot contracts the basis index (axis 1 of u_q) with axis 0 of Phi_i
-           u_q = np.tensordot(u_q, Phi_i, axes=(1,0))
+           u_q = torch.tensordot(u_q, Phi_i, dims=([1],[0]))
         # final shape is (N_samples, n_points_1, ..., n_points_d)
         return u_q
 
