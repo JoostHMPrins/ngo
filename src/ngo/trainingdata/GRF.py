@@ -1,111 +1,120 @@
 # Copyright 2025 Joost Prins
+"""Gaussian Random Field (GRF) generator for training data.
+
+This module implements a Gaussian Random Field sampler using Kronecker-product
+structure for efficient generation of spatially correlated random fields in
+multiple dimensions.
+"""
 
 # 3rd Party
-import numpy as np
-import scipy.spatial as spsp
-import opt_einsum
+import torch
+
+#Local
+from src.ngo.numericalanalysis.linalg import kron_matvec, kron_solve_triangular
 
 
 class GRF:
-    def __init__(self, N_samples, l):
+    """Gaussian Random Field generator with squared exponential covariance.
+    
+    Generates random fields with spatial correlation determined by length scales.
+    Uses Kronecker-product structure to efficiently sample and compute the
+    conditional mean of the GRF given the samples. The random fields are interpolated
+    on a Gaussian Radial Basis Function (GRBF) basis on a regular grid.
+    
+    The covariance kernel is a product of 1D squared exponential kernels:
+        K(x, x') = exp(-0.5 * sum_i ((x_i - x'_i) / l_i)^2)
+    
+    Attributes:
+        device (torch.device): Device for tensor operations.
+        dtype (torch.dtype): Data type for tensors.
+        N_samples (int): Number of GRF samples to generate.
+        l (torch.Tensor): Length scales for each dimension, shape (d,).
+        l_Dx_ratio (int): Ratio determining grid resolution relative to length scales.
+        n (tuple): Grid sizes for each dimension. "n_i = ceil(1 / l_i) + 1".
+        mus (tuple): Grid points for each dimension, each element shape (n_i,).
+        f_m (torch.Tensor): Basis interpolation coefficient tensor, shape (N_samples, n_0, ..., n_{d-1}).
+        f (torch.Tensor): GRF samples, shape (N_samples, n_0, ..., n_{d-1}).
+    """
+    def __init__(self, N_samples, l, n, device, dtype):
+        """Initialize the GRF generator.
+        
+        Parameters:
+            N_samples (int): Number of random field samples to generate.
+            l (tuple): Length scales for each spatial dimension. Tuple length
+                determines the dimensionality of the random field.
+            device (torch.device or str): Device for computation ('cpu' or 'cuda').
+            dtype (torch.dtype): Data type for tensors (e.g., torch.float32).
+        """
         super().__init__()
-        self.N_samples = N_samples #Number of GRF samples
-        self.l = np.array(l) #Length scale of GRF
-        self.d = len(l) #Dimensionality of GRF
-        self.n_mus = int(np.ceil(1/np.prod(self.l))) #Number of GRF sample locations
-        self.mus = self.compute_mus()
-        self.f_hat = self.compute_coeffs()
-
-    #Sample n_mus random points on the unit square
-    def compute_mus(self):
-        mus = np.random.uniform(0,1,size=(self.N_samples,self.n_mus,self.d))
+        self.device = device
+        self.dtype = dtype
+        self.N_samples = N_samples
+        self.l = torch.tensor(l, device=self.device, dtype=dtype)
+        self.n = n  #Number of points in each dimension
+        if n==None:
+            self.l_Dx_ratio = 1
+            self.n = tuple((self.l_Dx_ratio*(1.0 / self.l).ceil().long() + 1).tolist())
+        self.mus = self.get_mus()
+        self.f_m = self.compute_coeffs()
+    
+    def get_mus(self):
+        """Generate grid points for each dimension.
+        
+        Creates uniform grids in [0, 1] for each spatial dimension with
+        resolution determined by the length scale and l_Dx_ratio.
+        
+        Returns:
+            tuple: Grid points for each dimension, each element a 1D tensor
+                of shape (n_i,).
+        """
+        mus = ()
+        for i in range(len(self.l)):
+            mus += (torch.linspace(0,1, self.n[i], device=self.device, dtype=self.dtype),)
         return mus
-
-    #Compute Gaussian covariance matrix cov between points
-    def compute_cov(self):
-        scaled_mus = self.mus / self.l[None, None, :]
-        diff = scaled_mus[:, None, :, :] - scaled_mus[:, :, None, :]
-        dist_sq = np.sum(diff**2, axis=-1)
-        return np.exp(-0.5 * dist_sq)
+    
+    def compute_covariances(self):
+        """Compute covariance matrices for each dimension.
+        
+        Computes the 1D squared exponential covariance matrices that form
+        the Kronecker-product structure of the full covariance.
+        
+        Returns:
+            tuple: Covariance matrices K_i, each with shape (n_i, n_i).
+        """
+        K_i = ()
+        for i in range(len(self.l)):
+            scaled_mus = self.mus[i] / self.l[i]
+            diff = scaled_mus[:, None] - scaled_mus[None, :]
+            dist_sq = diff**2
+            K_i += (torch.exp(-0.5 * dist_sq),)
+        return K_i
     
     def compute_coeffs(self):
-        cov = self.compute_cov()
-        L = np.linalg.cholesky(cov)
-        z = np.random.normal(size=(self.N_samples, self.n_mus))
-        f = opt_einsum.contract('Nij,Nj->Ni', L, z)
-        L_inv = np.linalg.inv(L)
-        cov_inv = opt_einsum.contract('Nij,Njk->Nik', L_inv.transpose(0,2,1), L_inv)
-        f_hat = opt_einsum.contract('Nij,Nj->Ni', cov_inv, f)
-        return f_hat
-
-    def phi_n(self, i, x):
-        output = self.f_hat[i,None,:]*np.exp(-1/2*np.sum(((x[:,None,:] - self.mus[i,:,:])/self.l[None,None,:])**2, axis=-1))
-        return output
-
-    #Forward evaluation of RBF interpolated GRF
-    def forward(self, i):
-        def function(x):
-            phi_n = self.phi_n(i, x)
-            return np.sum(phi_n, axis=1)
-        return function      
-
-    #Pointwise forward evaluation of RBF interpolated GRF (required for Nutils)
-    def forward_nutils(self, i):
-        def function(x):
-            phi_n = self.f_hat[i]*np.exp(-np.sum((x - self.mus)**2, axis=-1)/(2*self.l**2))
-            return np.sum(phi_n)
-        return function
-
-    # Gradient of RBF interpolated GRF
-    def grad(self, i):
-        def function(x):
-            phi_n = self.phi_n(i, x)
-            prefactor = -1/(self.l[None,None,:]**2)*(x[:,None,:] - self.mus[i,:,:])
-            return np.sum(prefactor*phi_n[:,:,None], axis=1)
-        return function       
-
-    # Laplacian of RBF interpolated GRF
-    def d2dxi2(self, i):
-        def function(x):
-            phi_n = self.phi_n(i, x)
-            prefactor = (x[:,None,:] - self.mus[i,:,:])**2/self.l[None,None,:]**4 - 1/self.l[None,None,:]**2
-            return np.sum(prefactor*phi_n[:,:,None], axis=1)
-        return function
-
-
-class ScaledGRF:
-    def __init__(self, N_samples, l, c, b):
-        super().__init__()
-        self.grf = GRF(N_samples, l)
-        #Scaling and translation of GRF f'(x) = c f(x) + b
-        self.c = c
-        self.b = b
-    
-    def forward(self, i):
-        def function(x):
-            return self.c[i]*self.grf.forward(i)(x) + self.b[i]
-        return function
-    def forward_x(self, i, x):        
-        return self.c[i]*self.grf.forward_x(i,x) + self.b[i]
+        """Generate GRF samples and compute their conditional mean.
         
-    
-    def forward_nutils(self, i):
-        def function(x):
-            return self.c[i]*self.grf.forward_nutils(i)(x) + self.b[i]
-        return function
-    
-    def grad(self, i):
-        def function(x):
-            return self.c[i]*self.grf.grad(i)(x)
-        return function
-    
-    def grad_x(self, i , x ):
-        return self.c[i]*self.grf.grad_x(i,x)
-    
-    def d2dxi2(self, i):
-        def function(x):
-            return self.c[i]*self.grf.d2dxi2(i)(x)
-        return function
-
-    def d2dxi2_x(self, i,x):
-        return self.c[i]*self.grf.d2dxi2_x(i,x)
+        Uses Cholesky factorization of the Kronecker-product covariance to
+        generate samples, then interpolates the GRF data points f on a Gaussian
+        Radial Basis Function (GRBF) basis, by solving a sequence of 1D triangular systems.
+        
+        Returns:
+            torch.Tensor: Conditional mean of the GRF samples, shape
+                (N_samples, n_0, n_1, ..., n_{d-1}).
+        
+        Notes:
+            - Stores the GRF samples in self.f
+            - The interpolation coefficients f_m satisfy:
+              (K_0 ⊗ K_1 ⊗ ... ⊗ K_{d-1}) @ f_m = f
+        """
+        K_i = self.compute_covariances()
+        L_i = tuple(torch.linalg.cholesky(K) for K in K_i)
+        # Sample standard normal variables
+        Z = torch.randn(size=(self.N_samples,*self.n), device=self.device, dtype=self.dtype)
+        # GRF generation
+        L_i_batch = tuple(L[None,:] for L in L_i)
+        self.f = kron_matvec(L_i_batch, Z)
+        # Forward solve
+        L_i_T = tuple(L.T for L in L_i)
+        y = kron_solve_triangular(L_i_T, self.f, upper=True, left=False)
+        #Backward solve
+        f_m = kron_solve_triangular(L_i, y, upper=False, left=False)
+        return f_m
