@@ -59,12 +59,9 @@ def kron_solve_triangular(L_i, b, upper, left=False):
     x = b
     # Sequentially apply each Kronecker factor
     for i in range(len(L_i)):
-        # Move the current dimension to the last position
-        print(x.shape)
-        # L_i = L_i[i]
-        # L_i = L_i.moveaxis(0,-1)
+        # print(i)
+        # # Move the current dimension to the last position
         x = x.moveaxis(1,-1)
-        # Solve the triangular system for the current factor
+        # Solve the triangular system for the current dimension
         x = torch.linalg.solve_triangular(L_i[i], x, upper=upper, left=left)
-        # x = x.moveaxis(-1,1)
     return x
