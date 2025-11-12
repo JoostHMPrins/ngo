@@ -420,7 +420,7 @@ class TensorProductBasis:
     Attributes:
         bases (tuple): Sequence of 1D basis objects.
         d (int): Number of dimensions (len(bases)).
-        h (tuple): Number of basis functions per dimension (h1, ..., hd).
+        n (tuple): Number of basis functions per dimension (n1, ..., nd).
     """
     def __init__(self, bases):
         """
@@ -435,44 +435,117 @@ class TensorProductBasis:
         for i in range(len(bases)):
             self.n += (bases[i].n,)
 
-    def forward(self, u_m, x):
+    def Phi(self, X):
+        """
+        Evaluate the 1D basis functions at provided points.
+        
+        Args:
+            X (tuple/list): Sequence of point arrays for each dimension.
+                            X[i] has shape (n_points_i,).
+        Returns:
+            tuple: Sequence of basis evaluation matrices for each dimension.
+                   Each element has shape (n_basis_i, n_points_i).
+        """
+        # Construct basis evaluations
+        Phi = ()
+        # For each dimension, compute basis evaluation matrix
+        for i in range(self.d):
+            Phi += (torch.tensor(self.bases[i].forward(X[i])),)
+        # Add batch dimension if missing
+        Phi = tuple(Phi_i[None,:,:] if Phi_i.ndim==2 else Phi_i for Phi_i in Phi)
+        return Phi
+    
+    def dPhi(self, X):
+        """
+        Evaluate the derivatives of the 1D basis functions at provided points.
+
+        Args:
+            X (tuple/list): Sequence of point arrays for each dimension.
+                            X[i] has shape (n_points_i,).
+        Returns:
+            tuple: Sequence of basis derivative matrices for each dimension.
+                   Each element has shape (n_basis_i, n_points_i).
+        """
+        # Construct basis derivatives
+        dPhi = ()
+        # For each dimension, compute basis derivative matrix
+        for i in range(self.d):
+            dPhi += (torch.tensor(self.bases[i].grad(X[i])),)
+        # Add batch dimension if missing
+        dPhi = tuple(dPhi_i[None,:,:] if dPhi_i.ndim==2 else dPhi_i for dPhi_i in dPhi)
+        return dPhi
+
+    # def gradPhi(self, X):
+    #     """
+    #     Compute the gradient of the tensor-product basis functions at provided points.
+
+    #     Args:
+    #         X (tuple/list): Sequence of point arrays for each dimension.
+    #                         X[i] has shape (n_points_i,).
+    #     Returns:
+    #         tuple: Sequence of gradient tuples for each dimension.
+    #                Each gradient tuple contains basis evaluation matrices,
+    #                with the derivative in the corresponding dimension.
+    #     """
+    #     # Compute basis evaluations and derivatives
+    #     Phi = self.Phi(X)
+    #     Phi = tuple(Phi_i[:,None] for Phi_i in Phi)  # add extra dim for broadcasting
+    #     dPhi = self.dPhi(X)
+    #     # Construct gradient tuples
+    #     gradPhi = ()
+    #     # For each dimension, create a tuple with dPhi in that dimension and Phi elsewhere
+    #     for i in range(self.d):
+    #         # Construct gradient in dimension i
+    #         gradPhi_i = torch.ones_like(Phi[0])
+    #         print(gradPhi_i.shape)
+    #         # Multiply basis evaluations, using derivative in dimension i
+    #         for j in range(self.d):
+    #             # Use derivative in dimension i, value elsewhere
+    #             if i==j:
+    #                 print(dPhi[j].shape)
+    #                 gradPhi_i *= dPhi[j]
+    #             else:
+    #                 print(Phi[j].shape)
+    #                 gradPhi_i *= Phi[j]
+    #         # Append gradient tuple for dimension i
+    #         gradPhi += (gradPhi_i,)
+    #     return gradPhi
+
+    def forward(self, u_m, X):
         """
         Evaluate the tensor-product expansion at provided points.
 
         Args:
-            u_m (np.ndarray): Modal coefficients with shape (N_samples, prod(h)) or
-                              (N_samples, h1, h2, ..., hd). N_samples is batch size.
-            x (tuple/list): Sequence of point arrays for each dimension.
-                            x[i] has shape (n_points_i,).
+            u_m (np.ndarray): Modal coefficients with shape (N_samples, prod(n)) or
+                              (N_samples, n1, n2, ..., nd). N_samples is batch size.
+            X (tuple/list): Sequence of point arrays for each dimension.
+                            X[i] has shape (n_points_i,).
 
         Returns:
             np.ndarray: Evaluated values at tensor-product grid points,
                         shape (N, n_points_1, ..., n_points_d).
         """
-        # reshape coefficients into (N_samples, h1, h2, ..., hd)
+        # reshape coefficients into (N_samples, n1, n2, ..., nd)
         u_q = u_m.reshape(u_m.shape[0],*self.n)
+        # Compute basis evaluation matrices
+        Phi = self.Phi(X)
         # sequentially contract coefficient tensor with each 1D basis evaluation
         for i in range(self.d):
-           # compute basis evaluation matrix of dimension i
-            Phi_i = torch.tensor(self.bases[i].forward(x[i]), device=u_m.device, dtype=u_m.dtype)
-            # Add batch dimension if missing
-            if Phi_i.ndim == 2:
-                Phi_i = Phi_i[None,:,:]
             # contract along the i-th dimension
             u_q = u_q.moveaxis(1, -1)  # move basis axis to the end for einsum
-            u_q = torch.einsum('N...n,Nnq->N...q', u_q, Phi_i)
+            u_q = torch.einsum('N...n,Nnq->N...q', u_q, Phi[i])
         # final shape is (N_samples, n_points_1, ..., n_points_d)
         return u_q
 
-    def grad(self, u_m, x):
+    def grad(self, u_m, X):
         """
         Compute partial derivatives of the tensor-product expansion.
         For each spatial dimension i the method replaces the 1D basis eval in
         that dimension with its derivative and contracts as in `forward`.
 
         Args:
-            u_m (np.ndarray): Modal coefficients, shape (N, prod(h)) or (N, h1, ..., hd).
-            x (tuple/list): Sequence of point arrays for each dimension.
+            u_m (np.ndarray): Modal coefficients, shape (N, prod(n)) or (N, n1, ..., nd).
+            X (tuple/list): Sequence of point arrays for each dimension.
                             x[i] has shape (n_points_i,).
         Returns:
             np.ndarray: Gradients at tensor-product points with shape
@@ -480,11 +553,8 @@ class TensorProductBasis:
                         partial derivatives w.r.t. each coordinate.
         """
         #Compute function evaluation and gradient matrices
-        Phi_i = tuple(torch.tensor(basis.forward(xi), device=u_m.device, dtype=u_m.dtype) for basis, xi in zip(self.bases, x))
-        dPhi_i = tuple(torch.tensor(basis.grad(xi), device=u_m.device, dtype=u_m.dtype) for basis, xi in zip(self.bases, x))
-        # Add batch dimension if missing
-        Phi_i = tuple(Phi[None,:,:] if Phi.ndim==2 else Phi for Phi in Phi_i)
-        dPhi_i = tuple(dPhi[None,:,:] if dPhi.ndim==2 else dPhi for dPhi in dPhi_i)
+        Phi = self.Phi(X)
+        dPhi = self.dPhi(X)
         # Compute derivative for each dimension by contracting with dPhi in that dim.
         gradu_q = ()
         for i in range(self.d):
@@ -494,64 +564,12 @@ class TensorProductBasis:
                 u_q = u_q.moveaxis(1, -1)  # move basis axis to the end for einsum
                 if j==i:
                     # use derivative matrix in the i-th dimension
-                    u_q = torch.einsum('N...n,Nnq->N...q', u_q, dPhi_i[j])
+                    u_q = torch.einsum('N...n,Nnq->N...q', u_q, dPhi[j])
                 else:
                     # use value matrix in other dimensions
-                    u_q = torch.einsum('N...n,Nnq->N...q', u_q, Phi_i[j])
+                    u_q = torch.einsum('N...n,Nnq->N...q', u_q, Phi[j])
             # append gradient in direction i to gradu_q tuple
             gradu_q += (u_q,)
         #Reshape such that the last axis indexes the coordinate to which derivative has been taken
         gradu_q = torch.stack(gradu_q, axis=-1)
         return gradu_q
-
-
-class BSplineInterpolatedPOD2D:
-    def __init__(self, N_samples, variables, l_min, l_max, w, xi, N, device):
-        self.basis_1d = BSplineBasis1D(h=31,p=3,C=2)
-        self.bsplinebasis = TensorizedBasis([self.basis_1d,self.basis_1d])
-        self.N = N
-        self.w = w
-        self.xi = xi
-        #self.u = ManufacturedSolutionsSetDarcy(N_samples=N_samples, variables=variables, l_min=l_min, l_max=l_max, device=device).u
-        #self.u_q = discretize_functions(self.u, torch.tensor(self.xi, device=device), device).detach().cpu().numpy()
-        self.device = device
-        # self.PODbasis = self.compute_PODbasis(self.u_q, self.N)
-        # self.PODcoeffs = self.compute_PODcoeffs(self.u_q, self.N)
-        self.PODcoeffs = np.load('../../../trainingdata/PODcoeffs.npy')[:self.N]
-        # self.errors = self.compute_projection_errors()
-        
-    def compute_PODbasis(self, u_q, N):
-        U, self.singularvalues, Vstar = np.linalg.svd(u_q.T, full_matrices=False)
-        PODbasis = U.T
-        PODbasis = PODbasis
-        return PODbasis
-    
-    def compute_PODcoeffs(self, u_q, N):
-        PODbasis_d = self.compute_PODbasis(u_q, N)
-        bsplinebasis_d = self.bsplinebasis.forward(self.xi)
-        d = opt_einsum.contract('q,nq,ql->nl', self.w, PODbasis_d, bsplinebasis_d)
-        M = opt_einsum.contract('q,ql,qm->lm', self.w, bsplinebasis_d, bsplinebasis_d)
-        M_inv = np.linalg.inv(M)
-        PODcoeffs = opt_einsum.contract('lm,nl->nm',M_inv, d)
-        np.save('../../../trainingdata/PODcoeffs.npy', PODcoeffs)
-        return PODcoeffs
-        
-    def forward(self, x):
-        psi = self.bsplinebasis.forward(x)
-        output = opt_einsum.contract('nm,Nm->Nn', self.PODcoeffs, psi)
-        return output
-    
-    def grad(self, x):
-        gradpsi = self.bsplinebasis.grad(x)
-        output = opt_einsum.contract('nm,Nmi->Nni', self.PODcoeffs, gradpsi)
-        return output
-    
-    def compute_projection_errors(self):
-        pi = self.PODbasis
-        pi_proj = self.forward(self.xi).T
-        L22_diff = np.sum(self.w*(pi - pi_proj)**2, axis=-1)
-        L2_diff = L22_diff**(1/2)
-        L22_norm = np.sum(self.w*(pi)**2, axis=-1)
-        L2_norm = L22_norm**(1/2)
-        L2_scaled_array = L2_diff/np.maximum(L2_norm, 1e-7*np.ones_like(L2_norm))
-        return L2_scaled_array
