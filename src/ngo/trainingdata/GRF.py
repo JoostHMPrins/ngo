@@ -10,7 +10,7 @@ multiple dimensions.
 import torch
 
 #Local
-from src.ngo.numericalanalysis.linalg import kron_matvec, kron_solve_triangular
+from ngo.numericalanalysis.linalg import kron_matvec, kron_solve_triangular
 
 
 class GRF:
@@ -90,7 +90,7 @@ class GRF:
         return K_i
     
     def compute_coeffs(self):
-        """Generate GRF samples and compute their conditional mean.
+        """Generate GRF samples and interpolate on a Gaussian Radial Basis Function (GRBF) basis.
         
         Uses Cholesky factorization of the Kronecker-product covariance to
         generate samples, then interpolates the GRF data points f on a Gaussian
