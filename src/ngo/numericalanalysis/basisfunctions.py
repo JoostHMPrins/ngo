@@ -40,7 +40,7 @@ class GaussianRBFBasis:
             np.ndarray: Matrix of basis values, shape (n,n_points),
                         where column row is exp(-0.5 * ((x - mus[j]) / sigma)**2).
         """
-        basis_values = torch.exp(-0.5 * ((x[None, :] - self.mus[:, None]) / self.lambdas[:,None]) ** 2)
+        basis_values = torch.exp(-0.5 * ((x[None, None, :] - self.mus[None, :, None]) / self.lambdas[:,:,None]) ** 2)
         return basis_values
     
     def grad(self, x):
@@ -53,7 +53,7 @@ class GaussianRBFBasis:
         Returns:
             np.ndarray: Matrix of basis derivatives, shape (n,n_points).
         """
-        basis_gradients = -((x[None, None, :]  - self.mus[:, :, None]) / (self.lambdas[:,None,None] ** 2)) * self.forward(x)
+        basis_gradients = -((x[None,None, None, :]  - self.mus[None,:, :, None]) / (self.lambdas[:,:,None,None] ** 2)) * self.forward(x)
         return basis_gradients
     
     def laplacian(self, x):
@@ -66,8 +66,9 @@ class GaussianRBFBasis:
         Returns:
             np.ndarray: Matrix of basis second derivatives, shape (n,n_points).
         """
-        basis_laplacians = (((x[None, None, :] - self.mus[:, :, None]) ** 2) / (self.lambdas[:,None,None] ** 4) - 1 / (self.lambdas[:,None,None] ** 2)) * self.forward(x)
+        basis_laplacians = (((x[None,None, None, :] - self.mus[None,:, :, None]) ** 2) / (self.lambdas[None,:,None,None] ** 4) - 1 / (self.lambdas[:,:,None,None] ** 2)) * self.forward(x)
         return basis_laplacians
+
 
 
 class BSplineBasis1D:
@@ -453,9 +454,13 @@ class TensorProductBasis:
         # sequentially contract coefficient tensor with each 1D basis evaluation
         for i in range(self.d):
            # compute basis evaluation matrix of dimension i
-           Phi_i = self.bases[i].forward(x[i])
-            # tensordot contracts the basis index (axis 1 of u_q) with axis 0 of Phi_i
-           u_q = torch.tensordot(u_q, Phi_i, dims=([1],[0]))
+            Phi_i = torch.tensor(self.bases[i].forward(x[i]), device=u_m.device, dtype=u_m.dtype)
+            # Add batch dimension if missing
+            if Phi_i.ndim == 2:
+                Phi_i = Phi_i[None,:,:]
+            # contract along the i-th dimension
+            u_q = u_q.moveaxis(1, -1)  # move basis axis to the end for einsum
+            u_q = torch.einsum('N...n,Nnq->N...q', u_q, Phi_i)
         # final shape is (N_samples, n_points_1, ..., n_points_d)
         return u_q
 
@@ -475,24 +480,28 @@ class TensorProductBasis:
                         partial derivatives w.r.t. each coordinate.
         """
         #Compute function evaluation and gradient matrices
-        Phi_i = tuple(b.forward(xi) for b, xi in zip(self.bases, x))
-        dPhi_i = tuple(b.grad(xi) for b, xi in zip(self.bases, x))
+        Phi_i = tuple(torch.tensor(basis.forward(xi), device=u_m.device, dtype=u_m.dtype) for basis, xi in zip(self.bases, x))
+        dPhi_i = tuple(torch.tensor(basis.grad(xi), device=u_m.device, dtype=u_m.dtype) for basis, xi in zip(self.bases, x))
+        # Add batch dimension if missing
+        Phi_i = tuple(Phi[None,:,:] if Phi.ndim==2 else Phi for Phi in Phi_i)
+        dPhi_i = tuple(dPhi[None,:,:] if dPhi.ndim==2 else dPhi for dPhi in dPhi_i)
         # Compute derivative for each dimension by contracting with dPhi in that dim.
         gradu_q = ()
         for i in range(self.d):
             # start from coefficients reshaped to (N, h1, ..., hd)
             u_q = u_m.reshape(u_m.shape[0],*self.n)
             for j in range(self.d):
+                u_q = u_q.moveaxis(1, -1)  # move basis axis to the end for einsum
                 if j==i:
                     # use derivative matrix in the i-th dimension
-                    u_q = np.tensordot(u_q, dPhi_i[j], axes=(1,0))
+                    u_q = torch.einsum('N...n,Nnq->N...q', u_q, dPhi_i[j])
                 else:
                     # use value matrix in other dimensions
-                    u_q = np.tensordot(u_q, Phi_i[j], axes=(1,0))
+                    u_q = torch.einsum('N...n,Nnq->N...q', u_q, Phi_i[j])
             # append gradient in direction i to gradu_q tuple
             gradu_q += (u_q,)
         #Reshape such that the last axis indexes the coordinate to which derivative has been taken
-        gradu_q = np.stack(gradu_q, axis=-1)
+        gradu_q = torch.stack(gradu_q, axis=-1)
         return gradu_q
 
 
