@@ -13,47 +13,55 @@ from ngo.ml.customlayers import discretize_functions
 
 class GaussianRBFBasis:
     """
-    1D Gaussian radial-basis-function (RBF) basis.
-
-    This class defines a set of Gaussian basis functions with fixed centers (mus)
-    and shared width (sigma). It provides methods to evaluate the basis and its
-    derivative at given points, and simple plotting helpers.
+    A class to represent 1D Gaussian Radial Basis Functions (RBFs).
 
     Attributes:
-        lambdas (float): Standard deviation (width) of the Gaussian bumps. Must be > 0.
-        mus (np.ndarray): 1D array of centers of the Gaussians, shape (n,).
-        n (int): Number of basis functions (len(mus)).
+        lambdas (torch.Tensor): Length scales for the Gaussian RBFs, shape (B,) (B is batch size).
+        mus (torch.Tensor): Centers of the Gaussian RBFs, shape (n,).
+        n (int): Number of basis functions.
     """
     def __init__(self, lambdas, mus):
+        """
+        Initialize the Gaussian RBF basis.
+        Args:
+            lambdas (torch.Tensor): Length scales for the Gaussian RBFs, shape (B,) (B is batch size).
+            mus (torch.Tensor): Centers of the Gaussian RBFs, shape (n,).
+        """
         self.lambdas = lambdas
+        # Add batch dimension if missing
+        if self.lambdas.ndim == 0:
+            self.lambdas = self.lambdas.unsqueeze(0)
         self.mus = mus
+        # Number of basis functions
         self.n = mus.shape[0]
     
     def forward(self, x):
         """
-        Evaluate the Gaussian RBFs at points x.
+        Compute the Gaussian basis values at given points.
 
         Args:
             x (np.ndarray): 1D array of evaluation points, shape (n_points,).
-
+        
         Returns:
-            np.ndarray: Matrix of basis values, shape (n,n_points),
-                        where column row is exp(-0.5 * ((x - mus[j]) / sigma)**2).
+            np.ndarray: B matrices of basis values, shape (B,n,n_points).     
         """
-        basis_values = torch.exp(-0.5 * ((x[None, None, :] - self.mus[None, :, None]) / self.lambdas[:,:,None]) ** 2)
+        # basis_values = torch.exp(-0.5 * ((x[None, None, :] - self.mus[None, :, None]) / self.lambdas[:,None,None]) ** 2)
+        basis_values = torch.exp(-0.5 * ((x[None,None,:] - self.mus[None,:,None]) / self.lambdas[:,None,None]) ** 2)
+
         return basis_values
     
     def grad(self, x):
         """
-        Compute derivative of each Gaussian basis function w.r.t. x.
+        Compute gradients of each Gaussian basis function w.r.t. x.
 
         Args:
             x (np.ndarray): 1D array of evaluation points, shape (n_points,).
 
         Returns:
-            np.ndarray: Matrix of basis derivatives, shape (n,n_points).
+            np.ndarray: B matrices of basis gradients, shape (B,n,n_points).
         """
-        basis_gradients = -((x[None,None, None, :]  - self.mus[None,:, :, None]) / (self.lambdas[:,:,None,None] ** 2)) * self.forward(x)
+        # basis_gradients = -((x[None,None, None, :]  - self.mus[None,:, :, None]) / (self.lambdas[:,None,None,None] ** 2)) * self.forward(x)
+        basis_gradients = -((x[None,None,:] - self.mus[None,:,None]) / (self.lambdas[:,None,None] ** 2)) * self.forward(x)
         return basis_gradients
     
     def laplacian(self, x):
@@ -64,9 +72,10 @@ class GaussianRBFBasis:
             x (np.ndarray): 1D array of evaluation points, shape (n_points,).
 
         Returns:
-            np.ndarray: Matrix of basis second derivatives, shape (n,n_points).
+            np.ndarray: B matrices of basis second derivatives, shape (B,n,n_points).
         """
-        basis_laplacians = (((x[None,None, None, :] - self.mus[None,:, :, None]) ** 2) / (self.lambdas[None,:,None,None] ** 4) - 1 / (self.lambdas[:,:,None,None] ** 2)) * self.forward(x)
+        # basis_laplacians = (((x[None,None, None, :] - self.mus[None,:, :, None]) ** 2) / (self.lambdas[:,None,None,None] ** 4) - 1 / (self.lambdas[:,None,None,None] ** 2)) * self.forward(x)
+        basis_laplacians = (((x[None,None,:] - self.mus[None,:,None])**2)/self.lambdas[:,None,None]**4 - 1/self.lambdas[:,None,None]**2) * self.forward(x)
         return basis_laplacians
 
 
@@ -450,7 +459,7 @@ class TensorProductBasis:
         Phi = ()
         # For each dimension, compute basis evaluation matrix
         for i in range(self.d):
-            Phi += (torch.tensor(self.bases[i].forward(X[i])),)
+            Phi += (self.bases[i].forward(X[i]),)
         # Add batch dimension if missing
         Phi = tuple(Phi_i[None,:,:] if Phi_i.ndim==2 else Phi_i for Phi_i in Phi)
         return Phi
@@ -470,46 +479,82 @@ class TensorProductBasis:
         dPhi = ()
         # For each dimension, compute basis derivative matrix
         for i in range(self.d):
-            dPhi += (torch.tensor(self.bases[i].grad(X[i])),)
+            dPhi += (self.bases[i].grad(X[i]),)
         # Add batch dimension if missing
         dPhi = tuple(dPhi_i[None,:,:] if dPhi_i.ndim==2 else dPhi_i for dPhi_i in dPhi)
         return dPhi
+    
+    def ddPhi(self, X):
+        """
+        Evaluate the second derivatives of the 1D basis functions at provided points.
 
-    # def gradPhi(self, X):
-    #     """
-    #     Compute the gradient of the tensor-product basis functions at provided points.
+        Args:
+            X (tuple/list): Sequence of point arrays for each dimension.
+                            X[i] has shape (n_points_i,).
+        Returns:
+            tuple: Sequence of basis second derivative matrices for each dimension.
+                   Each element has shape (n_basis_i, n_points_i).
+        """
+        # Construct basis second derivatives
+        ddPhi = ()
+        # For each dimension, compute basis second derivative matrix
+        for i in range(self.d):
+            ddPhi += (self.bases[i].laplacian(X[i]),)
+        # Add batch dimension if missing
+        ddPhi = tuple(ddPhi_i[None,:,:] if ddPhi_i.ndim==2 else ddPhi_i for ddPhi_i in ddPhi)
+        return ddPhi
 
-    #     Args:
-    #         X (tuple/list): Sequence of point arrays for each dimension.
-    #                         X[i] has shape (n_points_i,).
-    #     Returns:
-    #         tuple: Sequence of gradient tuples for each dimension.
-    #                Each gradient tuple contains basis evaluation matrices,
-    #                with the derivative in the corresponding dimension.
-    #     """
-    #     # Compute basis evaluations and derivatives
-    #     Phi = self.Phi(X)
-    #     Phi = tuple(Phi_i[:,None] for Phi_i in Phi)  # add extra dim for broadcasting
-    #     dPhi = self.dPhi(X)
-    #     # Construct gradient tuples
-    #     gradPhi = ()
-    #     # For each dimension, create a tuple with dPhi in that dimension and Phi elsewhere
-    #     for i in range(self.d):
-    #         # Construct gradient in dimension i
-    #         gradPhi_i = torch.ones_like(Phi[0])
-    #         print(gradPhi_i.shape)
-    #         # Multiply basis evaluations, using derivative in dimension i
-    #         for j in range(self.d):
-    #             # Use derivative in dimension i, value elsewhere
-    #             if i==j:
-    #                 print(dPhi[j].shape)
-    #                 gradPhi_i *= dPhi[j]
-    #             else:
-    #                 print(Phi[j].shape)
-    #                 gradPhi_i *= Phi[j]
-    #         # Append gradient tuple for dimension i
-    #         gradPhi += (gradPhi_i,)
-    #     return gradPhi
+    def gradPhi_i(self, X, i):
+        """
+        Evaluate the derivatives of the 1D basis functions in dimension i at provided points.
+
+        Args:
+            X (tuple/list): Sequence of point arrays for each dimension.
+                            X[i] has shape (n_points_i,).
+            i (int): Dimension index for which to compute the basis derivatives.
+        
+        Returns:
+            tuple: Sequence of basis evaluation matrices for each dimension,
+                   with the i-th element replaced by its derivative.
+                   Each element has shape (n_basis_i, n_points_i).
+        """
+        # Compute basis evaluation matrices
+        Phi = self.Phi(X)
+        # Compute basis derivative matrix in dimension i
+        dPhi_i = self.bases[i].grad(X[i])
+        # Define gradPhi_i tuple as list to allow modification
+        gradPhi_i = list(Phi)
+        # Replace basis evaluation in dimension i with its derivative
+        gradPhi_i[i] = dPhi_i
+        # Convert back to tuple
+        gradPhi_i = tuple(gradPhi_i)
+        return gradPhi_i
+    
+    def laplacianPhi_i(self, X, i):
+        """
+        Evaluate the second derivatives of the 1D basis functions in dimension i at provided points.
+
+        Args:
+            X (tuple/list): Sequence of point arrays for each dimension.
+                            X[i] has shape (n_points_i,).
+            i (int): Dimension index for which to compute the basis second derivatives.
+
+        Returns:
+            tuple: Sequence of basis evaluation matrices for each dimension,
+                   with the i-th element replaced by its second derivative.
+                   Each element has shape (n_basis_i, n_points_i).
+        """
+        # Compute basis evaluation matrices
+        Phi = self.Phi(X)
+        # Compute basis second derivative matrix in dimension i
+        laplacianPhi_i = self.bases[i].laplacian(X[i])
+        # Define laplacianPhi_i tuple as list to allow modification
+        laplacianPhi_i = list(Phi)
+        # Replace basis evaluation in dimension i with its second derivative
+        laplacianPhi_i[i] = laplacianPhi_i
+        # Convert back to tuple
+        laplacianPhi_i = tuple(laplacianPhi_i)
+        return laplacianPhi_i
 
     def forward(self, u_m, X):
         """
@@ -558,7 +603,7 @@ class TensorProductBasis:
         # Compute derivative for each dimension by contracting with dPhi in that dim.
         gradu_q = ()
         for i in range(self.d):
-            # start from coefficients reshaped to (N, h1, ..., hd)
+            # start from coefficients reshaped to (N, n1, ..., nd)
             u_q = u_m.reshape(u_m.shape[0],*self.n)
             for j in range(self.d):
                 u_q = u_q.moveaxis(1, -1)  # move basis axis to the end for einsum
@@ -573,3 +618,40 @@ class TensorProductBasis:
         #Reshape such that the last axis indexes the coordinate to which derivative has been taken
         gradu_q = torch.stack(gradu_q, axis=-1)
         return gradu_q
+    
+    def laplacian(self, u_m, X):
+        """
+        Compute Laplacian of the tensor-product expansion.
+        For each spatial dimension i the method replaces the 1D basis eval in
+        that dimension with its second derivative and contracts as in `forward`.
+
+        Args:
+            u_m (np.ndarray): Modal coefficients, shape (N, prod(n)) or (N, n1, ..., nd).
+            X (tuple/list): Sequence of point arrays for each dimension.
+                            x[i] has shape (n_points_i,).
+        Returns:
+            np.ndarray: Laplacians at tensor-product points with shape
+                        (N, n_points_1, ..., n_points_d, d). The last axis indexes
+                        second derivatives w.r.t. each coordinate.
+        """
+        #Compute function evaluation and second derivative matrices
+        Phi = self.Phi(X)
+        ddPhi = self.ddPhi(X)
+        # Compute derivative for each dimension by contracting with ddPhi in that dim.
+        lapu_q = ()
+        for i in range(self.d):
+            # start from coefficients reshaped to (N, n1, ..., nd)
+            u_q = u_m.reshape(u_m.shape[0],*self.n)
+            for j in range(self.d):
+                u_q = u_q.moveaxis(1, -1)  # move basis axis to the end for einsum
+                if j==i:
+                    # use second derivative matrix in the i-th dimension
+                    u_q = torch.einsum('N...n,Nnq->N...q', u_q, ddPhi[j])
+                else:
+                    # use value matrix in other dimensions
+                    u_q = torch.einsum('N...n,Nnq->N...q', u_q, Phi[j])
+            # append gradient in direction i to gradu_q tuple
+            lapu_q += (u_q,)
+        #Reshape such that the last axis indexes the coordinate to which derivative has been taken
+        lapu_q = torch.stack(lapu_q, axis=-1)
+        return lapu_q

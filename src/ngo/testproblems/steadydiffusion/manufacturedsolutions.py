@@ -6,8 +6,31 @@ import numpy
 import opt_einsum
 
 #Local
-from ngo.trainingdata.GRF import ScaledGRF
+from ngo.trainingdata.GRF import GRF
+from ngo.numericalanalysis.basisfunctions import GaussianRBFBasis
 
+class ManufacturedSolutions:
+    def __init__(self, N_samples, lambdas, b, c, device, dtype, n=None):
+        super().__init__()
+        self.device = device
+        self.dtype = dtype
+        self.N_samples = N_samples
+        self.lambdas = lambdas
+        self.b = b
+        self.c = c
+        grf = GRF(N_samples=N_samples, l=lambdas, n=n, device=device, dtype=dtype)
+        self.mus = grf.mus
+        self.basis = GaussianRBFBasis(mus=self.mus, l=lambdas, device=device, dtype=dtype)
+        self.f_m = grf.f_m
+
+    def Phi(self, x):
+        #Evaluate basis functions at points x
+        Phi = self.basis.Phi(x)
+        #Scale and shift
+        Phi = self.c*Phi + self.b
+        return Phi
+
+        
 
 class Forcing:
     def __init__(self, theta, u):
