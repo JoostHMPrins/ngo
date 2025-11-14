@@ -8,7 +8,8 @@ from torch.utils.data import DataLoader, random_split
 
 # Local
 from ngo.testproblems.steadydiffusion.NeuralOperator import NeuralOperator
-from ngo.testproblems.steadydiffusion.manufacturedsolutions import ManufacturedSolutionsSet
+from ngo.trainingdata.GRF import ManufacturedSolution
+from ngo.testproblems.steadydiffusion.manufacturedsolutions import *
 
 
 class DataModule(pl.LightningDataModule):
@@ -36,32 +37,46 @@ class DataModule(pl.LightningDataModule):
 
     def __init__(self, hparams):
         """
-        - Initialize the DataModule with hyperparameters.
-        - Define N_samples (int): Total number of samples (training + validation)
-        - Define a dummy model, used to discretize and preprocess training data
-        - Generate a manufactured solutions function set
-        - Discretize the functions onto the quadrature grid in the interior and on the boundaries
-        - Assemble the system matrix/vector F
-        - Define the scaling factor in case scale equivariance is enabled
+        Initialize the DataModule with hyperparameters and generate the dataset.
         Args:
             hparams (dict): Hyperparameter dictionary.
         """
         super().__init__()
+        # Initialize hyperparameters
         self.hparams.update(hparams)
+        # Define N_samples (int): Total number of samples (training + validation)
         self.N_samples = self.hparams['N_samples_train'] + self.hparams['N_samples_val']
+        # Define a dummy model, used to discretize and preprocess training data
         dummymodel = NeuralOperator(self.hparams)
-        # Generate input and output functions
-        print('Generating functions...')
-        dataset = ManufacturedSolutionsSet(N_samples=self.N_samples, variables=self.hparams['variables'], l_min=self.hparams['l_min'], l_max=self.hparams['l_max'])
-        theta = dataset.theta
-        f = dataset.f
-        eta_y0 = dataset.eta_y0
-        eta_yL = dataset.eta_yL
-        g_x0 = dataset.g_x0
-        g_xL = dataset.g_xL
-        u = dataset.u
+        #Generate manufactured solutions
+        u = ManufacturedSolution(self.N_samples, # Number of samples
+                                 self.hparams['d'], # Number of spatial dimensions
+                                 self.hparams['l_min'], # Minimum GRF length scale per dimension
+                                 self.hparams['l_max'], # Maximum GRF length scale per dimension
+                                 self.hparams['b_u_min'], # minimum solution field mean
+                                 self.hparams['b_u_max'], # maximum solution field mean
+                                 self.hparams['c_u_min'], # minimum solution field standard deviation
+                                 self.hparams['c_u_max'], # maximum solution field standard deviation
+                                 self.hparams['device'], # Device to perform computations on
+                                 self.hparams['dtype'], # Data type for computations
+                                 self.hparams['n_RBF']) # Number of basis functions per dimension for data generation
+        theta = ManufacturedSolution(self.N_samples, # Number of samples
+                            self.hparams['d'], # Number of spatial dimensions
+                            self.hparams['l_min'], # Minimum GRF length scale per dimension
+                            self.hparams['l_max'], # Maximum GRF length scale per dimension
+                            self.hparams['b_theta_min'], # minimum coefficient field mean
+                            self.hparams['b_theta_max'], # maximum coefficient field mean
+                            self.hparams['c_theta_min'], # minimum coefficient field standard deviation
+                            self.hparams['c_theta_max'], # maximum coefficient field standard deviation
+                            self.hparams['device'], # Device to perform computations on
+                            self.hparams['dtype'], # Data type for computations
+                            self.hparams['n_RBF']) # Number of basis functions per dimension for data generation
+        f = Forcing(theta, u)
+        n_y0 = torch.tensor([0,-1], dtype=self.hparams['dtype'], device=self.hparams['device']) #Normal vector at y0 boundary
+        n_yL = torch.tensor([0,1], dtype=self.hparams['dtype'], device=self.hparams['device']) #Normal vector at yL boundary
+        eta_y0, eta_yL = NeumannBC(n_y0, theta, u), NeumannBC(n_yL, theta, u)
+        g_x0, g_xL = DirichletBC(theta, u), DirichletBC(theta, u)
         #Discretize input functions
-        print('Discretizing functions...')
         self.theta_q, self.theta_x0_q, self.theta_xL_q, self.f_q, self.eta_y0_q, self.eta_yL_q, self.g_x0_q, self.g_xL_q = dummymodel.discretize_input_functions(theta, f, eta_y0, eta_yL, g_x0, g_xL)
         self.u_q = dummymodel.discretize_output_function(u)
         print('Assembling system...')
