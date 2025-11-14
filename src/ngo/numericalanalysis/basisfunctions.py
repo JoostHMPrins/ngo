@@ -11,7 +11,7 @@ import torch
 from ngo.ml.customlayers import discretize_functions
 
 
-class GaussianRBFBasis:
+class GaussianRBF:
     """
     A class to represent 1D Gaussian Radial Basis Functions (RBFs).
 
@@ -42,8 +42,7 @@ class GaussianRBFBasis:
         Returns:
             np.ndarray: B matrices of basis values, shape (B,n,n_points).     
         """
-        # basis_values = torch.exp(-0.5 * ((x[None, None, :] - self.mus[None, :, None]) / self.lambdas[:,None,None]) ** 2)
-        basis_values = torch.exp(-0.5 * ((x[None,None,:] - self.mus[None,:,None]) / self.lambdas[:,None,None]) ** 2)
+        basis_values = torch.exp(-0.5*((x[None,None,:] - self.mus[None,:,None]) / self.lambdas[:,None,None])**2)
 
         return basis_values
     
@@ -58,7 +57,7 @@ class GaussianRBFBasis:
             np.ndarray: B matrices of basis gradients, shape (B,n,n_points).
         """
         # basis_gradients = -((x[None,None, None, :]  - self.mus[None,:, :, None]) / (self.lambdas[:,None,None,None] ** 2)) * self.forward(x)
-        basis_gradients = -((x[None,None,:] - self.mus[None,:,None]) / (self.lambdas[:,None,None] ** 2)) * self.forward(x)
+        basis_gradients = -((x[None,None,:] - self.mus[None,:,None]) / (self.lambdas[:,None,None]**2)) * self.forward(x)
         return basis_gradients
     
     def laplacian(self, x):
@@ -76,61 +75,118 @@ class GaussianRBFBasis:
         return basis_laplacians
 
 
-
-class BSplineBasis1D:
+class BSpline:
     """
-    A class to represent 1D B-spline basis functions.
-
-    Attributes:
-        n (int): Number of basis functions.
-        p (int): Polynomial degree.
-        C (int): Continuity.
-        knot_vector (np.ndarray): Knot vector for the B-spline basis.
+    B-spline basis functions with vectorized evaluation and differentiation using PyTorch.
     """
-
-    def __init__(self, n, p, C):
-        """
+    def __init__(self, n, p, C, dtype, device):
+        """""
         Initialize the B-spline basis.
-        
+
         Args:
-            n (int): Number of basis functions.
-            p (int): Polynomial degree.
-            C (int): Continuity.
+            n: Number of basis functions.
+            p: Degree of the B-splines.
+            C: Continuity at internal knots (C < p).
+            dtype: Torch data type for computations.
+            device: Torch device for computations.
         """
+        self.dtype = dtype
+        self.device = device
         self.n = n
-        self.p = p  
-        self.C = C 
-        self.knot_vector = np.zeros(self.p+1)
-        self.knot_vector = np.append(self.knot_vector, np.repeat(np.linspace(0, 1, int((self.n - self.p - 1)/(self.p - self.C)) + 2)[1:-1], self.p - self.C))
-        self.knot_vector = np.append(self.knot_vector, np.ones(self.p+1))
-    
-    def forward(self, x):
+        self.p = p
+        self.C = C
+        self.knot_vector = torch.zeros(self.p+1, dtype=self.dtype, device=self.device)
+        self.knot_vector = torch.cat((
+            self.knot_vector,
+            torch_repeat(
+                torch.linspace(
+                    0, 1,
+                    int((self.n - self.p - 1)/(self.p - self.C)) + 2,
+                    dtype=self.dtype, device=self.device
+                )[1:-1],
+                self.p - self.C
+            )
+        ))
+        self.knot_vector = torch.cat((self.knot_vector, torch.ones(self.p+1, dtype=self.dtype, device=self.device)))
+
+    def _basis_dp(self, x: torch.Tensor, return_prev: bool = False):
         """
-        Compute the B-spline basis values at given points.
+        Vectorized Cox–de Boor evaluation for all basis functions in parallel.
 
         Args:
-            x (np.ndarray): Input points. Shape: (n_points,).
+            x: 1D tensor of evaluation points, shape (M,).
+            return_prev: If True, also returns N_{*,p-1}(x) for derivative.
 
         Returns:
-            np.ndarray: Basis values at the input points. Shape: (n,n_points).
+            N_p: (n, M) values of N_{i,p}(x).
+            N_pm1: (n, M) values of N_{i,p-1}(x) if return_prev=True, else None.
         """
-        basis_values = BSpline.design_matrix(x, self.knot_vector, self.p).toarray().T
-        return basis_values
-    
-    def grad(self, x):
+        t = self.knot_vector
+        x = x.to(dtype=self.dtype, device=self.device)
+        n, p = self.n, self.p
+
+        # Degree-0 indicator functions for all i in parallel
+        t_i = t[:n].unsqueeze(1)       # (n,1)
+        t_ip1 = t[1:n+1].unsqueeze(1)  # (n,1)
+        N = ((t_i <= x) & (x <= t_ip1)).to(self.dtype)  # (n,M)
+
+        if p == 0:
+            return (N, None) if return_prev else N
+
+        # Iteratively raise degree to p
+        for r in range(1, p+1):
+            den1 = (t[r:r+n] - t[:n]).unsqueeze(1)          # (n,1)
+            den2 = (t[r+1:r+1+n] - t[1:n+1]).unsqueeze(1)   # (n,1)
+
+            # Shift N for i+1 term
+            N_ip1 = torch.cat([N[1:], torch.zeros_like(N[:1])], dim=0)
+
+            # Weights with safe division
+            w1 = torch.where(den1 > 0, (x - t[:n].unsqueeze(1)) / den1, torch.zeros_like(N))
+            w2 = torch.where(den2 > 0, (t[r+1:r+1+n].unsqueeze(1) - x) / den2, torch.zeros_like(N))
+
+            if return_prev and r == p:
+                N_prev = N  # save N_{*,p-1}
+            N = w1 * N + w2 * N_ip1
+
+        return (N, N_prev) if return_prev else N
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
-        Compute the gradients of the B-spline basis functions.
+        Evaluate all B-spline basis functions N_{i,p}(x) in parallel.
 
         Args:
-            x (np.ndarray): Input points. Shape: (n_points,).
+            x: 1D tensor of points, shape (M,).
 
         Returns:
-            np.ndarray: Gradients of the basis functions at the input points. Shape: (n,n_points).
+            (n, M) tensor with N_{i,p}(x).
         """
-        coeffs = np.eye(self.n)
-        derivative_basis_functions = 0 if self.p==0 else [BSpline(self.knot_vector, coeffs[i], self.p).derivative() for i in range(self.n)]
-        basis_gradients = np.zeros((len(x),self.n)) if self.p==0 else np.vstack([dbf(x) for dbf in derivative_basis_functions])
-        return basis_gradients
+        return self._basis_dp(x)
+
+    def grad(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Evaluate derivatives d/dx N_{i,p}(x) for all i in parallel.
+
+        Args:
+            x: 1D tensor of points, shape (M,).
+
+        Returns:
+            (n, M) tensor with d/dx N_{i,p}(x).
+        """
+        N_p, N_pm1 = self._basis_dp(x, return_prev=True)
+        n, p = self.n, self.p
+        if p == 0:
+            return torch.zeros_like(N_p)
+
+        t = self.knot_vector
+        den1 = (t[p:p+n] - t[:n]).unsqueeze(1)          # (n,1)
+        den2 = (t[p+1:p+1+n] - t[1:n+1]).unsqueeze(1)   # (n,1)
+
+        term1 = torch.where(den1 > 0, (p / den1) * N_pm1, torch.zeros_like(N_pm1))
+        N_pm1_ip1 = torch.cat([N_pm1[1:], torch.zeros_like(N_pm1[:1])], dim=0)
+        term2 = torch.where(den2 > 0, (p / den2) * N_pm1_ip1, torch.zeros_like(N_pm1))
+
+        return term1 - term2
 
 
 class ChebyshevTBasis1D:
