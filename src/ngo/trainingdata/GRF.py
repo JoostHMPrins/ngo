@@ -11,10 +11,16 @@ import torch
 
 #Local
 from ngo.numericalanalysis.linalg import kron_matvec, kron_solve_triangular
+from ngo.numericalanalysis.basisfunctions import GaussianRBFBasis, TensorProductBasis
 
 
 class GRF:
-
+    """Gaussian Random Field (GRF) generator with Kronecker-product covariance structure.
+    Generates samples of a Gaussian Random Field (GRF) with a covariance structure
+    defined as a Kronecker product of 1D squared exponential covariance matrices.
+    Uses Cholesky factorization for efficient sampling and interpolates the GRF
+    on a Gaussian Radial Basis Function (GRBF) basis.
+    """
     def __init__(self, N_samples, lambdas, b, c, device, dtype, n=None):
         """Gaussian Random Field (GRF) generator with Kronecker-product covariance structure.
 
@@ -124,3 +130,94 @@ class GRF:
         #Backward solve
         f_m = kron_solve_triangular(L_i, y, upper=False, left=False)
         return f_m
+    
+
+class ManufacturedSolution:
+    """Manufactured solution using GRF basis functions.
+    Generates a manufactured solution by sampling a Gaussian Random Field (GRF)
+    and interpolating on a Gaussian Radial Basis Function (GRBF) basis.
+    """
+    def __init__(self, N_samples, d, lambda_min, lambda_max, b_min, b_max, c_min, c_max, device, dtype, n):
+        """
+        Initialize manufactured solution.
+
+        Args:
+            N_samples (int): Number of manufactured solution samples to generate.
+            d (int): Number of spatial dimensions.
+            lambda_min (torch.Tensor): Minimum length scales for each dimension,
+                shape (d,).
+            lambda_max (torch.Tensor): Maximum length scales for each dimension,
+                shape (d,).
+            b_min (float): Minimum mean offset for the GRF.
+            b_max (float): Maximum mean offset for the GRF.
+            c_min (float): Minimum standard deviation scaling for the GRF.
+            c_max (float): Maximum standard deviation scaling for the GRF.
+            device (torch.device): Device to perform computations on.
+            dtype (torch.dtype): Data type for tensors.
+            n (list or tuple): Number of grid points in each dimension,
+                shape (d,).
+        """
+        super().__init__()
+        self.device = device
+        self.dtype = dtype
+        self.N_samples = N_samples
+        self.d = d
+        self.lambda_min = lambda_min
+        self.lambda_max = lambda_max
+        # Generate random length scales, b, c for each sample (unless min==max)
+        self.lambdas = lambda_min if torch.all(lambda_min==lambda_max) else torch.rand((N_samples, len(self.lambda_min)), device=self.device, dtype=self.dtype)*(self.lambda_max - self.lambda_min) + self.lambda_min
+        self.b = b_min*torch.ones(self.N_samples, device=self.device, dtype=self.dtype) if b_min==b_max else torch.rand(N_samples, device=self.device, dtype=self.dtype)*(b_max - b_min) + b_min
+        self.c = c_min*torch.ones(self.N_samples, device=self.device, dtype=self.dtype) if c_min==c_max else torch.rand(N_samples, device=self.device, dtype=self.dtype)*(c_max - c_min) + c_min
+        self.n = n
+        # Generate GRF coefficients
+        self.u_m = self.get_grf_coeffs()
+        # Add batch dimension to lambdas if missing
+        if self.lambdas.ndim == 1:
+            self.lambdas = self.lambdas.unsqueeze(0)
+        self.bases = ()
+        # Construct TensorProductBasis from GaussianRBFBasis in each dimension
+        for i in range(self.d):
+            self.bases += (GaussianRBFBasis(self.lambdas[:,i], self.mus[i]),)
+        self.basis = TensorProductBasis(self.bases)
+
+    def get_grf_coeffs(self):
+        """
+        Generate GRF coefficients for manufactured solution.
+        """
+        if torch.all(self.lambda_min==self.lambda_max):
+            grf = GRF(N_samples=self.N_samples, lambdas=self.lambdas, b=self.b, c=self.c, n=None, device=self.device, dtype=self.dtype)
+            f_m_set = grf.f_m
+        else:
+            f_m_set = torch.zeros((self.N_samples, *self.n), device=self.device, dtype=self.dtype)
+            for i in range(self.N_samples):
+                grf = GRF(N_samples=1, lambdas=self.lambdas[i], b=self.b[i], c=self.c[i], device=self.device, dtype=self.dtype, n=self.n)
+                f_m_set[i] = grf.f_m
+        self.mus = grf.mus
+        return f_m_set
+    
+    def forward(self, X):
+        """"
+        Evaluate manufactured solution at points X.
+        Args:
+            X (tuple): Input coordinates for each dimension, each element a 1D tensor
+                of shape (N_points,).
+        """
+        return self.basis.forward(self.u_m, X)
+    
+    def grad(self, X):
+        """"
+        Evaluate gradient of manufactured solution at points X.
+        Args:
+            X (tuple): Input coordinates for each dimension, each element a 1D tensor
+                of shape (N_points,).
+        """
+        return self.basis.grad(self.u_m, X)
+    
+    def laplacian(self, X):
+        """"
+        Evaluate laplacian of manufactured solution at points X.
+        Args:
+            X (tuple): Input coordinates for each dimension, each element a 1D tensor
+                of shape (N_points,).
+        """
+        return self.basis.laplacian(self.u_m, X)
