@@ -28,9 +28,6 @@ class GaussianRBFBasis:
             mus (torch.Tensor): Centers of the Gaussian RBFs, shape (n,).
         """
         self.lambdas = lambdas
-        # Add batch dimension if missing
-        if self.lambdas.ndim == 0:
-            self.lambdas = self.lambdas.unsqueeze(0)
         self.mus = mus
         # Number of basis functions
         self.n = mus.shape[0]

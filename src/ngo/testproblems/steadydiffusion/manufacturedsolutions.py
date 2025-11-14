@@ -1,34 +1,56 @@
 # Copyright 2025 Joost Prins
 
 # 3rd Party
-import numpy as np
-import numpy
+import torch
 import opt_einsum
 
 #Local
 from ngo.trainingdata.GRF import GRF
-from ngo.numericalanalysis.basisfunctions import GaussianRBFBasis
+from ngo.numericalanalysis.basisfunctions import GaussianRBFBasis, TensorProductBasis
 
-class ManufacturedSolutions:
-    def __init__(self, N_samples, lambdas, b, c, device, dtype, n=None):
+
+class Solution:
+    def __init__(self, N_samples, d, lambda_min, lambda_max, b_min, b_max, c_min, c_max, device, dtype, n):
         super().__init__()
         self.device = device
         self.dtype = dtype
         self.N_samples = N_samples
-        self.lambdas = lambdas
-        self.b = b
-        self.c = c
-        grf = GRF(N_samples=N_samples, l=lambdas, n=n, device=device, dtype=dtype)
-        self.mus = grf.mus
-        self.basis = GaussianRBFBasis(mus=self.mus, l=lambdas, device=device, dtype=dtype)
-        self.f_m = grf.f_m
+        self.d = d
+        self.lambda_min = lambda_min
+        self.lambda_max = lambda_max
+        self.lambdas = lambda_min if torch.all(lambda_min==lambda_max) else torch.rand((N_samples, len(self.lambda_min)), device=self.device, dtype=self.dtype)*(self.lambda_max - self.lambda_min) + self.lambda_min
+        self.b = b_min*torch.ones(self.N_samples, device=self.device, dtype=self.dtype) if b_min==b_max else torch.rand(N_samples, device=self.device, dtype=self.dtype)*(b_max - b_min) + b_min
+        self.c = c_min*torch.ones(self.N_samples, device=self.device, dtype=self.dtype) if c_min==c_max else torch.rand(N_samples, device=self.device, dtype=self.dtype)*(c_max - c_min) + c_min
+        self.n = n
+        self.u_m = self.get_grf_coeffs()
+        # Add batch dimension to lambdas if missing
+        if self.lambdas.ndim == 1:
+            self.lambdas = self.lambdas.unsqueeze(0)
+        self.bases = ()
+        for i in range(self.d):
+            self.bases += (GaussianRBFBasis(self.lambdas[:,i], self.mus[i]),)
+        self.basis = TensorProductBasis(self.bases)
 
-    def Phi(self, x):
-        #Evaluate basis functions at points x
-        Phi = self.basis.Phi(x)
-        #Scale and shift
-        Phi = self.c*Phi + self.b
-        return Phi
+    def get_grf_coeffs(self):
+        if torch.all(self.lambda_min==self.lambda_max):
+            grf = GRF(N_samples=self.N_samples, lambdas=self.lambdas, b=self.b, c=self.c, n=None, device=self.device, dtype=self.dtype)
+            f_m_set = grf.f_m
+        else:
+            f_m_set = torch.zeros((self.N_samples, *self.n), device=self.device, dtype=self.dtype)
+            for i in range(self.N_samples):
+                grf = GRF(N_samples=1, lambdas=self.lambdas[i], b=self.b[i], c=self.c[i], device=self.device, dtype=self.dtype, n=self.n)
+                f_m_set[i] = grf.f_m
+        self.mus = grf.mus
+        return f_m_set
+    
+    def forward(self, x):
+        return self.basis.forward(self.u_m, x)
+    
+    def grad(self, x):
+        return self.basis.grad(self.u_m, x)
+    
+    def laplacian(self, x):
+        return self.basis.laplacian(self.u_m, x)
 
         
 

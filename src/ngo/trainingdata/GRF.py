@@ -37,15 +37,15 @@ class GRF:
         self.device = device
         self.dtype = dtype
         self.N_samples = N_samples
-        self.lambdas = torch.tensor(lambdas, device=self.device, dtype=dtype)
+        self.lambdas = lambdas
         self.d = self.lambdas.shape[-1]
         self.n = n  #Number of grid points in each dimension
         if n==None:
             self.l_Dx_ratio = 1 #Number of points per length scale
             self.n = tuple((self.l_Dx_ratio*(1.0 / self.lambdas).ceil().long() + 1).tolist()) #Number of grid points in each dimension
-        self.N = int(torch.prod(torch.tensor(self.n)))
-        self.b = torch.tensor(b, device=self.device, dtype=dtype)
-        self.c = torch.tensor(c, device=self.device, dtype=dtype)
+        self.N = int(torch.prod(torch.tensor(self.n, dtype=self.dtype, device=self.device)))  #Total number of grid points
+        self.b = torch.tensor(b, dtype=self.dtype, device=self.device)
+        self.c = torch.tensor(c, dtype=self.dtype, device=self.device)
         # Add batch dimension to b and c if missing
         if self.b.ndim == 0:
             self.b = self.b.unsqueeze(0)
@@ -55,6 +55,9 @@ class GRF:
         self.mus = self.get_mus()
         # Compute interpolation coefficients
         self.f_m = self.compute_coeffs()
+        # Add batch dimension to lambdas if missing
+        if self.lambdas.ndim == 1:
+            self.lambdas = self.lambdas.unsqueeze(0)
     
     def get_mus(self):
         """Generate grid points for each dimension.

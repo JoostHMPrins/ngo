@@ -3,10 +3,12 @@
 # 3rd Party
 import numpy as np
 import opt_einsum
+import torch
 
 # Local
-from ngo.trainingdata.GRF import ScaledGRF
-
+from ngo.trainingdata.GRF import GRF
+from ngo.numericalanalysis.basisfunctions import GaussianRBFBasis, TensorProductBasis
+    
 
 class Forcing:
     def __init__(self, theta, u):
