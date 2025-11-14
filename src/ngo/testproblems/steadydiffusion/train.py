@@ -1,5 +1,8 @@
 # Copyright 2025 Joost Prins
 
+# 3rd Party
+import torch
+
 # Local
 from ngo.ml.trainer import train
 from ngo.ml.customlosses import *
@@ -8,17 +11,28 @@ from ngo.numericalanalysis.basisfunctions import *
 from ngo.testproblems.steadydiffusion.NeuralOperator import NeuralOperator
 from ngo.testproblems.steadydiffusion.DataModule import DataModule
 
-#Training data
+#Data type and device
 hparams = {}
+hparams['dtype'] = torch.float32
+hparams['device'] = 'cuda'
+
+#Training data
 hparams['N_samples_train'] = 100 #Number of training samples
 hparams['N_samples_val'] = 10 #Number of validation samples
-hparams['variables'] = ['x','x'] #Variable types. 'x' for spatial variable, 't' for temporal variable
-hparams['d'] = len(hparams['variables']) #Dimensionality of solution
-hparams['l_min'] = [0.5,0.5] #Minimum GRF length scale per dimension
-hparams['l_max'] = [1,1] #Maximum GRF length scale per dimension
+hparams['l_min'] = torch.tensor([0.5,0.5]) #Minimum GRF length scale per dimension
+hparams['l_max'] = torch.tensor([1,1]) #Maximum GRF length scale per dimension
+hparams['d'] = len(hparams['l_min']) #Number of spatial dimensions
+hparams['b_theta_min'] = 1 #minimum coefficient field mean
+hparams['b_theta_max'] = 1 #maximum coefficient field mean
+hparams['c_theta_min'] = 0 #minimum coefficient field standard deviation
+hparams['c_theta_max'] = 0.2 #maximum coefficient field standard deviation
+hparams['b_u_min']  = -1 #minimum solution field mean   
+hparams['b_u_max']  = 1 #maximum solution field mean
+hparams['c_u_min']  = 0 #minimum solution field standard deviation
+hparams['c_u_max']  = 1 #maximum solution field standard deviation
+hparams['n_RBF'] = (3,3) #Number of basis functions per dimension for data generation
 
 #Training settings
-hparams['dtype'] = torch.float32 #Model dtype
 hparams['precision'] = 32 #Keep the same as above
 hparams['device'] = 'cuda' #Training device
 hparams['solution_loss'] = weightedrelativeL2 #For data NGO and model NGO
