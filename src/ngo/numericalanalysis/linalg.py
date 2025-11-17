@@ -2,6 +2,7 @@
 
 # 3rd Party
 import torch
+import opt_einsum
 
 def kron_matvec(A_i, x):
     """Apply product of a (batched) Kronecker-product matrix and a (batched) vector.
@@ -12,15 +13,15 @@ def kron_matvec(A_i, x):
 
     Inputs:
     A_i: Sequence of d factors, where each A_i has shape 
-         (B, n_i, n_i) for i in [0, d-1].
-    x: Vector reshaped into Kronecker product dimensions as(B, n_0, n_1, ..., n_{d-1}) 
+         (B, N_i, N_i) for i in [0, d-1].
+    x: Vector reshaped into Kronecker product dimensions as(B, N_0, N_1, ..., N_{d-1}) 
        
     Returns:
     b: Result of applying the Kronecker-product matrix to x, with shape
-       (B, n_0, n_1, ..., n_{d-1}).
+       (B, N_0, N_1, ..., N_{d-1}).
 
     Notes:
-    - Implementation uses einsum to rely on per-batch operations. 
+    - Implementation uses opt_einsum to rely on per-batch operations. 
       An torch.vmap + torch.tensordot variant is kept commented for reference.
     """
     # Initialize b as x
@@ -28,7 +29,7 @@ def kron_matvec(A_i, x):
     # Sequentially apply each Kronecker factor
     for i in range(len(A_i)):
         # b = torch.vmap(torch.tensordot)(b, A_i[i], dims=([0], [1]))
-        b = torch.einsum('Nj...,Nkj->N...k', b, A_i[i])
+        b = opt_einsum.contract('Bj...,Bkj->B...k', b, A_i[i])
     return b
 
 
@@ -43,13 +44,13 @@ def kron_solve_triangular(L_i, b, upper, left=False):
     L_i: Sequence of d factors, where each L_i has shape 
          (n_i, n_i) for i in [0, d-1].
     b: Right-hand side vector reshaped into Kronecker product dimensions as
-       (B, n_0, n_1, ..., n_{d-1}) 
+       (B, N_0, N_1, ..., N_{d-1}) 
     upper: Boolean indicating whether the factors L_i are upper or lower
            triangular.
     left: Boolean indicating whether to solve left or right triangular systems.
 
     Returns:
-    x: Solution vector with shape (B, n_0, n_1, ..., n_{d-1}).
+    x: Solution vector with shape (B, N_0, N_1, ..., N_{d-1}).
 
     Notes:
     - The Kronecker factors L_i do not have a leading batch dimension,
@@ -67,40 +68,95 @@ def kron_solve_triangular(L_i, b, upper, left=False):
     return x
 
 
-def torch_repeat(x, repeats, axis=None):
+def assemble_B(psi, phi, W_q, X_q, derivative_orders):
     """
-    PyTorch equivalent of np.repeat.
-
-    Parameters
-    ----------
-    x : torch.Tensor
-        Input tensor.
-    repeats : int or 1D list/Tensor of ints
-        Number of repetitions.
-    axis : int or None
-        Dimension along which to repeat. If None, the tensor is flattened.
-
-    Returns
-    -------
-    torch.Tensor
+    Assemble the Kronecker factors of the bilinear form
+    B(u,v) = \int \psi(x) \phi(x) dx
+    or its derivatives.
+    
+    Args:
+        psi: TensorProductBasis
+        phi: TensorProductBasis
+        W_q: d tuple of quadrature weights for each dimension, each of shape (Q_i,)
+        X_q: d tuple of quadrature points for each dimension of shape (Q_i,)
+        derivative_orders: tuple of two tuples, each containing the derivative orders for psi and phi in each dimension.
+                           For example, ((0,1,0),(1,0,0)) means no derivative for psi in dim 0, first derivative in dim 1, no derivative in dim 2,
+                           and first derivative for phi in dim 0, no derivative in dim 1, no derivative in dim 2.
+    
+    Returns:
+        F: d tuple of Kronecker factors, each of shape (B,n_i,m_i)
     """
+    F = ()
+    for i in range(len(X_q)):
+        # psi
+        # Set operation for psi
+        operation = derivative_orders[0][i]
+        if operation == 0:
+            Psi_i = psi.bases[i].forward(X_q[i]) #shape (B,n,q)
+        elif operation == 1:
+            Psi_i = psi.bases[i].grad(X_q[i]) #shape (B,n,q)
+        # phi
+        # Set operation for phi
+        operation = derivative_orders[1][i]
+        if operation == 0:
+            Phi_i = phi.bases[i].forward(X_q[i]) #shape (B,n,q)
+        elif operation == 1:
+            Phi_i = phi.bases[i].grad(X_q[i]) #shape (B,n,q)
+        # F_i = opt_einsum.contract('q,Bmq->Bmq', W_q[i], Psi_i) #shape (B,n,Q)
+        # F_i = opt_einsum.contract('Bmq,Bnq->Bmn', F_i, Phi_i) #shape (B,n,m)
+        # Assemble in one step
+        F_i = opt_einsum.contract('q,Bmq,Bnq->Bmn', W_q[i], Psi_i, Phi_i) #shape (B,n,m)
+        F += (F_i,)
+    return F
 
-    # Match NumPy: if axis is None, flatten first
-    if axis is None:
-        x = x.flatten()
-        return torch.repeat_interleave(x, repeats)
 
-    # Normalize negative axes
-    if axis < 0:
-        axis += x.dim()
+def assemble_T(theta, psi, phi, W_q, X_q, derivative_orders):
+    """
+    Assemble the Kronecker factors of the trilinear form
+    T(u,v,w) = \int \theta(x) \psi(x) \phi(x) dx
+    or its derivatives.
 
-    # Move target axis to the end
-    x = x.transpose(axis, -1)
-
-    # Apply repeat_interleave on last dimension
-    out = torch.repeat_interleave(x, repeats, dim=-1)
-
-    # Move axis back
-    out = out.transpose(axis, -1)
-
-    return out
+    Args:
+        theta: TensorProductBasis
+        psi: TensorProductBasis
+        phi: TensorProductBasis
+        W_q: d tuple of quadrature weights for each dimension, each of shape (Q_i,)
+        X_q: d tuple of quadrature points for each dimension of shape (Q_i,)
+        derivative_orders: tuple of three tuples, each containing the derivative orders for theta, psi and phi in each dimension.
+                           For example, ((0,1,0),(1,0,0),(0,0,1)) means no derivative for theta in dim 0, first derivative in dim 1, no derivative in dim 2,
+                           first derivative for psi in dim 0, no derivative in dim 1, no derivative in dim 2,
+                           and no derivative for phi in dim 0, no derivative in dim 1, first derivative in dim 2.
+    
+    Returns:
+        F: d tuple of Kronecker factors, each of shape (B,l_i,m_i,n_i)
+    """
+    F = ()
+    for i in range(len(X_q)):
+        # theta
+        # Set operation for theta
+        operation = derivative_orders[0][i]
+        if operation == 0:
+            Theta_i = theta.bases[i].forward(X_q[i]) #shape (B,n,q)
+        elif operation == 1:
+            Theta_i = theta.bases[i].grad(X_q[i]) #shape (B,n,q)
+        # psi
+        # Set operation for psi
+        operation = derivative_orders[1][i]
+        if operation == 0:
+            Psi_i = psi.bases[i].forward(X_q[i]) #shape (B,n,q)
+        elif operation == 1:
+            Psi_i = psi.bases[i].grad(X_q[i]) #shape (B,n,q)
+        # phi
+        # Set operation for phi
+        operation = derivative_orders[2][i]
+        if operation == 0:
+            Phi_i = phi.bases[i].forward(X_q[i]) #shape (B,n,q)
+        elif operation == 1:
+            Phi_i = phi.bases[i].grad(X_q[i]) #shape (B,n,q)
+        # F_i = opt_einsum.contract('q,Blq->Blq', W_q[i], Theta_i) #shape (B,n,Q)
+        # F_i = opt_einsum.contract('Blq,Bmq->Blmq', F_i, Psi_i) #shape (B,n,m)
+        # F_i = opt_einsum.contract('Blmq,Bnq->Blmn', F_i, Phi_i) #shape (B,n,m)
+        # Assemble in one step
+        F_i = opt_einsum.contract('q,Blq,Bmq,Bnq->Blmn', W_q[i], Theta_i, Psi_i, Phi_i) #shape (B,n,m)
+        F += (F_i,)
+    return F
