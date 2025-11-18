@@ -7,8 +7,9 @@ import pytorch_lightning as pl
 import opt_einsum
 
 # Local
-from ngo.numericalanalysis.basisfunctions import TensorizedBasis
+from ngo.numericalanalysis.basisfunctions import TensorProductBasis
 from ngo.numericalanalysis.quadrature import GaussLegendreQuadrature, UniformQuadrature
+from ngo.numericalanalysis.linalg import kron_matvec, assemble_L, assemble_B, assemble_T
 from ngo.ml.systemnets import MLP, LBranchNet
 from ngo.ml.customlayers import Neumann_preconditioner_forward, discretize_functions
 
@@ -21,8 +22,8 @@ class NeuralOperator(pl.LightningModule):
     Attributes:
         hparams (dict): Hyperparameters for the model.
         systemnet (torch.nn.Module): The system network.
-        basis_test (TensorizedBasis): Basis functions for testing.
-        basis_trial (TensorizedBasis): Basis functions for trial.
+        basis_test (TensorProductBasis): Basis functions for testing.
+        basis_trial (TensorProductBasis): Basis functions for trial.
         Identity (torch.Tensor): Identity matrix, shape (N, N).
     """
     def __init__(self, hparams):
@@ -40,8 +41,9 @@ class NeuralOperator(pl.LightningModule):
         self.init_modeltype()
         self.hparams['N_w_real'] = sum(p.numel() for p in self.parameters()) #True number of trainable parameters
         self.systemnet = self.hparams['systemnet'](self.hparams).to(self.device)
-        self.basis_test = TensorizedBasis(self.hparams['test_bases']) 
-        self.basis_trial = TensorizedBasis(self.hparams['trial_bases'])
+        # Initialize test and trial basis functions
+        self.psi = TensorProductBasis(self.hparams['test_bases']) 
+        self.phi = TensorProductBasis(self.hparams['trial_bases'])
         if self.hparams['Neumannseries']==True:
             self.compute_F_0_A_0() #Neumann preconditioner
         self.Identity = torch.eye(self.hparams['N'], dtype=self.dtype, device=self.device)
@@ -104,14 +106,14 @@ class NeuralOperator(pl.LightningModule):
             tuple of np.ndarrays: Discretized input functions (theta_q, theta_x0_q, theta_xL_q, f_q, eta_y0_q, eta_yL_q, g_x0_q, g_xL_q),
             each with shape (N_samples, self.xi_i.shape[0]).
         """
-        theta_q = discretize_functions(theta, self.xi_Omega)
-        theta_x0_q = discretize_functions(theta, self.xi_Gamma_x0)
-        theta_xL_q = discretize_functions(theta, self.xi_Gamma_xL)
-        f_q = discretize_functions(f, self.xi_Omega)
-        eta_y0_q = discretize_functions(eta_y0, self.xi_Gamma_y0)
-        eta_yL_q = discretize_functions(eta_yL, self.xi_Gamma_yL)
-        g_x0_q = discretize_functions(g_x0, self.xi_Gamma_x0)
-        g_xL_q = discretize_functions(g_xL, self.xi_Gamma_xL)
+        theta_q = theta.forward(self.Xi_Omega)
+        theta_x0_q = theta.forward(self.Xi_Gamma_x0)
+        theta_xL_q = theta.forward(self.Xi_Gamma_xL)
+        f_q = f.forward(self.Xi_Omega)
+        eta_y0_q = eta_y0.forward(self.Xi_Gamma_y0)
+        eta_yL_q = eta_yL.forward(self.Xi_Gamma_yL)
+        g_x0_q = g_x0.forward(self.Xi_Gamma_x0)
+        g_xL_q = g_xL.forward(self.Xi_Gamma_xL)
         return theta_q, theta_x0_q, theta_xL_q, f_q, eta_y0_q, eta_yL_q, g_x0_q, g_xL_q
     
     def discretize_output_function(self, u):
@@ -122,10 +124,22 @@ class NeuralOperator(pl.LightningModule):
             u (list of functions): Output function u, shape len(N_samples).
 
         Returns:
-            np.ndarray: Discretized output function u_d, shape (N_samples, self.xi_Omega_L.shape[0]).
+            np.ndarray: Discretized output function u_d, shape (N_samples, self.Xi_Omega_L.shape[0]).
         """
-        u_q = discretize_functions(u, self.xi_Omega_L)
+        u_q = u.forward(self.Xi_Omega_L)
         return u_q
+    
+    def assemble_F(self, theta):
+        if  self.hparams['modeltype']=='data NGO':
+            F = assemble_L(self.psi, theta, self.W_Omega, self.Xi_Omega, derivative_orders=((0,0),(0,0)))
+        if  self.hparams['modeltype']=='model NGO' or self.hparams['modeltype']=='FEM' or self.hparams['modeltype']=='projection':
+            # Volume term
+            F = assemble_T(theta, self.psi, self.phi, self.W_Omega, self.Xi_Omega, derivative_orders=((0,0),(1,1),(1,1)))
+            # Boundary term at x0
+            F += -assemble_T(theta, self.psi, self.phi, self.W_Gamma_x0, self.Xi_Gamma_x0, derivative_orders=((0,0),(0,0),(1,0)))
+            # Boundary term at xL
+            F += -assemble_T(theta, self.psi, self.phi, self.W_Gamma_xL, self.Xi_Gamma_xL, derivative_orders=((0,0),(0,0),(1,0)))
+            # 
 
     def compute_F(self, theta_q, theta_x0_q, theta_xL_q):
         """
@@ -141,20 +155,20 @@ class NeuralOperator(pl.LightningModule):
             np.ndarray: Computed matrix F, shape (N_samples, N, N) (for model NGO, FEM) or shape (N_samples, h[0], h[1]) (for data NGO)
         """
         if  self.hparams['modeltype']=='data NGO':
-            basis_test = self.basis_test.forward(self.xi_Omega)
+            basis_test = self.psi.forward(self.xi_Omega)
             F = opt_einsum.contract('q,qm,Nq->Nm', self.w_Omega, basis_test, theta_q)
             F = F.reshape((theta_q.shape[0],self.hparams['h'][0],self.hparams['h'][1]))
         if  self.hparams['modeltype']=='model NGO' or self.hparams['modeltype']=='FEM' or self.hparams['modeltype']=='projection':
-            gradbasis_test = self.basis_test.grad(self.xi_Omega)
-            gradbasis_trial = self.basis_trial.grad(self.xi_Omega)
-            basis_test_x0 = self.basis_test.forward(self.xi_Gamma_x0)
-            gradbasis_test_x0 = self.basis_test.grad(self.xi_Gamma_x0)
-            basis_trial_x0 = self.basis_trial.forward(self.xi_Gamma_x0)
-            gradbasis_trial_x0 = self.basis_trial.grad(self.xi_Gamma_x0)
-            basis_test_xL = self.basis_test.forward(self.xi_Gamma_xL)
-            gradbasis_test_xL = self.basis_test.grad(self.xi_Gamma_xL)
-            basis_trial_xL = self.basis_trial.forward(self.xi_Gamma_xL)
-            gradbasis_trial_xL = self.basis_trial.grad(self.xi_Gamma_xL)
+            gradbasis_test = self.psi.grad(self.xi_Omega)
+            gradbasis_trial = self.phi.grad(self.xi_Omega)
+            basis_test_x0 = self.psi.forward(self.xi_Gamma_x0)
+            gradbasis_test_x0 = self.psi.grad(self.xi_Gamma_x0)
+            basis_trial_x0 = self.phi.forward(self.xi_Gamma_x0)
+            gradbasis_trial_x0 = self.phi.grad(self.xi_Gamma_x0)
+            basis_test_xL = self.psi.forward(self.xi_Gamma_xL)
+            gradbasis_test_xL = self.psi.grad(self.xi_Gamma_xL)
+            basis_trial_xL = self.phi.forward(self.xi_Gamma_xL)
+            gradbasis_trial_xL = self.phi.grad(self.xi_Gamma_xL)
             F = opt_einsum.contract('q,Nq,qmx,qnx->Nmn', self.w_Omega, theta_q, gradbasis_test, gradbasis_trial)
             F += -opt_einsum.contract('q,qm,x,Nq,qnx->Nmn', self.w_Gamma_x0, basis_test_x0, self.n_x0, theta_x0_q, gradbasis_trial_x0)
             F += -opt_einsum.contract('q,qm,x,Nq,qnx->Nmn', self.w_Gamma_xL, basis_test_xL, self.n_xL, theta_xL_q, gradbasis_trial_xL)
@@ -192,13 +206,13 @@ class NeuralOperator(pl.LightningModule):
         Returns:
             np.ndarray: Computed vector d, shape (N_samples, N).
         """
-        basis_test = self.basis_test.forward(self.xi_Omega)
-        basis_test_y0 = self.basis_test.forward(self.xi_Gamma_y0)
-        basis_test_yL = self.basis_test.forward(self.xi_Gamma_yL)
-        basis_test_x0 = self.basis_test.forward(self.xi_Gamma_x0)
-        basis_test_xL = self.basis_test.forward(self.xi_Gamma_xL)
-        gradbasis_test_x0 = self.basis_test.grad(self.xi_Gamma_x0)
-        gradbasis_test_xL = self.basis_test.grad(self.xi_Gamma_xL)
+        basis_test = self.psi.forward(self.xi_Omega)
+        basis_test_y0 = self.psi.forward(self.xi_Gamma_y0)
+        basis_test_yL = self.psi.forward(self.xi_Gamma_yL)
+        basis_test_x0 = self.psi.forward(self.xi_Gamma_x0)
+        basis_test_xL = self.psi.forward(self.xi_Gamma_xL)
+        gradbasis_test_x0 = self.psi.grad(self.xi_Gamma_x0)
+        gradbasis_test_xL = self.psi.grad(self.xi_Gamma_xL)
         d = opt_einsum.contract('q,qm,Nq->Nm', self.w_Omega, basis_test, f_q)
         d += opt_einsum.contract('q,qm,Nq->Nm', self.w_Gamma_y0, basis_test_y0, eta_y0_q)
         d += opt_einsum.contract('q,qm,Nq->Nm', self.w_Gamma_yL, basis_test_yL, eta_yL_q)
@@ -481,7 +495,7 @@ class NeuralOperator(pl.LightningModule):
             torch.Tensor: Predicted output u_q_hat, shape (N_samples,)+(x.shape[0],).
         """
         u_q = discretize_functions(u, self.xi_Omega)
-        basis_trial = self.basis_trial.forward(self.xi_Omega)
+        basis_trial = self.phi.forward(self.xi_Omega)
         u_w = opt_einsum.contract('q,qm,Nq->Nm', self.w_Omega, basis_trial, u_q)
         M = opt_einsum.contract('q,qm,qn->mn', self.w_Omega, basis_trial, basis_trial)
         M_inv = np.linalg.pinv(M)
@@ -533,7 +547,7 @@ class NeuralOperator(pl.LightningModule):
         Returns:
             np.ndarray: Predicted output u_q_hat, shape (N_samples,)+(x.shape[0],).
         """
-        self.psix = torch.tensor(self.basis_trial.forward(x), dtype=self.dtype, device=self.device)
+        self.psix = torch.tensor(self.phi.forward(x), dtype=self.dtype, device=self.device)
         u_hat = self.simforwardfunction(theta, f, eta_y0, eta_yL, g_x0, g_xL, u)
         return u_hat
 
@@ -567,42 +581,45 @@ class NeuralOperator(pl.LightningModule):
             None
         """
         #Quadrature
+        zero = torch.tensor(0.0, dtype=self.dtype, device=self.device)
+        one = torch.tensor(1.0, dtype=self.dtype, device=self.device)
         if self.hparams['quadrature']=='uniform':
-            quad_Omega = UniformQuadrature(Q=self.hparams['Q'])
-            quad_Gamma_x = UniformQuadrature(Q=[self.hparams['Q'][1]])
-            quad_Gamma_y = UniformQuadrature(Q=[self.hparams['Q'][0]])
+            self.w_x, self.xi_x = UniformQuadrature(Q=(self.hparams['Q'][0])).compute_quadrature()
+            self.w_y, self.xi_y = UniformQuadrature(Q=(self.hparams['Q'][1])).compute_quadrature()
         if self.hparams['quadrature']=='Gauss-Legendre':
-            quad_Omega = GaussLegendreQuadrature(Q=self.hparams['Q'], n_elements=self.hparams['n_elements'])
-            quad_Gamma_x = GaussLegendreQuadrature(Q=[self.hparams['Q'][1]], n_elements=[self.hparams['n_elements'][1]])
-            quad_Gamma_y = GaussLegendreQuadrature(Q=[self.hparams['Q'][0]], n_elements=[self.hparams['n_elements'][0]])
-        self.w_Omega = quad_Omega.w
-        self.xi_Omega = quad_Omega.xi
-        self.w_Gamma_x0 = quad_Gamma_x.w
-        self.xi_Gamma_x0 = np.zeros((self.hparams['Q'][1],self.hparams['d']))
-        self.xi_Gamma_x0[:,1] = quad_Gamma_x.xi[:,0]
-        self.w_Gamma_xL = quad_Gamma_x.w
-        self.xi_Gamma_xL = np.ones((self.hparams['Q'][1],self.hparams['d']))
-        self.xi_Gamma_xL[:,1] = quad_Gamma_x.xi[:,0]
-        self.w_Gamma_y0 = quad_Gamma_y.w
-        self.xi_Gamma_y0 = np.zeros((self.hparams['Q'][0],self.hparams['d']))
-        self.xi_Gamma_y0[:,0] = quad_Gamma_y.xi[:,0]
-        self.w_Gamma_yL = quad_Gamma_y.w
-        self.xi_Gamma_yL = np.ones((self.hparams['Q'][0],self.hparams['d']))
-        self.xi_Gamma_yL[:,0] = quad_Gamma_y.xi[:,0]
-
+            self.w_x, self.xi_x = GaussLegendreQuadrature(Q=(self.hparams['Q'][0]), n_elements=(self.hparams['n_elements'][0])).compute_quadrature()
+            self.w_y, self.xi_y = GaussLegendreQuadrature(Q=(self.hparams['Q'][1]), n_elements=(self.hparams['n_elements'][1])).compute_quadrature()
+        # Domain quadrature
+        self.W_Omega = self.w_x, self.w_y
+        self.Xi_Omega = self.xi_x, self.xi_y
+        # Boundary x0 quadrature
+        self.W_Gamma_x0 = one, self.w_y
+        self.Xi_Gamma_x0 = zero, self.xi_y
+        # Boundary xL quadrature
+        self.W_Gamma_xL = one, self.w_y
+        self.Xi_Gamma_xL = one, self.xi_y
+        # Boundary y0 quadrature
+        self.W_Gamma_y0 = self.w_x, one
+        self.Xi_Gamma_y0 = self.xi_x, zero
+        # Boundary yL quadrature
+        self.W_Gamma_yL = self.w_x, one
+        self.Xi_Gamma_yL = self.xi_x, one
         #Loss quadrature
         if self.hparams['quadrature_L']=='uniform':
-            quadrature_L = UniformQuadrature(Q=self.hparams['Q_L'])
+            self.w_x_L, self.xi_x_L = UniformQuadrature(Q=self.hparams['Q_L'][0]).compute_quadrature()
+            self.w_y_L, self.xi_y_L = UniformQuadrature(Q=self.hparams['Q_L'][1]).compute_quadrature()
         if self.hparams['quadrature_L']=='Gauss-Legendre':
-            quadrature_L = GaussLegendreQuadrature(Q=self.hparams['Q_L'], n_elements=self.hparams['n_elements_L'])
-        self.xi_Omega_L = quadrature_L.xi
-        self.w_Omega_L = quadrature_L.w
-
+            self.w_x_L, self.xi_x_L = GaussLegendreQuadrature(Q=self.hparams['Q_L'][0], n_elements=self.hparams['n_elements_L'][0]).compute_quadrature()
+            self.w_y_L, self.xi_y_L = GaussLegendreQuadrature(Q=self.hparams['Q_L'][1], n_elements=self.hparams['n_elements_L'][1]).compute_quadrature()
+        # Loss domain quadrature
+        self.W_Omega_L = self.w_x_L, self.w_y_L
+        self.Xi_Omega_L = self.xi_x_L, self.xi_y_L
+        
         #Outward normal
-        self.n_y0 = np.array([0,-1])
-        self.n_yL = np.array([0,1])
-        self.n_x0 = np.array([-1,0])
-        self.n_xL = np.array([1,0])
+        # self.n_y0 = np.array([0,-1])
+        # self.n_yL = np.array([0,1])
+        # self.n_x0 = np.array([-1,0])
+        # self.n_xL = np.array([1,0])
 
     def configure_optimizers(self):
         """
@@ -690,7 +707,7 @@ class NeuralOperator(pl.LightningModule):
         """
         torch.set_num_threads(2)
         #Basis evaluation at loss quadrature points
-        self.psix = torch.tensor(self.basis_trial.forward(self.xi_Omega_L), dtype=self.dtype, device=self.device).to(self.device)
+        self.psix = torch.tensor(self.phi.forward(self.xi_Omega_L), dtype=self.dtype, device=self.device).to(self.device)
         self.w_Omega_L = torch.tensor(self.w_Omega_L).to(self.device)
         self.systemnet.device = self.device
 
