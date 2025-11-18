@@ -68,6 +68,39 @@ def kron_solve_triangular(L_i, b, upper, left=False):
     return x
 
 
+def assemble_L(psi, f, W_q, X_q, derivative_orders):
+    """
+    Assemble the Kronecker factors of the linear form
+    L(v) = \int f(x) \psi(x) dx
+    or its derivatives.
+    
+    Args:
+        psi: TensorProductBasis
+        f: ManufacturedSolution
+        W_q: d tuple of quadrature weights for each dimension, each of shape (Q_i,)
+        X_q: d tuple of quadrature points for each dimension of shape (Q_i,)
+        derivative_orders: tuple containing the derivative orders for psi in each dimension.
+                           For example, (0,1,0) means no derivative for psi in dim 0, first derivative in dim 1, no derivative in dim 2.
+    Returns:
+        L: Tensor of shape (B,n_1,n_2,...,n_d)  
+    """
+    f_q = f.forward(X_q) 
+    L = f_q
+    for i in range(len(X_q)):
+        # psi
+        # Set derivative order for psi
+        operation = derivative_orders[i]
+        if operation == 0:
+            Psi_i = psi.bases[i].forward(X_q[i]) 
+        elif operation == 1:
+            Psi_i = psi.bases[i].grad(X_q[i])
+        # Contract over dimension i
+        L = opt_einsum.contract('q,Bnq,Bq...->Bn...', W_q[i], Psi_i, L)
+        # Move contracted index to the end
+        L = L.moveaxis(1,-1)
+    return L
+
+
 def assemble_B(psi, phi, W_q, X_q, derivative_orders):
     """
     Assemble the Kronecker factors of the bilinear form
@@ -89,14 +122,14 @@ def assemble_B(psi, phi, W_q, X_q, derivative_orders):
     F = ()
     for i in range(len(X_q)):
         # psi
-        # Set operation for psi
+        # Set derivative order for psi
         operation = derivative_orders[0][i]
         if operation == 0:
             Psi_i = psi.bases[i].forward(X_q[i]) #shape (B,n,q)
         elif operation == 1:
             Psi_i = psi.bases[i].grad(X_q[i]) #shape (B,n,q)
         # phi
-        # Set operation for phi
+        # Set derivative order for phi
         operation = derivative_orders[1][i]
         if operation == 0:
             Phi_i = phi.bases[i].forward(X_q[i]) #shape (B,n,q)
@@ -133,21 +166,21 @@ def assemble_T(theta, psi, phi, W_q, X_q, derivative_orders):
     F = ()
     for i in range(len(X_q)):
         # theta
-        # Set operation for theta
+        # Set derivative order for theta
         operation = derivative_orders[0][i]
         if operation == 0:
             Theta_i = theta.bases[i].forward(X_q[i]) #shape (B,n,q)
         elif operation == 1:
             Theta_i = theta.bases[i].grad(X_q[i]) #shape (B,n,q)
         # psi
-        # Set operation for psi
+        # Set derivative order for psi
         operation = derivative_orders[1][i]
         if operation == 0:
             Psi_i = psi.bases[i].forward(X_q[i]) #shape (B,n,q)
         elif operation == 1:
             Psi_i = psi.bases[i].grad(X_q[i]) #shape (B,n,q)
         # phi
-        # Set operation for phi
+        # Set derivative order for phi
         operation = derivative_orders[2][i]
         if operation == 0:
             Phi_i = phi.bases[i].forward(X_q[i]) #shape (B,n,q)
