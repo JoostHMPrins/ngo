@@ -9,7 +9,7 @@ import opt_einsum
 # Local
 from ngo.numericalanalysis.basisfunctions import TensorProductBasis
 from ngo.numericalanalysis.quadrature import GaussLegendreQuadrature, UniformQuadrature
-from ngo.numericalanalysis.linalg import kron_matvec, assemble_L, assemble_B, assemble_T
+from ngo.numericalanalysis.linalg import *
 from ngo.ml.systemnets import MLP, LBranchNet
 from ngo.ml.customlayers import Neumann_preconditioner_forward, discretize_functions
 
@@ -134,12 +134,23 @@ class NeuralOperator(pl.LightningModule):
             F = assemble_L(self.psi, theta, self.W_Omega, self.Xi_Omega, derivative_orders=((0,0),(0,0)))
         if  self.hparams['modeltype']=='model NGO' or self.hparams['modeltype']=='FEM' or self.hparams['modeltype']=='projection':
             # Volume term
-            F = assemble_T(theta, self.psi, self.phi, self.W_Omega, self.Xi_Omega, derivative_orders=((0,0),(1,1),(1,1)))
-            # Boundary term at x0
-            F += -assemble_T(theta, self.psi, self.phi, self.W_Gamma_x0, self.Xi_Gamma_x0, derivative_orders=((0,0),(0,0),(1,0)))
-            # Boundary term at xL
-            F += -assemble_T(theta, self.psi, self.phi, self.W_Gamma_xL, self.Xi_Gamma_xL, derivative_orders=((0,0),(0,0),(1,0)))
-            # 
+            T_i = assemble_T(theta, self.psi, self.phi, self.W_Omega, self.Xi_Omega, derivative_orders=((0,0),(1,1),(1,1)))
+            # Boundary term at x0 (coming from Neumann complement)
+            T_i = subtract_tuples(T_i, assemble_T(theta, self.psi, self.phi, self.W_Gamma_x0, self.Xi_Gamma_x0, derivative_orders=((0,0),(0,0),(1,0))))
+            # Boundary term at xL (coming from Neumann complement)
+            T_i = subtract_tuples(T_i, assemble_T(theta, self.psi, self.phi, self.W_Gamma_xL, self.Xi_Gamma_xL, derivative_orders=((0,0),(0,0),(1,0))))
+            # Boundary term at x0 (coming from Dirichlet complement)
+            T_i = subtract_tuples(T_i, assemble_T(theta, self.psi, self.phi, self.W_Gamma_x0, self.Xi_Gamma_x0, derivative_orders=((0,0),(1,0),(0,0))))
+            # Boundary term at xL (coming from Dirichlet complement)
+            T_i = subtract_tuples(T_i, assemble_T(theta, self.psi, self.phi, self.W_Gamma_xL, self.Xi_Gamma_xL, derivative_orders=((0,0),(1,0),(0,0))))
+            if self.hparams.get('gamma_stabilization',0)!=0:
+                # Stabilization term at x0
+                T_i = add_tuples(T_i, self.hparams['gamma_stabilization']*assemble_T(theta, self.psi, self.phi, self.W_Gamma_x0, self.Xi_Gamma_x0, derivative_orders=((0,0),(0,0),(0,0))))
+                # Stabilization term at xL
+                T_i = add_tuples(T_i, self.hparams['gamma_stabilization']*assemble_T(theta, self.psi, self.phi, self.W_Gamma_xL, self.Xi_Gamma_xL, derivative_orders=((0,0),(0,0),(0,0))))
+            F_i = kron_vecT(theta.u_m, T_i)
+            F = kron(F_i)
+        return F
 
     def compute_F(self, theta_q, theta_x0_q, theta_xL_q):
         """
@@ -185,12 +196,25 @@ class NeuralOperator(pl.LightningModule):
 
         Returns:
             None
-        """
-        theta_q = np.ones((1,)+self.w_Omega.shape)
-        theta_x0_q = np.ones((1,)+self.w_Gamma_x0.shape)
-        theta_xL_q = np.ones((1,)+self.w_Gamma_xL.shape)
-        self.F_0 = torch.tensor(self.compute_F(theta_q, theta_x0_q, theta_xL_q), dtype=self.dtype, device=self.device)
-        self.A_0 = torch.linalg.inv(self.F_0)
+        """ 
+        # Volume term
+        B_i = assemble_B(self.psi, self.phi, self.W_Omega, self.Xi_Omega, derivative_orders=((0,0),(1,1),(1,1)))
+        # Boundary term at x0 (coming from Neumann complement)
+        B_i = subtract_tuples(B_i, assemble_T(self.psi, self.phi, self.W_Gamma_x0, self.Xi_Gamma_x0, derivative_orders=((0,0),(0,0),(1,0))))
+        # Boundary term at xL (coming from Neumann complement)
+        B_i = subtract_tuples(B_i, assemble_T(self.psi, self.phi, self.W_Gamma_xL, self.Xi_Gamma_xL, derivative_orders=((0,0),(0,0),(1,0))))
+        # Boundary term at x0 (coming from Dirichlet complement)
+        B_i = subtract_tuples(B_i, assemble_T(self.psi, self.phi, self.W_Gamma_x0, self.Xi_Gamma_x0, derivative_orders=((0,0),(1,0),(0,0))))
+        # Boundary term at xL (coming from Dirichlet complement)
+        B_i = subtract_tuples(B_i, assemble_T(self.psi, self.phi, self.W_Gamma_xL, self.Xi_Gamma_xL, derivative_orders=((0,0),(1,0),(0,0))))
+        if self.hparams.get('gamma_stabilization',0)!=0:
+            # Stabilization term at x0
+            B_i = add_tuples(B_i, self.hparams['gamma_stabilization']*assemble_T(self.psi, self.phi, self.W_Gamma_x0, self.Xi_Gamma_x0, derivative_orders=((0,0),(0,0),(0,0))))
+            # Stabilization term at xL
+            B_i = add_tuples(B_i, self.hparams['gamma_stabilization']*assemble_T(self.psi, self.phi, self.W_Gamma_xL, self.Xi_Gamma_xL, derivative_orders=((0,0),(0,0),(0,0))))
+        self.F_0 = kron(B_i)
+        A_0_i = kron_inv(B_i)
+        self.A_0 = kron(A_0_i)
     
     def compute_d(self, f_q, eta_y0_q, eta_yL_q, g_x0_q, g_xL_q):
         """
@@ -221,6 +245,18 @@ class NeuralOperator(pl.LightningModule):
         if self.hparams.get('gamma_stabilization',0)!=0:
             d += -self.hparams['gamma_stabilization']*opt_einsum.contract('q,qm,Nq->Nm', self.w_Gamma_x0, basis_test_x0, g_x0_q)
             d += -self.hparams['gamma_stabilization']*opt_einsum.contract('q,qm,Nq->Nm', self.w_Gamma_xL, basis_test_xL, g_xL_q)                 
+        return d
+    
+    def assemble_d(self, f, eta_y0, eta_yL, g_x0, g_xL):
+        d = assemble_L(self.psi, f, self.W_Omega, self.Xi_Omega, derivative_orders=(0,0))
+        d += assemble_L(self.psi, eta_y0, self.W_Gamma_y0, self.Xi_Gamma_y0, derivative_orders=(0,0))
+        d += assemble_L(self.psi, eta_yL, self.W_Gamma_yL, self.Xi_Gamma_yL, derivative_orders=(0,0))
+        d += assemble_L(self.psi, g_x0, self.W_Gamma_x0, self.Xi_Gamma_x0, derivative_orders=(1,0)) # addition because of minus sign of boundary normal sign at x0
+        d -= assemble_L(self.psi, g_xL, self.W_Gamma_xL, self.Xi_Gamma_xL, derivative_orders=(1,0))
+        if self.hparams.get('gamma_stabilization',0)!=0:
+            d -= self.hparams['gamma_stabilization']*assemble_L(self.psi, g_x0, self.W_Gamma_x0, self.Xi_Gamma_x0, derivative_orders=(0,0))
+            d -= self.hparams['gamma_stabilization']*assemble_L(self.psi, g_xL, self.W_Gamma_xL, self.Xi_Gamma_xL, derivative_orders=(0,0))
+        d = d.flatten(start_dim=1)
         return d
     
     def NN_forward(self, theta_q, f_q, eta_y0_q, eta_yL_q, g_x0_q, g_xL_q):
@@ -417,7 +453,8 @@ class NeuralOperator(pl.LightningModule):
         if self.hparams.get('scale_equivariance',False)==True:
             A_hat = A_hat/scaling[:,None,None]        
         u_n_hat = opt_einsum.contract('nij,nj->ni', A_hat, d)
-        u_q_hat = opt_einsum.contract('Nn,qn->Nq', u_n_hat, self.psix)
+        # u_q_hat = opt_einsum.contract('Nn,qn->Nq', u_n_hat, self.psix)
+        u_q_hat = self.phi.forward(u_n_hat, self.Xi_Omega_L)
         return u_q_hat
     
     def NGO_simforward(self, theta, f, eta_y0, eta_yL, g_x0, g_xL, u):
@@ -494,14 +531,10 @@ class NeuralOperator(pl.LightningModule):
         Returns:
             torch.Tensor: Predicted output u_q_hat, shape (N_samples,)+(x.shape[0],).
         """
-        u_q = discretize_functions(u, self.xi_Omega)
-        basis_trial = self.phi.forward(self.xi_Omega)
-        u_w = opt_einsum.contract('q,qm,Nq->Nm', self.w_Omega, basis_trial, u_q)
-        M = opt_einsum.contract('q,qm,qn->mn', self.w_Omega, basis_trial, basis_trial)
-        M_inv = np.linalg.pinv(M)
-        u_n = torch.tensor(opt_einsum.contract('mn,Nm->Nn', M_inv, u_w), dtype=self.dtype, device=self.device)
-        u_hat = opt_einsum.contract('Nn,qn->Nq', u_n, self.psix)
-        return u_hat
+        M = assemble_B(self.phi, self.phi, self.W_Omega, self.Xi_Omega, derivative_orders=((0,0),(0,0)))
+        d = assemble_L(self.phi, u, self.W_Omega, self.Xi_Omega, derivative_orders=(0,0))
+        u_m_hat = kron_solve(M, d)      
+        return u_m_hat
     
     def projection_simforward(self, theta, f, eta_y0, eta_yL, g_x0, g_xL, u):
         """
@@ -530,7 +563,7 @@ class NeuralOperator(pl.LightningModule):
         u_q_hat = self.forwardfunction(*args)
         return u_q_hat
     
-    def simforward(self, theta, f, eta_y0, eta_yL, g_x0, g_xL, x, u):
+    def simforward(self, theta, f, eta_y0, eta_yL, g_x0, g_xL, X, u):
         """
         Simulation forward pass for the model (input functions -> solution),
         set in the function self.init_modeltype(), based on the selected hparams['modeltype'].
@@ -547,9 +580,9 @@ class NeuralOperator(pl.LightningModule):
         Returns:
             np.ndarray: Predicted output u_q_hat, shape (N_samples,)+(x.shape[0],).
         """
-        self.psix = torch.tensor(self.phi.forward(x), dtype=self.dtype, device=self.device)
-        u_hat = self.simforwardfunction(theta, f, eta_y0, eta_yL, g_x0, g_xL, u)
-        return u_hat
+        u_m_hat = self.simforwardfunction(theta, f, eta_y0, eta_yL, g_x0, g_xL, u)
+        u_q_hat = u_m_hat if self.hparams['modeltype']=='NN' else self.phi.forward(u_m_hat, X)
+        return u_q_hat
 
     def Neumann_criterion(self, theta):
         """
@@ -580,15 +613,14 @@ class NeuralOperator(pl.LightningModule):
         Returns:
             None
         """
-        #Quadrature
-        zero = torch.tensor(0.0, dtype=self.dtype, device=self.device)
-        one = torch.tensor(1.0, dtype=self.dtype, device=self.device)
+        zero = torch.zeros(size=(1,), dtype=self.dtype, device=self.device)
+        one = torch.ones(size=(1,), dtype=self.dtype, device=self.device)
         if self.hparams['quadrature']=='uniform':
-            self.w_x, self.xi_x = UniformQuadrature(Q=(self.hparams['Q'][0])).compute_quadrature()
-            self.w_y, self.xi_y = UniformQuadrature(Q=(self.hparams['Q'][1])).compute_quadrature()
+            self.w_x, self.xi_x = UniformQuadrature(Q=self.hparams['Q'][0], dtype=self.dtype, device=self.device).compute_quadrature()
+            self.w_y, self.xi_y = UniformQuadrature(Q=self.hparams['Q'][1], dtype=self.dtype, device=self.device).compute_quadrature()
         if self.hparams['quadrature']=='Gauss-Legendre':
-            self.w_x, self.xi_x = GaussLegendreQuadrature(Q=(self.hparams['Q'][0]), n_elements=(self.hparams['n_elements'][0])).compute_quadrature()
-            self.w_y, self.xi_y = GaussLegendreQuadrature(Q=(self.hparams['Q'][1]), n_elements=(self.hparams['n_elements'][1])).compute_quadrature()
+            self.w_x, self.xi_x = GaussLegendreQuadrature(Q=self.hparams['Q'][0], n_elements=self.hparams['n_elements'][0], dtype=self.dtype, device=self.device).compute_quadrature()
+            self.w_y, self.xi_y = GaussLegendreQuadrature(Q=self.hparams['Q'][1], n_elements=self.hparams['n_elements'][1], dtype=self.dtype, device=self.device).compute_quadrature()
         # Domain quadrature
         self.W_Omega = self.w_x, self.w_y
         self.Xi_Omega = self.xi_x, self.xi_y
@@ -606,20 +638,14 @@ class NeuralOperator(pl.LightningModule):
         self.Xi_Gamma_yL = self.xi_x, one
         #Loss quadrature
         if self.hparams['quadrature_L']=='uniform':
-            self.w_x_L, self.xi_x_L = UniformQuadrature(Q=self.hparams['Q_L'][0]).compute_quadrature()
-            self.w_y_L, self.xi_y_L = UniformQuadrature(Q=self.hparams['Q_L'][1]).compute_quadrature()
+            self.w_x_L, self.xi_x_L = UniformQuadrature(Q=self.hparams['Q_L'][0], dtype=self.dtype, device=self.device).compute_quadrature()
+            self.w_y_L, self.xi_y_L = UniformQuadrature(Q=self.hparams['Q_L'][1], dtype=self.dtype, device=self.device).compute_quadrature()
         if self.hparams['quadrature_L']=='Gauss-Legendre':
-            self.w_x_L, self.xi_x_L = GaussLegendreQuadrature(Q=self.hparams['Q_L'][0], n_elements=self.hparams['n_elements_L'][0]).compute_quadrature()
-            self.w_y_L, self.xi_y_L = GaussLegendreQuadrature(Q=self.hparams['Q_L'][1], n_elements=self.hparams['n_elements_L'][1]).compute_quadrature()
+            self.w_x_L, self.xi_x_L = GaussLegendreQuadrature(Q=self.hparams['Q_L'][0], n_elements=self.hparams['n_elements_L'][0], dtype=self.dtype, device=self.device).compute_quadrature()
+            self.w_y_L, self.xi_y_L = GaussLegendreQuadrature(Q=self.hparams['Q_L'][1], n_elements=self.hparams['n_elements_L'][1], dtype=self.dtype, device=self.device).compute_quadrature()
         # Loss domain quadrature
         self.W_Omega_L = self.w_x_L, self.w_y_L
         self.Xi_Omega_L = self.xi_x_L, self.xi_y_L
-        
-        #Outward normal
-        # self.n_y0 = np.array([0,-1])
-        # self.n_yL = np.array([0,1])
-        # self.n_x0 = np.array([-1,0])
-        # self.n_xL = np.array([1,0])
 
     def configure_optimizers(self):
         """
@@ -707,7 +733,7 @@ class NeuralOperator(pl.LightningModule):
         """
         torch.set_num_threads(2)
         #Basis evaluation at loss quadrature points
-        self.psix = torch.tensor(self.phi.forward(self.xi_Omega_L), dtype=self.dtype, device=self.device).to(self.device)
+        # self.psix = torch.tensor(self.phi.forward(self.Xi_Omega_L), dtype=self.dtype, device=self.device).to(self.device)
         self.w_Omega_L = torch.tensor(self.w_Omega_L).to(self.device)
         self.systemnet.device = self.device
 
