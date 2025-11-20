@@ -33,6 +33,40 @@ def kron_matvec(A_i, x):
     return b
 
 
+def kron_solve(A_i, b, left=False):
+    """Solve a (batched) Kronecker-product triangular system.
+    Computes the equivalent of x = (A_0 ⊗ A_1 ⊗ ... ⊗ A_{d-1})^{-1} @ b without
+    forming the full Kronecker product. The operation is performed by a
+    sequence of triangular solves and supports an optional leading batch
+    dimension.
+
+    Inputs:
+    A_i: Sequence of d factors, where each A_i has shape 
+         (n_i, n_i) for i in [0, d-1].
+    b: Right-hand side vector reshaped into Kronecker product dimensions as
+       (B, N_0, N_1, ..., N_{d-1}) 
+    upper: Boolean indicating whether the factors A_i are upper or lower
+           triangular.
+    left: Boolean indicating whether to solve left or right triangular systems.
+
+    Returns:
+    x: Solution vector with shape (B, N_0, N_1, ..., N_{d-1}).
+
+    Notes:
+    - The Kronecker factors A_i do not have a leading batch dimension,
+    while the vector b does have a leading batch dimension.
+    """
+    # Initialize x as b
+    x = b
+    # Sequentially apply each Kronecker factor
+    for i in range(len(A_i)):
+        # print(i)
+        # # Move the current dimension to the last position
+        x = x.moveaxis(1,-1)
+        # Solve the triangular system for the current dimension
+        x = torch.linalg.solve(A_i[i], x, left=left)
+    return x
+
 def kron_solve_triangular(L_i, b, upper, left=False):
     """Solve a (batched) Kronecker-product triangular system.
     Computes the equivalent of x = (L_0 ⊗ L_1 ⊗ ... ⊗ L_{d-1})^{-1} @ b without
@@ -66,6 +100,21 @@ def kron_solve_triangular(L_i, b, upper, left=False):
         # Solve the triangular system for the current dimension
         x = torch.linalg.solve_triangular(L_i[i], x, upper=upper, left=left)
     return x
+
+
+def kron_inv(A_i):
+    """
+    Compute the Kronecker product of the inverses of a d-tuple of matrices.
+
+    Args:
+        A_i (tuple of torch.Tensor): A tuple containing d matrices. Each matrix should be a 2D tensor of shape (m_i, n_i).
+    Returns:
+        torch.Tensor: The inverses of the Kronecker factors, resulting in a d-tuple of 2D tensors of shape (n_i, m_i).
+    """
+    A_inv = ()
+    for i in range(len(A_i)):
+        A_inv += (torch.linalg.inv(A_i[i]),)
+    return A_inv
 
 
 def assemble_L(psi, f, W_q, X_q, derivative_orders):
@@ -193,3 +242,66 @@ def assemble_T(theta, psi, phi, W_q, X_q, derivative_orders):
         F_i = opt_einsum.contract('q,Blq,Bmq,Bnq->Blmn', W_q[i], Theta_i, Psi_i, Phi_i) #shape (B,n,m)
         F += (F_i,)
     return F
+
+
+def kron_vecT(U_m, T_i):
+    """
+    Assemble the Kronecker double product factors A_i by contracting a set of 
+    Kronecker triple products T_i with coefficients U_m.
+
+    Args:
+        U_m: Coefficient tensor of shape (B,l_0,l_1,...,l_{d-1})
+        T_i: d tuple of Kronecker triple products, each of shape (B,l_i,m_i,n_i)
+        
+    Returns:
+        A: d tuple of resulting Kronecker factors, each of shape (B,m_i,n_i)
+    """
+    # Initialize empty A tuple
+    A = ()
+    # Sequentially contract each coefficient tensor axis with each Kronecker triple product
+    for i in range(len(T_i)):
+        A_i = opt_einsum.contract('Bl...,Blmn->Bmn', U_m, T_i[i])
+        A += (A_i,)
+        # Move the new contraction axis to position 1
+        U_m = U_m.moveaxis(1, -1)
+    return A
+
+
+def kron_single(F_i):
+    """
+    Compute the Kronecker product of a d-tuple of matrices.
+
+    Args:
+        F_i (tuple of torch.Tensor): A tuple containing d matrices. Each matrix should be a 2D tensor of shape (m_i, n_i).
+
+    Returns:
+        torch.Tensor: The Kronecker product of the input matrices, resulting in a 2D tensor of shape (m_0*m_1*...*m_{d-1}, n_0*n_1*...*n_{d-1}).
+    """
+    B = F_i[0]
+    for i in range(1, len(F_i)):
+        B = torch.kron(B, F_i[i])
+    return B
+
+
+def kron(F_i):
+    """
+    Compute the Kronecker product for a batch of d-tuples of matrices.
+
+    Args:
+        F_i (tuple): A tuple where each element is a batch of matrices of shape (B, m_i, n_i).
+
+    Returns:
+        torch.Tensor: A batch of Kronecker products, each of shape (m_0*m_1*...*m_{d-1}, n_0*n_1*...*n_{d-1}).
+    """
+    return torch.vmap(kron_single)(F_i)
+
+
+def add_tuples(t1, t2):
+    """Return element-wise sum of two tuples."""
+    return tuple(a + b for a, b in zip(t1, t2))
+
+
+def subtract_tuples(t1, t2):
+    """Return element-wise difference of two tuples (t1 - t2)."""
+    return tuple(a - b for a, b in zip(t1, t2))
+
