@@ -81,9 +81,9 @@ class DataModule(pl.LightningDataModule):
         self.u_q = dummymodel.discretize_output_function(u)
         print('Assembling system...')
         if dummymodel.hparams['modeltype']=='model NGO' or dummymodel.hparams['modeltype']=='data NGO':
-                self.F = dummymodel.compute_F(self.theta_q, self.theta_x0_q, self.theta_xL_q)
-                self.d = dummymodel.compute_d(self.f_q, self.eta_y0_q, self.eta_yL_q, self.g_x0_q, self.g_xL_q)
-        self.scaling = np.abs(np.sum(dummymodel.w_Omega[None,:]*self.theta_q, axis=-1))
+                self.F = dummymodel.assemble_F(theta)
+                self.d = dummymodel.assemble_d(f, eta_y0, eta_yL, g_x0, g_xL)
+        self.scaling = theta.basis.integrate(theta.u_m, dummymodel.W_Omega, dummymodel.Xi_Omega)
 
     def setup(self, stage=None):
         """
