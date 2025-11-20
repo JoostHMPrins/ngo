@@ -33,11 +33,10 @@ def train(model, datamodule, hparams, logdir, sublogdir, label):
     #Training
     start = time.time() 
     trainer = pl.Trainer(logger=logger, 
-                         accelerator='gpu', 
-                         num_workers=0,
-                         devices=1,[int(str(hparams['device']).split(':')[1])],
+                         accelerator=hparams['accelerator'], 
+                         devices=[int(str(hparams['device']).split(':')[1])],
                          strategy="auto",
-                         precision= int(str(hparams['dtype']).split('float')[1]), 
+                         precision=int(str(hparams['dtype']).split('float')[1]), 
                          max_epochs=hparams['epochs'], 
                          check_val_every_n_epoch=1,
                          reload_dataloaders_every_n_epochs=1,
