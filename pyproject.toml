@@ -18,7 +18,7 @@ classifiers = [
 ]
 dependencies = [
     "numpy~=1.26.4",
-    "scipy~=1.13.1",
+    "scipy>=1.15.0",
     "matplotlib",
     "nutils~=8.8",
     "nutils-poly~=1.0.1",
