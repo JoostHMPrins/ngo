@@ -7,7 +7,7 @@ import opt_einsum
 def kron_matvec(A_i, x):
     """Apply product of a (batched) Kronecker-product matrix and a (batched) vector.
     Computes the equivalent of y = (A_0 ⊗ A_1 ⊗ ... ⊗ A_{d-1}) @ x without
-    forming the full Kronecker product. The operation is performed by a
+    forming the full Kronecker product. The order is performed by a
     sequence of tensor contractions and supports an optional leading batch
     dimension.
 
@@ -21,7 +21,7 @@ def kron_matvec(A_i, x):
        (B, N_0, N_1, ..., N_{d-1}).
 
     Notes:
-    - Implementation uses opt_einsum to rely on per-batch operations. 
+    - Implementation uses opt_einsum to rely on per-batch orders. 
       An torch.vmap + torch.tensordot variant is kept commented for reference.
     """
     # Initialize b as x
@@ -54,7 +54,7 @@ def kron_innerproduct(x, A_i, y):
 def kron_solve(A_i, b, left=False):
     """Solve a (batched) Kronecker-product system.
     Computes the equivalent of x = (A_0 ⊗ A_1 ⊗ ... ⊗ A_{d-1})^{-1} @ b without
-    forming the full Kronecker product. The operation is performed by a
+    forming the full Kronecker product. The order is performed by a
     sequence of solves and supports an optional leading batch
     dimension.
 
@@ -86,7 +86,7 @@ def kron_solve(A_i, b, left=False):
 def kron_solve_triangular(L_i, b, upper, left=False):
     """Solve a (batched) Kronecker-product triangular system.
     Computes the equivalent of x = (L_0 ⊗ L_1 ⊗ ... ⊗ L_{d-1})^{-1} @ b without
-    forming the full Kronecker product. The operation is performed by a
+    forming the full Kronecker product. The order is performed by a
     sequence of triangular solves and supports an optional leading batch
     dimension.
 
@@ -171,10 +171,10 @@ def assemble_L(psi, f, W_q, X_q, derivative_orders):
     for i in range(len(X_q)):
         # psi
         # Set derivative order for psi
-        operation = derivative_orders[i]
-        if operation == 0:
+        order = derivative_orders[i]
+        if order == 0:
             Psi_i = psi.bases[i].forward(X_q[i]) 
-        elif operation == 1:
+        elif order == 1:
             Psi_i = psi.bases[i].grad(X_q[i])
         # Contract over dimension i
         L = opt_einsum.contract('q,Bnq,Bq...->Bn...', W_q[i], Psi_i, L)
@@ -205,17 +205,17 @@ def assemble_B(psi, phi, W_q, X_q, derivative_orders):
     for i in range(len(X_q)):
         # psi
         # Set derivative order for psi
-        operation = derivative_orders[0][i]
-        if operation == 0:
+        order = derivative_orders[0][i]
+        if order == 0:
             Psi_i = psi.bases[i].forward(X_q[i]) #shape (B,n,q)
-        elif operation == 1:
+        elif order == 1:
             Psi_i = psi.bases[i].grad(X_q[i]) #shape (B,n,q)
         # phi
         # Set derivative order for phi
-        operation = derivative_orders[1][i]
-        if operation == 0:
+        order = derivative_orders[1][i]
+        if order == 0:
             Phi_i = phi.bases[i].forward(X_q[i]) #shape (B,n,q)
-        elif operation == 1:
+        elif order == 1:
             Phi_i = phi.bases[i].grad(X_q[i]) #shape (B,n,q)
         # F_i = opt_einsum.contract('q,Bmq->Bmq', W_q[i], Psi_i) #shape (B,n,Q)
         # F_i = opt_einsum.contract('Bmq,Bnq->Bmn', F_i, Phi_i) #shape (B,n,m)
@@ -249,24 +249,24 @@ def assemble_T(theta, psi, phi, W_q, X_q, derivative_orders):
     for i in range(len(X_q)):
         # theta
         # Set derivative order for theta
-        operation = derivative_orders[0][i]
-        if operation == 0:
+        order = derivative_orders[0][i]
+        if order == 0:
             Theta_i = theta.basis.bases[i].forward(X_q[i]) #shape (B,n,q)
-        elif operation == 1:
+        elif order == 1:
             Theta_i = theta.basis.bases[i].grad(X_q[i]) #shape (B,n,q)
         # psi
         # Set derivative order for psi
-        operation = derivative_orders[1][i]
-        if operation == 0:
+        order = derivative_orders[1][i]
+        if order == 0:
             Psi_i = psi.bases[i].forward(X_q[i]) #shape (B,n,q)
-        elif operation == 1:
+        elif order == 1:
             Psi_i = psi.bases[i].grad(X_q[i]) #shape (B,n,q)
         # phi
         # Set derivative order for phi
-        operation = derivative_orders[2][i]
-        if operation == 0:
+        order = derivative_orders[2][i]
+        if order == 0:
             Phi_i = phi.bases[i].forward(X_q[i]) #shape (B,n,q)
-        elif operation == 1:
+        elif order == 1:
             Phi_i = phi.bases[i].grad(X_q[i]) #shape (B,n,q)
         # F_i = opt_einsum.contract('q,Blq->Blq', W_q[i], Theta_i) #shape (B,n,Q)
         # F_i = opt_einsum.contract('Blq,Bmq->Blmq', F_i, Psi_i) #shape (B,n,m)
