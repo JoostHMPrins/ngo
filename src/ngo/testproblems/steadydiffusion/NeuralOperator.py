@@ -143,23 +143,64 @@ class NeuralOperator(pl.LightningModule):
         if  self.hparams['modeltype']=='data NGO':
             F = assemble_L(self.psi, theta, self.W_Omega, self.Xi_Omega, derivative_orders=(0,0))
         if  self.hparams['modeltype']=='model NGO' or self.hparams['modeltype']=='FEM' or self.hparams['modeltype']=='projection':
-            # Volume term
-            T_i = assemble_T(theta, self.psi, self.phi, self.W_Omega, self.Xi_Omega, derivative_orders=((0,0),(1,1),(1,1)))
+            # # # Volume term
+            # # T_i = assemble_T(theta, self.psi, self.phi, self.W_Omega, self.Xi_Omega, derivative_orders=((0,0),(1,1),(1,1)))
+            # # Volume term - derivative in x direction
+            # T_i = assemble_T(theta, self.psi, self.phi, self.W_Omega, self.Xi_Omega, derivative_orders=((0,0),(1,0),(1,0)))
+            # # Volume term - derivative in y direction
+            # T_i = add_tuples(T_i, assemble_T(theta, self.psi, self.phi, self.W_Omega, self.Xi_Omega, derivative_orders=((0,0),(0,1),(0,1))))
+            # # Boundary term at x0 (coming from Neumann complement)
+            # T_i = add_tuples(T_i, assemble_T(theta, self.psi, self.phi, self.W_Gamma_x0, self.Xi_Gamma_x0, derivative_orders=((0,0),(0,0),(1,0))))
+            # # Boundary term at xL (coming from Neumann complement)
+            # T_i = subtract_tuples(T_i, assemble_T(theta, self.psi, self.phi, self.W_Gamma_xL, self.Xi_Gamma_xL, derivative_orders=((0,0),(0,0),(1,0))))
+            # # Boundary term at x0 (coming from Dirichlet complement)
+            # T_i = add_tuples(T_i, assemble_T(theta, self.psi, self.phi, self.W_Gamma_x0, self.Xi_Gamma_x0, derivative_orders=((0,0),(1,0),(0,0))))
+            # # Boundary term at xL (coming from Dirichlet complement)
+            # T_i = subtract_tuples(T_i, assemble_T(theta, self.psi, self.phi, self.W_Gamma_xL, self.Xi_Gamma_xL, derivative_orders=((0,0),(1,0),(0,0))))
+            # if self.hparams.get('gamma_stabilization',0)!=0:
+            #     # Stabilization term at x0
+            #     T_i = add_tuples(T_i, self.hparams['gamma_stabilization']*assemble_T(theta, self.psi, self.phi, self.W_Gamma_x0, self.Xi_Gamma_x0, derivative_orders=((0,0),(0,0),(0,0))))
+            #     # Stabilization term at xL
+            #     T_i = add_tuples(T_i, self.hparams['gamma_stabilization']*assemble_T(theta, self.psi, self.phi, self.W_Gamma_xL, self.Xi_Gamma_xL, derivative_orders=((0,0),(0,0),(0,0))))
+            # F_i = kron_vecT(theta.u_m, T_i)
+            # F = kron(F_i)
+
+            # # Volume term - derivative in x direction
+            # T_i = assemble_B(self.psi, self.phi, self.W_Omega, self.Xi_Omega, derivative_orders=((1,0),(1,0)))
+            # # Volume term - derivative in y direction
+            # T_i = add_tuples(T_i, assemble_B(self.psi, self.phi, self.W_Omega, self.Xi_Omega, derivative_orders=((0,1),(0,1))))
+            # # Boundary term at x0 (coming from Neumann complement)
+            # T_i = add_tuples(T_i, assemble_B(self.psi, self.phi, self.W_Gamma_x0, self.Xi_Gamma_x0, derivative_orders=((0,0),(1,0))))
+            # # Boundary term at xL (coming from Neumann complement)
+            # T_i = subtract_tuples(T_i, assemble_B(self.psi, self.phi, self.W_Gamma_xL, self.Xi_Gamma_xL, derivative_orders=((0,0),(1,0))))
+            # # Boundary term at x0 (coming from Dirichlet complement)
+            # T_i = add_tuples(T_i, assemble_B(self.psi, self.phi, self.W_Gamma_x0, self.Xi_Gamma_x0, derivative_orders=((1,0),(0,0))))
+            # # Boundary term at xL (coming from Dirichlet complement)
+            # T_i = subtract_tuples(T_i, assemble_B(self.psi, self.phi, self.W_Gamma_xL, self.Xi_Gamma_xL, derivative_orders=((1,0),(0,0))))
+            # if self.hparams.get('gamma_stabilization',0)!=0:
+            #     # Stabilization term at x0
+            #     T_i = add_tuples(T_i, self.hparams['gamma_stabilization']*assemble_B(self.psi, self.phi, self.W_Gamma_x0, self.Xi_Gamma_x0, derivative_orders=((0,0),(0,0))))
+            #     # Stabilization term at xL
+            #     T_i = add_tuples(T_i, self.hparams['gamma_stabilization']*assemble_B(self.psi, self.phi, self.W_Gamma_xL, self.Xi_Gamma_xL, derivative_orders=((0,0),(0,0))))
+            # F = kron(T_i)
+
+            # Volume term - derivative in x direction
+            F = kron(assemble_B(self.psi, self.phi, self.W_Omega, self.Xi_Omega, derivative_orders=((1,0),(1,0))))
+            # Volume term - derivative in y direction
+            F += kron(assemble_B(self.psi, self.phi, self.W_Omega, self.Xi_Omega, derivative_orders=((0,1),(0,1))))
             # Boundary term at x0 (coming from Neumann complement)
-            T_i = add_tuples(T_i, assemble_T(theta, self.psi, self.phi, self.W_Gamma_x0, self.Xi_Gamma_x0, derivative_orders=((0,0),(0,0),(1,0))))
+            F += kron(assemble_B(self.psi, self.phi, self.W_Gamma_x0, self.Xi_Gamma_x0, derivative_orders=((0,0),(1,0))))
             # Boundary term at xL (coming from Neumann complement)
-            T_i = subtract_tuples(T_i, assemble_T(theta, self.psi, self.phi, self.W_Gamma_xL, self.Xi_Gamma_xL, derivative_orders=((0,0),(0,0),(1,0))))
+            F -= kron(assemble_B(self.psi, self.phi, self.W_Gamma_xL, self.Xi_Gamma_xL, derivative_orders=((0,0),(1,0))))
             # Boundary term at x0 (coming from Dirichlet complement)
-            T_i = add_tuples(T_i, assemble_T(theta, self.psi, self.phi, self.W_Gamma_x0, self.Xi_Gamma_x0, derivative_orders=((0,0),(1,0),(0,0))))
+            F += kron(assemble_B(self.psi, self.phi, self.W_Gamma_x0, self.Xi_Gamma_x0, derivative_orders=((1,0),(0,0))))
             # Boundary term at xL (coming from Dirichlet complement)
-            T_i = subtract_tuples(T_i, assemble_T(theta, self.psi, self.phi, self.W_Gamma_xL, self.Xi_Gamma_xL, derivative_orders=((0,0),(1,0),(0,0))))
+            F -= kron(assemble_B(self.psi, self.phi, self.W_Gamma_xL, self.Xi_Gamma_xL, derivative_orders=((1,0),(0,0))))
             if self.hparams.get('gamma_stabilization',0)!=0:
                 # Stabilization term at x0
-                T_i = add_tuples(T_i, self.hparams['gamma_stabilization']*assemble_T(theta, self.psi, self.phi, self.W_Gamma_x0, self.Xi_Gamma_x0, derivative_orders=((0,0),(0,0),(0,0))))
+                F += self.hparams['gamma_stabilization']*kron(assemble_B(self.psi, self.phi, self.W_Gamma_x0, self.Xi_Gamma_x0, derivative_orders=((0,0),(0,0))))
                 # Stabilization term at xL
-                T_i = add_tuples(T_i, self.hparams['gamma_stabilization']*assemble_T(theta, self.psi, self.phi, self.W_Gamma_xL, self.Xi_Gamma_xL, derivative_orders=((0,0),(0,0),(0,0))))
-            F_i = kron_vecT(theta.u_m, T_i)
-            F = kron(F_i)
+                F += self.hparams['gamma_stabilization']*kron(assemble_B(self.psi, self.phi, self.W_Gamma_xL, self.Xi_Gamma_xL, derivative_orders=((0,0),(0,0))))
         return F
     
     def assemble_d(self, f, eta_y0, eta_yL, g_x0, g_xL):
@@ -169,8 +210,8 @@ class NeuralOperator(pl.LightningModule):
         d += assemble_L(self.psi, g_x0, self.W_Gamma_x0, self.Xi_Gamma_x0, derivative_orders=(1,0)) # addition because of minus sign of boundary normal sign at x0
         d -= assemble_L(self.psi, g_xL, self.W_Gamma_xL, self.Xi_Gamma_xL, derivative_orders=(1,0))
         if self.hparams.get('gamma_stabilization',0)!=0:
-            d -= self.hparams['gamma_stabilization']*assemble_L(self.psi, g_x0, self.W_Gamma_x0, self.Xi_Gamma_x0, derivative_orders=(0,0))
-            d -= self.hparams['gamma_stabilization']*assemble_L(self.psi, g_xL, self.W_Gamma_xL, self.Xi_Gamma_xL, derivative_orders=(0,0))
+            d += self.hparams['gamma_stabilization']*assemble_L(self.psi, g_x0, self.W_Gamma_x0, self.Xi_Gamma_x0, derivative_orders=(0,0))
+            d += self.hparams['gamma_stabilization']*assemble_L(self.psi, g_xL, self.W_Gamma_xL, self.Xi_Gamma_xL, derivative_orders=(0,0))
         d = d.flatten(start_dim=1)
         return d
     
@@ -181,23 +222,30 @@ class NeuralOperator(pl.LightningModule):
         Returns:
             None
         """ 
-        # Volume term
-        B_i = assemble_B(self.psi, self.phi, self.W_Omega, self.Xi_Omega, derivative_orders=((0,0),(1,1),(1,1)))
+        # # Volume term
+        # T_i = assemble_T(theta, self.psi, self.phi, self.W_Omega, self.Xi_Omega, derivative_orders=((0,0),(1,1),(1,1)))
+        # Volume term - derivative in x direction
+        T_i = assemble_B(self.psi, self.phi, self.W_Omega, self.Xi_Omega, derivative_orders=((1,0),(1,0)))
+        # Volume term - derivative in y direction
+        T_i = add_tuples(T_i, assemble_B(self.psi, self.phi, self.W_Omega, self.Xi_Omega, derivative_orders=((0,1),(0,1))))
+
         # Boundary term at x0 (coming from Neumann complement)
-        B_i = subtract_tuples(B_i, assemble_B(self.psi, self.phi, self.W_Gamma_x0, self.Xi_Gamma_x0, derivative_orders=((0,0),(0,0),(1,0))))
+        T_i = add_tuples(T_i, assemble_B(self.psi, self.phi, self.W_Gamma_x0, self.Xi_Gamma_x0, derivative_orders=((0,0),(1,0))))
         # Boundary term at xL (coming from Neumann complement)
-        B_i = subtract_tuples(B_i, assemble_B(self.psi, self.phi, self.W_Gamma_xL, self.Xi_Gamma_xL, derivative_orders=((0,0),(0,0),(1,0))))
+        T_i = subtract_tuples(T_i, assemble_B(self.psi, self.phi, self.W_Gamma_xL, self.Xi_Gamma_xL, derivative_orders=((0,0),(1,0))))
+
         # Boundary term at x0 (coming from Dirichlet complement)
-        B_i = subtract_tuples(B_i, assemble_B(self.psi, self.phi, self.W_Gamma_x0, self.Xi_Gamma_x0, derivative_orders=((0,0),(1,0),(0,0))))
+        T_i = add_tuples(T_i, assemble_B(self.psi, self.phi, self.W_Gamma_x0, self.Xi_Gamma_x0, derivative_orders=((1,0),(0,0))))
         # Boundary term at xL (coming from Dirichlet complement)
-        B_i = subtract_tuples(B_i, assemble_B(self.psi, self.phi, self.W_Gamma_xL, self.Xi_Gamma_xL, derivative_orders=((0,0),(1,0),(0,0))))
+        T_i = subtract_tuples(T_i, assemble_B(self.psi, self.phi, self.W_Gamma_xL, self.Xi_Gamma_xL, derivative_orders=((1,0),(0,0))))
+
         if self.hparams.get('gamma_stabilization',0)!=0:
             # Stabilization term at x0
-            B_i = add_tuples(B_i, self.hparams['gamma_stabilization']*assemble_B(self.psi, self.phi, self.W_Gamma_x0, self.Xi_Gamma_x0, derivative_orders=((0,0),(0,0),(0,0))))
+            T_i = add_tuples(T_i, self.hparams['gamma_stabilization']*assemble_B(self.psi, self.phi, self.W_Gamma_x0, self.Xi_Gamma_x0, derivative_orders=((0,0),(0,0))))
             # Stabilization term at xL
-            B_i = add_tuples(B_i, self.hparams['gamma_stabilization']*assemble_B(self.psi, self.phi, self.W_Gamma_xL, self.Xi_Gamma_xL, derivative_orders=((0,0),(0,0),(0,0))))
-        F_0 = kron(B_i)
-        A_0_i = kron_inv(B_i)
+            T_i = add_tuples(T_i, self.hparams['gamma_stabilization']*assemble_B(self.psi, self.phi, self.W_Gamma_xL, self.Xi_Gamma_xL, derivative_orders=((0,0),(0,0))))
+        F_0 = kron(T_i)
+        A_0_i = kron_inv(T_i)
         A_0 = kron(A_0_i)
         return F_0, A_0
     
@@ -438,12 +486,12 @@ class NeuralOperator(pl.LightningModule):
         Returns:
             torch.Tensor: Predicted output u_q_hat, shape (N_samples,)+(x.shape[0],).
         """
-        # if self.hparams.get('Neumannseries', False)==False:
-        #     F_inv = torch.linalg.inv(F)
-        # if self.hparams.get('Neumannseries', False)==True:
-        #     F_inv = Neumann_preconditioner_forward(self, F)
-        # u_m_hat = opt_einsum.contract('nij,nj->ni', F_inv, d)
-        u_m_hat = torch.linalg.solve(F, d)
+        if self.hparams.get('Neumannseries', False)==False:
+            F_inv = torch.linalg.inv(F)
+        if self.hparams.get('Neumannseries', False)==True:
+            F_inv = Neumann_preconditioner_forward(self, F)
+        u_m_hat = opt_einsum.contract('nij,nj->ni', F_inv, d)
+        # u_m_hat = torch.linalg.solve(F, d)
         return u_m_hat
     
     def FEM_simforward(self, theta, f, eta_y0, eta_yL, g_x0, g_xL, u):
