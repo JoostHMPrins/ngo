@@ -49,33 +49,28 @@ class DataModule(pl.LightningDataModule):
         # Define a dummy model, used to discretize and preprocess training data
         dummymodel = NeuralOperator(self.hparams)
         #Generate manufactured solutions
-        u = ManufacturedSolution(self.N_samples, # Number of samples
-                                 self.hparams['d'], # Number of spatial dimensions
-                                 self.hparams['l_min'], # Minimum GRF length scale per dimension
-                                 self.hparams['l_max'], # Maximum GRF length scale per dimension
-                                 self.hparams['b_u_min'], # minimum solution field mean
-                                 self.hparams['b_u_max'], # maximum solution field mean
-                                 self.hparams['c_u_min'], # minimum solution field standard deviation
-                                 self.hparams['c_u_max'], # maximum solution field standard deviation
-                                 self.hparams['device'], # Device to perform computations on
-                                 self.hparams['dtype'], # Data type for computations
-                                 self.hparams['n_RBF']) # Number of basis functions per dimension for data generation
-        theta = ManufacturedSolution(self.N_samples, # Number of samples
-                            self.hparams['d'], # Number of spatial dimensions
-                            self.hparams['l_min'], # Minimum GRF length scale per dimension
-                            self.hparams['l_max'], # Maximum GRF length scale per dimension
-                            self.hparams['b_theta_min'], # minimum coefficient field mean
-                            self.hparams['b_theta_max'], # maximum coefficient field mean
-                            self.hparams['c_theta_min'], # minimum coefficient field standard deviation
-                            self.hparams['c_theta_max'], # maximum coefficient field standard deviation
-                            self.hparams['device'], # Device to perform computations on
-                            self.hparams['dtype'], # Data type for computations
-                            self.hparams['n_RBF']) # Number of basis functions per dimension for data generation
-        f = Forcing(theta, u)
-        n_y0 = torch.tensor([0,-1], dtype=self.hparams['dtype'], device=self.hparams['device']) #Normal vector at y0 boundary
-        n_yL = torch.tensor([0,1], dtype=self.hparams['dtype'], device=self.hparams['device']) #Normal vector at yL boundary
-        eta_y0, eta_yL = NeumannBC(n_y0, theta, u), NeumannBC(n_yL, theta, u)
-        g_x0, g_xL = DirichletBC(theta, u), DirichletBC(theta, u)
+        manufacturedsolutions = ManufacturedSolutions(self.N_samples,
+                                                    hparams['d'],
+                                                    hparams['l_min'],
+                                                    hparams['l_max'],
+                                                    hparams['b_u_min'],
+                                                    hparams['b_u_max'],
+                                                    hparams['c_u_min'],
+                                                    hparams['c_u_max'],
+                                                    hparams['b_theta_min'],
+                                                    hparams['b_theta_max'],
+                                                    hparams['c_theta_min'],
+                                                    hparams['c_theta_max'],
+                                                    hparams['device'],
+                                                    hparams['dtype'],
+                                                    hparams['n_RBF'])
+        theta = manufacturedsolutions.theta
+        f = manufacturedsolutions.f
+        eta_y0 = manufacturedsolutions.eta_y0
+        eta_yL = manufacturedsolutions.eta_yL
+        g_x0 = manufacturedsolutions.g_x0
+        g_xL = manufacturedsolutions.g_xL
+        u = manufacturedsolutions.u
         #Discretize input functions
         self.theta_q, self.theta_x0_q, self.theta_xL_q, self.f_q, self.eta_y0_q, self.eta_yL_q, self.g_x0_q, self.g_xL_q = dummymodel.discretize_input_functions(theta, f, eta_y0, eta_yL, g_x0, g_xL)
         self.u_q = dummymodel.discretize_output_function(u)

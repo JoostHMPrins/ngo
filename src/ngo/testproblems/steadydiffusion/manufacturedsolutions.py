@@ -102,3 +102,52 @@ class DirichletBC:
                 The computed Dirichlet boundary condition at the input locations, shape (num_boundary_points_1, num_boundary_points_2, ..., num_boundary_points_d).
         """
         return self.theta.forward(X)*self.u.forward(X)
+    
+
+class ManufacturedSolutions:
+    """
+    Container for manufactured solutions and derived functions for the steady diffusion equation.
+    """ 
+    def __init__(self, N_samples, d, l_min, l_max, b_u_min, b_u_max, c_u_min, c_u_max, b_theta_min, b_theta_max, c_theta_min, c_theta_max, device, dtype, n_RBF):
+        """
+        Args:
+            N_samples (int): Number of samples to generate.
+            d (int): Number of spatial dimensions.
+            l_min (float): Minimum GRF length scale per dimension.
+            l_max (float): Maximum GRF length scale per dimension.
+            b_u_min (float): Minimum solution field mean.
+            b_u_max (float): Maximum solution field mean.
+            c_u_min (float): Minimum solution field standard deviation.
+            c_u_max (float): Maximum solution field standard deviation.
+            device (str): Device to perform computations on.
+            dtype (torch.dtype): Data type for computations.
+            n_RBF (int): Number of basis functions per dimension for GRF interpolation.
+        """
+        super().__init__()
+        self.u = ManufacturedSolution(N_samples, # Number of samples
+                                 d, # Number of spatial dimensions
+                                 l_min, # Minimum GRF length scale per dimension
+                                 l_max, # Maximum GRF length scale per dimension
+                                 b_u_min, # minimum solution field mean
+                                 b_u_max, # maximum solution field mean
+                                 c_u_min, # minimum solution field standard deviation
+                                 c_u_max, # maximum solution field standard deviation
+                                 device, # Device to perform computations on
+                                 dtype, # Data type for computations
+                                 n_RBF) # Number of basis functions per dimension for GRF interpolation
+        self.theta = ManufacturedSolution(N_samples, # Number of samples
+                            d, # Number of spatial dimensions
+                            l_min, # Minimum GRF length scale per dimension
+                            l_max, # Maximum GRF length scale per dimension
+                            b_theta_min, # minimum coefficient field mean
+                            b_theta_max, # maximum coefficient field mean
+                            c_theta_min, # minimum coefficient field standard deviation
+                            c_theta_max, # maximum coefficient field standard deviation
+                            device, # Device to perform computations on
+                            dtype, # Data type for computations
+                            n_RBF) # Number of basis functions per dimension for data generation
+        self.f = Forcing(self.theta, self.u)
+        n_y0 = torch.tensor([0,-1], dtype=dtype, device=device) #Normal vector at y0 boundary
+        n_yL = torch.tensor([0,1], dtype=dtype, device=device) #Normal vector at yL boundary
+        self.eta_y0, self.eta_yL = NeumannBC(n_y0, self.theta, self.u), NeumannBC(n_yL, self.theta, self.u)
+        self.g_x0, self.g_xL = DirichletBC(self.theta, self.u), DirichletBC(self.theta, self.u)

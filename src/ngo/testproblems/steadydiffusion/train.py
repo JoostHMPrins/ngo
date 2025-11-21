@@ -44,12 +44,12 @@ hparams['batch_size'] = 100
 hparams['epochs'] = 10
 
 #Bases
-hparams['n'] = (10,10) #Number of basis functions per dimension
+hparams['N_i'] = (10,10) #Number of basis functions per dimension
 hparams['p'] = (3,3) #Polynomial order per dimension (in case of B-spline basis)
 hparams['C'] = (2,2) #Continuity along elements per dimension (in case of B-spline basis)
 hparams['N'] = np.prod(hparams['n']) #Number of  basis degrees of freedom
-hparams['test_bases'] = [BSplineBasis1D(n=hparams['n'][0], p=hparams['p'][0], C=hparams['C'][0]),
-                         BSplineBasis1D(n=hparams['n'][1], p=hparams['p'][1], C=hparams['C'][1])] #See basisfunctions.py for the options
+hparams['test_bases'] = [BSplineBasis1D(n=hparams['N_i'][0], p=hparams['p'][0], C=hparams['C'][0]),
+                         BSplineBasis1D(n=hparams['N_i'][1], p=hparams['p'][1], C=hparams['C'][1])] #See basisfunctions.py for the options
 hparams['trial_bases'] = hparams['test_bases']
 
 #Quadrature
