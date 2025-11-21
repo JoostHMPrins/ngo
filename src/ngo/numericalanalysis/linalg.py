@@ -33,11 +33,29 @@ def kron_matvec(A_i, x):
     return b
 
 
+def kron_innerproduct(x, A_i, y):
+    """Compute the inner product <x, (A_0 ⊗ A_1 ⊗ ... ⊗ A_{d-1}) y>
+    for a batch of Kronecker-product matrices and vectors without forming
+    the full Kronecker product.
+    Args:
+        x: Tensor of shape (N_samples, n_0, n_1, ..., n_{d-1})
+        A_i: Tuple of d Tensors, each of shape (N_samples, n_i, n_i)
+        y: Tensor of shape (N_samples, n_0, n_1, ..., n_{d-1})
+    Returns:
+        inner_products: Tensor of shape (N_samples,)
+    """
+    # Compute Ay = (A_0 ⊗ A_1 ⊗ ... ⊗ A_{d-1}) y
+    Ay = kron_matvec(A_i, y)
+    # Compute inner products <x, Ay>
+    xAy = opt_einsum.contract('bi...,bi...->b', x, Ay)
+    return xAy
+
+
 def kron_solve(A_i, b, left=False):
-    """Solve a (batched) Kronecker-product triangular system.
+    """Solve a (batched) Kronecker-product system.
     Computes the equivalent of x = (A_0 ⊗ A_1 ⊗ ... ⊗ A_{d-1})^{-1} @ b without
     forming the full Kronecker product. The operation is performed by a
-    sequence of triangular solves and supports an optional leading batch
+    sequence of solves and supports an optional leading batch
     dimension.
 
     Inputs:
@@ -45,9 +63,7 @@ def kron_solve(A_i, b, left=False):
          (n_i, n_i) for i in [0, d-1].
     b: Right-hand side vector reshaped into Kronecker product dimensions as
        (B, N_0, N_1, ..., N_{d-1}) 
-    upper: Boolean indicating whether the factors A_i are upper or lower
-           triangular.
-    left: Boolean indicating whether to solve left or right triangular systems.
+    left: Boolean indicating whether to solve left or right  systems.
 
     Returns:
     x: Solution vector with shape (B, N_0, N_1, ..., N_{d-1}).
@@ -63,7 +79,7 @@ def kron_solve(A_i, b, left=False):
         # print(i)
         # # Move the current dimension to the last position
         x = x.moveaxis(1,-1)
-        # Solve the triangular system for the current dimension
+        # Solve the system for the current dimension
         x = torch.linalg.solve(A_i[i], x, left=left)
     return x
 
@@ -115,6 +131,23 @@ def kron_inv(A_i):
     for i in range(len(A_i)):
         A_inv += (torch.linalg.inv(A_i[i]),)
     return A_inv
+
+
+def integrate(W_q, f_q):
+    """
+    Integrate a function represented at quadrature points using given quadrature weights.
+
+    Args:
+        W_q (tuple of torch.Tensor): A tuple containing d tensors of quadrature weights. Each tensor should have shape (Q_i,).
+        f_q (torch.Tensor): A tensor representing the function values at quadrature points. Shape: (B, Q_0, Q_1, ..., Q_{d-1}).
+
+    Returns:
+        torch.Tensor: The integrated values. Shape: (B,).
+    """
+    integral = f_q
+    for i in range(len(W_q)):
+        integral = opt_einsum.contract('q,Bq...->B...', W_q[i], integral)
+    return integral
 
 
 def assemble_L(psi, f, W_q, X_q, derivative_orders):
@@ -218,9 +251,9 @@ def assemble_T(theta, psi, phi, W_q, X_q, derivative_orders):
         # Set derivative order for theta
         operation = derivative_orders[0][i]
         if operation == 0:
-            Theta_i = theta.bases[i].forward(X_q[i]) #shape (B,n,q)
+            Theta_i = theta.basis.bases[i].forward(X_q[i]) #shape (B,n,q)
         elif operation == 1:
-            Theta_i = theta.bases[i].grad(X_q[i]) #shape (B,n,q)
+            Theta_i = theta.basis.bases[i].grad(X_q[i]) #shape (B,n,q)
         # psi
         # Set derivative order for psi
         operation = derivative_orders[1][i]
