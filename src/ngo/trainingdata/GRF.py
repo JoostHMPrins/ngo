@@ -47,7 +47,7 @@ class GRF:
         self.d = self.lambdas.shape[-1]
         self.n = n  #Number of grid points in each dimension
         if n==None:
-            self.l_Dx_ratio = 1 #Number of points per length scale
+            self.l_Dx_ratio = 2 #Number of points per length scale
             self.n = tuple((self.l_Dx_ratio*(1.0 / self.lambdas).ceil().long() + 1).tolist()) #Number of grid points in each dimension
         self.N = int(torch.prod(torch.tensor(self.n, dtype=self.dtype, device=self.device)))  #Total number of grid points
         self.b = torch.tensor(b, dtype=self.dtype, device=self.device)
@@ -114,6 +114,9 @@ class GRF:
               (K_0 ⊗ K_1 ⊗ ... ⊗ K_{d-1}) @ f_m = f
         """
         K_i = self.compute_covariances()
+        # Add jitter
+        K_i = tuple(K + 1e-6*torch.eye(K.shape[0], device=self.device, dtype=self.dtype) for K in K_i)
+        # Cholesky factorization
         L_i = tuple(torch.linalg.cholesky(K) for K in K_i)
         # Sample standard normal variables
         Z = torch.randn(size=(self.N_samples,*self.n), device=self.device, dtype=self.dtype)
