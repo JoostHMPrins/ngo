@@ -3,44 +3,79 @@
 # 3rd Party
 import torch
 from torch.nn import functional as F
-import numpy as np
 import opt_einsum
 
-def weightedrelativeL2(w, u_hat, u):
+# Local
+from ngo.numericalanalysis.linalg import integrate, kron_innerproduct
+
+
+def relativeL2norm_set(W, u_q_hat, u_q):
     """
-    Compute the weighted relative L2 loss between predicted and true values. Used as training loss.
+    Compute the weighted relative L2 norm of the difference between predicted and true values for each sample in the batch.
 
     Args:
-        w (torch.Tensor): Weights for each dimension. Shape: (n_features,).
-        u_hat (torch.Tensor): Predicted values. Shape: (batch_size, n_features).
-        u (torch.Tensor): True values. Shape: (batch_size, n_features).
+        W (torch.Tensor): Tuple of weights for each dimension. Shape: (Q_i,).
+        u_q_hat (torch.Tensor): Predicted values. Shape: (B, Q_0, ..., Q_{d-1}).
+        u_q (torch.Tensor): True values. Shape: (B, Q_0, ..., Q_{d-1}).
 
     Returns:
-        torch.Tensor: Weighted relative L2 loss. Shape: ().
+        torch.Tensor: Weighted relative L2 norms. Shape: (B)
     """
-    L22_diff = torch.sum(w[None,:]*(u_hat - u)**2, axis=-1)
-    L2_diff = L22_diff**(1/2)
-    L22_norm = torch.sum(w[None,:]*(u)**2, axis=-1)
-    L2_norm = L22_norm**(1/2)
-    return torch.mean(L2_diff/torch.maximum(L2_norm, 1e-7*torch.ones_like(L2_norm)))
+    L2_diff = integrate(W, (u_q_hat - u_q)**2)**(1/2)
+    L2_norm = integrate(W, u_q**2)**(1/2)
+    return L2_diff/torch.clamp(L2_norm, min=1e-7)
 
-def weightedrelativeL2_set(w, u_hat, u):
+
+def relativeL2norm(W, u_q_hat, u_q):
     """
-    Compute the weighted relative L2 loss for a set of predictions and true values. Used upon testing the model.
+    Compute the batch-averaged weighted relative L2 norm of the difference between predicted and true values.
 
     Args:
-        w (np.ndarray): Weights for each dimension. Shape: (n_features,).
-        u_hat (np.ndarray): Predicted values. Shape: (batch_size, n_features).
-        u (np.ndarray): True values. Shape: (batch_size, n_features).
+        W (torch.Tensor): Tuple of weights for each dimension. Shape: (Q_i,).
+        u_q_hat (torch.Tensor): Predicted values. Shape: (B, Q_0, ..., Q_{d-1}).
+        u_q (torch.Tensor): True values. Shape: (B, Q_0, ..., Q_{d-1}).
+    
+    Returns:
+        torch.Tensor: Weighted relative L2 norm. Shape: ().
+    """
+    # Compute weighted relative L2 loss
+    return torch.mean(relativeL2norm_set(W, u_q_hat, u_q))
+
+
+def relativeL2norm_coefficients_set(M_i, u_m_hat, u_m):
+    """
+    Compute the weighted relative L2 norm in coefficient space for each sample in the batch.
+
+    Args:
+        M_i (list of torch.Tensor): List of mass matrices for each dimension. Each of shape (N_i, N_i).
+        u_m_hat (torch.Tensor): Predicted coefficients. Shape: (B, N).
+        u_m (torch.Tensor): True coefficients. Shape: (B, N).
 
     Returns:
-        np.ndarray: Weighted relative L2 loss for each sample. Shape: (batch_size,).
+        torch.Tensor: Weighted relative L2 norms. Shape: (B).
     """
-    L22_diff = np.sum(w[None,:]*(u_hat - u)**2, axis=-1)
-    L2_diff = L22_diff**(1/2)
-    L22_norm = np.sum(w[None,:]*(u)**2, axis=-1)
-    L2_norm = L22_norm**(1/2)
-    return L2_diff/np.maximum(L2_norm, 1e-7*np.ones_like(L2_norm))
+    Du = u_m_hat - u_m
+    L2_diff = kron_innerproduct(Du, M_i, Du)**(1/2)
+    L2_norm = kron_innerproduct(u_m, M_i, u_m)**(1/2)
+    relativeL2norm = L2_diff / torch.clamp(L2_norm, min=1e-7)
+    return relativeL2norm
+
+
+def relativeL2norm_coefficients(M_i, u_m_hat, u_m):
+    """
+    Compute the batch-averaged weighted relative L2 norm in coefficient space.
+
+    Args:
+        M_i (list of torch.Tensor): List of mass matrices for each dimension. Each of shape (N_i, N_i).
+        u_m_hat (torch.Tensor): Predicted coefficients. Shape: (B, N).
+        u_m (torch.Tensor): True coefficients. Shape: (B, N).
+
+    Returns:
+        torch.Tensor: Weighted relative L2 norm. Shape: ().
+    """
+    # Compute weighted relative L2 loss
+    return torch.mean(relativeL2norm_coefficients_set(M_i, u_m_hat, u_m))
+
 
 def matrixnorm(A_hat, A):
     """
@@ -57,6 +92,7 @@ def matrixnorm(A_hat, A):
     Frobenius = torch.norm(A_hat - A, dim=(-1,-2), p=p)
     return torch.mean(Frobenius)
 
+
 def relativematrixnorm(A_hat, A):
     """
     Compute the relative Frobenius norm of the difference between two matrices.
@@ -72,23 +108,5 @@ def relativematrixnorm(A_hat, A):
     Frobenius = torch.norm(A_hat - A, dim=(-1,-2), p=p)
     norm = torch.norm(A, dim=(-1,-2), p=p)
     return torch.mean(Frobenius/torch.maximum(norm, 1e-7*torch.ones_like(norm)))
-
-def relativeL2_coefficients(M, u_m_hat, u_m):
-    """
-    Compute the relative L2 loss when a model is trained on projection coefficients instead of on solution values.
-
-    Args:
-        M (torch.Tensor): Mass matrix corresponding to the used basis. Shape: (n_features, n_features).
-        u_m_hat (torch.Tensor): Predicted coefficients. Shape: (batch_size, n_features).
-        u_m (torch.Tensor): True coefficients. Shape: (batch_size, n_features).
-        
-    Returns:
-        torch.Tensor: Relative L2 loss for coefficients. Shape: ().
-    """
-    Du_m = u_m_hat - u_m
-    numerator = opt_einsum.contract('Nm,mn,Nn', Du_m, M, Du_m)**(1/2)
-    denominator = opt_einsum.contract('Nm,mn,Nn', u_m, M, u_m)**(1/2)
-    relativeL2 = numerator/torch.maximum(denominator, 1e-7*torch.ones_like(denominator))
-    return torch.mean(relativeL2)
 
 
