@@ -12,7 +12,7 @@ import opt_einsum
 
 # Local
 from ngo.testproblems.timedependentdiffusion.NeuralOperator import NeuralOperator
-from ngo.testproblems.timedependentdiffusion.manufacturedsolutions import ManufacturedSolutionsSet
+from ngo.testproblems.timedependentdiffusion.manufacturedsolutions import *
 
 class DataModule(pl.LightningDataModule):
     """
@@ -53,34 +53,48 @@ class DataModule(pl.LightningDataModule):
         self.N_samples = self.hparams['N_samples_train'] + self.hparams['N_samples_val']
         dummymodel = NeuralOperator(self.hparams)
         # Generate input and output functions
-        print('Generating functions...')
-        dataset = ManufacturedSolutionsSet(N_samples=self.N_samples, variables=self.hparams['variables'], l_min=self.hparams['l_min'], l_max=self.hparams['l_max'])
-        theta = dataset.theta
-        f = dataset.f
-        eta_y0 = dataset.eta_y0
-        eta_yL = dataset.eta_yL
-        g_x0 = dataset.g_x0
-        g_xL = dataset.g_xL
-        u = dataset.u
-        u0 = dataset.u0
+        manufacturedsolutions = ManufacturedSolutions(self.N_samples,
+                                                    hparams['d'],
+                                                    hparams['l_min'],
+                                                    hparams['l_max'],
+                                                    hparams['b_u_min'],
+                                                    hparams['b_u_max'],
+                                                    hparams['c_u_min'],
+                                                    hparams['c_u_max'],
+                                                    hparams['b_theta_min'],
+                                                    hparams['b_theta_max'],
+                                                    hparams['c_theta_min'],
+                                                    hparams['c_theta_max'],
+                                                    hparams['device'],
+                                                    hparams['dtype'],
+                                                    hparams['n_RBF'])
+        theta = manufacturedsolutions.theta
+        f = manufacturedsolutions.f
+        eta_y0 = manufacturedsolutions.eta_y0
+        eta_yL = manufacturedsolutions.eta_yL
+        g_x0 = manufacturedsolutions.g_x0
+        g_xL = manufacturedsolutions.g_xL
+        u = manufacturedsolutions.u
+        u0 = manufacturedsolutions.u0
         #Discretize input functions
         print('Discretizing input functions...')
-        self.theta_q, self.theta_x0_q, self.theta_xL_q, self.f_q, self.eta_y0_q, self.eta_yL_q, self.g_x0_q, self.g_xL_q, self.u0_t0_q = dummymodel.discretize_input_functions(theta, f, eta_y0, eta_yL, g_x0, g_xL, u0)
+        if dummymodel.hparams['modeltype']=='NN' or dummymodel.hparams['modeltype']=='DeepONet' or dummymodel.hparams['modeltype']=='VarMiON':
+            self.theta_q, self.f_q, self.eta_y0_q, self.eta_yL_q, self.g_x0_q, self.g_xL_q, self.u0_t0_q = dummymodel.discretize_input_functions(theta, f, eta_y0, eta_yL, g_x0, g_xL, u0)
         if dummymodel.hparams['modeltype']=='model NGO' or dummymodel.hparams['modeltype']=='data NGO':
             print('Assembling F...')
-            self.F = dummymodel.compute_F(self.theta_q, self.theta_x0_q, self.theta_xL_q)/self.hparams['Dt']
+            self.F = dummymodel.assemble_F(theta)/self.hparams['Dt']
             print('Assembling d...')
-            self.d = dummymodel.compute_d(self.f_q, self.eta_y0_q, self.eta_yL_q, self.g_x0_q, self.g_xL_q, self.u0_t0_q)/self.hparams['Dt']
-            self.d_x = dummymodel.compute_d_x(self.f_q, self.eta_y0_q, self.eta_yL_q, self.g_x0_q, self.g_xL_q, self.u0_t0_q)/self.hparams['Dt']
+            self.d = dummymodel.assemble_d(f, eta_y0, eta_yL, g_x0, g_xL, u0)/self.hparams['Dt']
+            self.d_x = dummymodel.assemble_d_x(f, eta_y0, eta_yL, g_x0, g_xL)/self.hparams['Dt']
             print('Calculating conserved quantity...')
-            self.C = dummymodel.compute_C(self.f_q, self.eta_y0_q, self.eta_yL_q, self.g_x0_q, self.g_xL_q, self.u0_t0_q)/self.hparams['Dt']
-            self.C_m = dummymodel.compute_C_m(self.theta_x0_q, self.theta_xL_q)/self.hparams['Dt']
-            self.theta_bar = opt_einsum.contract('q,Nq->N', dummymodel.w_OmegaT, self.theta_q)/self.hparams['Dt']
-            self.u_0_m = dummymodel.project_on_psi_tT(self.u0_t0_q)
+            self.C = dummymodel.compute_C(f, eta_y0, eta_yL, g_x0, g_xL, u0)/self.hparams['Dt']
+            self.C_m = dummymodel.compute_C_m(theta)/self.hparams['Dt']
+            self.theta_bar = theta.basis.integrate(theta.u_m, dummymodel.W_OmegaT, dummymodel.Xi_OmegaT)/self.hparams['Dt']
+            self.u_0_m = dummymodel.project_initial_condition(u0)
         print('Discretizing output function...')
         self.u = dummymodel.discretize_output_function(u)    
         if dummymodel.hparams['output_coefficients']==True:
-            self.u = dummymodel.project_output_function(self.u)
+            self.u = dummymodel.project_output_function(u)
 
     def setup(self, stage=None):
         """

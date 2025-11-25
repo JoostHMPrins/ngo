@@ -1,170 +1,182 @@
 # Copyright 2025 Joost Prins
 
 # 3rd Party
-import numpy as np
-import opt_einsum
 import torch
+import opt_einsum
 
-# Local
-from ngo.trainingdata.GRF import GRF
+#Local
+from ngo.trainingdata.GRF import ManufacturedSolution
 from ngo.numericalanalysis.basisfunctions import GaussianRBFBasis, TensorProductBasis
-    
+
 
 class Forcing:
+    """
+    Forcing term for the steady diffusion equation, given a manufactured diffusion coefficient theta and solution u.
+    """
     def __init__(self, theta, u):
+        """
+        Args: 
+            theta : ManufacturedSolution
+                Manufactured solution representing the diffusion coefficient.
+            u : ManufacturedSolution
+                Manufactured solution representing the solution to the diffusion equation.
+        """
         super().__init__()
         self.theta = theta
         self.u = u
     
-    def forward(self, i):
-        def function(x):
-            return self.u.grad(i)(x)[:,0] - self.theta.forward(i)(x)*np.sum(self.u.d2dxi2(i)(x)[:,1:], axis=-1) - np.sum(self.theta.grad(i)(x)[:,1:]*self.u.grad(i)(x)[:,1:], axis=-1) 
-        return function
+    def forward(self, X):
+        """
+        Forward pass to compute the forcing term at locations X.
 
+        Args:
+            X : tuple of torch.Tensor
+                Input locations where the forcing term is evaluated, all of shape (Q_i,).
+
+        Returns:
+            torch.Tensor
+                The computed forcing term at the input locations, shape (num_points_1, num_points_2, ..., num_points_d).
+        """
+        return self.u.grad(X)[:,:,:,:,0] - self.theta.forward(X)*torch.sum(self.u.laplacian(X)[:,:,:,:,1:], axis=-1) - torch.sum(self.theta.grad(X)[:,:,:,:,1:]*self.u.grad(X)[:,:,:,:,1:], axis=-1)
+    
 
 class NeumannBC:
+    """
+    Neumann boundary condition for the steady diffusion equation, given a manufactured diffusion coefficient theta and solution u.
+    """
     def __init__(self, n, theta, u):
+        """
+        Args:
+            n : torch.Tensor
+                Normal vectors at the boundary, shape (d, num_boundary_points).
+            theta : ManufacturedSolution
+                Manufactured solution representing the diffusion coefficient.
+            u : ManufacturedSolution
+                Manufactured solution representing the solution to the diffusion equation.
+        """
         super().__init__()
         self.n = n
         self.theta = theta
         self.u = u
 
-    def forward(self, i):
-        def function(x):
-            return opt_einsum.contract('i,N,Ni->N', self.n, self.theta.forward(i)(x), self.u.grad(i)(x)[:,1:])
-        return function
+    def forward(self, X):
+        """
+        Forward pass to compute the Neumann boundary condition at locations X.
+        Args:
+            X : tuple of torch.Tensor
+                Input locations where the Neumann boundary condition is evaluated, all of shape (num_boundary_points_i,).
+
+        Returns:
+            torch.Tensor
+                The computed Neumann boundary condition at the input locations, shape (num_boundary_points_1, num_boundary_points_2, ..., num_boundary_points_d).
+        """
+        return opt_einsum.contract('i,N...,N...i->N...', self.n, self.theta.forward(X), self.u.grad(X)[:,:,:,:,1:])
     
 
 class DirichletBC:
+    """
+    Dirichlet boundary condition for the steady diffusion equation, given a manufactured diffusion coefficient theta and solution u.
+    """
     def __init__(self, theta, u):
+        """
+        Args:
+            theta : ManufacturedSolution
+                Manufactured solution representing the diffusion coefficient.
+            u : ManufacturedSolution
+                Manufactured solution representing the solution to the diffusion equation.
+        """
         super().__init__()
         self.theta = theta
         self.u = u
 
-    def forward(self, i):
-        def function(x):
-            return self.theta.forward(i)(x)*self.u.forward(i)(x)
-        return function
+    def forward(self, X):
+        """
+        Forward pass to compute the Dirichlet boundary condition at locations X.
+
+        Args:
+            X : tuple of torch.Tensor
+                Input locations where the Dirichlet boundary condition is evaluated, all of shape (num_boundary_points_i,).
+                
+        Returns:
+            torch.Tensor
+                The computed Dirichlet boundary condition at the input locations, shape (num_boundary_points_1, num_boundary_points_2, ..., num_boundary_points_d).
+        """
+        return self.theta.forward(X)*self.u.forward(X)
     
 
 class IC:
+    """
+    Initial condition for the steady diffusion equation, given a manufactured solution u.
+    """
     def __init__(self, u):
+        """
+        Args:
+            u : ManufacturedSolution
+                Manufactured solution representing the solution to the diffusion equation.
+        """
         super().__init__()
         self.u = u
 
-    def forward(self, i):
-        def function(x):
-            return self.u.forward(i)(x)
-        return function
+    def forward(self, X):
+        """
+        Forward pass to compute the initial condition at locations X.
+
+        Args:
+            X : tuple of torch.Tensor
+                Input locations where the initial condition is evaluated, all of shape (num_initial_points_i,).
+
+        Returns:
+            torch.Tensor
+                The computed initial condition at the input locations, shape (num_initial_points_1, num_initial_points_2, ..., num_initial_points_d).
+        """
+        return self.u.forward(X)
     
 
-class ManufacturedSolutionsSet:
-    def __init__(self, N_samples, variables, l_min, l_max):
+class ManufacturedSolutions:
+    """
+    Container for manufactured solutions and derived functions for the steady diffusion equation.
+    """ 
+    def __init__(self, N_samples, d, l_min, l_max, b_u_min, b_u_max, c_u_min, c_u_max, b_theta_min, b_theta_max, c_theta_min, c_theta_max, device, dtype, n_RBF):
+        """
+        Args:
+            N_samples (int): Number of samples to generate.
+            d (int): Number of spatial dimensions.
+            l_min (float): Minimum GRF length scale per dimension.
+            l_max (float): Maximum GRF length scale per dimension.
+            b_u_min (float): Minimum solution field mean.
+            b_u_max (float): Maximum solution field mean.
+            c_u_min (float): Minimum solution field standard deviation.
+            c_u_max (float): Maximum solution field standard deviation.
+            device (str): Device to perform computations on.
+            dtype (torch.dtype): Data type for computations.
+            n_RBF (int): Number of basis functions per dimension for GRF interpolation.
+        """
         super().__init__()
-        self.N_samples = N_samples #Number of samples
-        self.variables = variables
-        self.d = len(l_min) #axisensionality of problem
-        self.l_min = l_min #Minimum GRF length scale
-        self.l_max = l_max #Maximum GRF length scale
-        self.generate_manufactured_solutions()
-        # self.sensornodes = np.random.uniform(0,1,size=(10000,self.d))
-        # self.evaluate_functions_at_sensors()
-
-    def generate_manufactured_solutions(self):
-        #Empty lists to be filled with functions
-        thetas = []
-        us = []
-        fs = []
-        eta_y0s = []
-        eta_yLs = []
-        g_x0s = []
-        g_xLs = []
-        u0s = []
-        gradus = []
-        #Lists of length scales l, scaling factors c and offsets b
-        l_theta = np.random.uniform(self.l_min/np.sqrt(2),self.l_max/np.sqrt(2), size=(self.N_samples,self.d))
-        c_theta = np.random.uniform(0,0.2,size=self.N_samples)
-        b_theta = np.ones(self.N_samples)
-        l_u = np.random.uniform(self.l_min/np.sqrt(2),self.l_max/np.sqrt(2), size=(self.N_samples,self.d))
-        c_u = np.random.uniform(0,1, size=self.N_samples)
-        b_u = np.random.uniform(-1,1, size=self.N_samples)
-        for i in range(1,len(self.variables)):
-            if self.variables[i]==self.variables[i-1]:
-                l_theta[:,i] = l_theta[:,i-1]
-                l_u[:,i] = l_u[:,i-1]
-        #Neumann boundary normals
-        n_b = np.array([0,-1])
-        n_t = np.array([0,1])
-        if self.l_min==self.l_max:
-            #Generate batches of GRFs with the same length scale
-            theta = ScaledGRF(N_samples=self.N_samples, l=self.l_min, c=c_theta, b=b_theta)
-            u = ScaledGRF(N_samples=self.N_samples, l=self.l_min, c=c_u, b=b_u)
-            f = Forcing(theta, u)
-            eta_y0 = NeumannBC(n_b, theta, u)
-            eta_yL = NeumannBC(n_t, theta, u)
-            g_x0 = DirichletBC(theta, u)
-            g_xL = DirichletBC(theta, u)
-            u0 = IC(u)
-            for i in range(self.N_samples):
-                #Collect functions
-                thetas.append(theta.forward(i))
-                us.append(u.forward(i))
-                fs.append(f.forward(i))
-                eta_y0s.append(eta_y0.forward(i))
-                eta_yLs.append(eta_yL.forward(i))
-                g_x0s.append(g_x0.forward(i))
-                g_xLs.append(g_xL.forward(i))
-                u0s.append(u0.forward(i))
-                gradus.append(u.grad(i))
-        if self.l_min!=self.l_max:
-            for i in range(self.N_samples):
-                # print(i)
-                #Define functions
-                theta = ScaledGRF(N_samples=1, l=l_theta[i], c=[c_theta[i]], b=[b_theta[i]])
-                u = ScaledGRF(N_samples=1, l=l_u[i], c=[c_u[i]], b=[b_u[i]])
-                f = Forcing(theta, u)
-                eta_y0 = NeumannBC(n_b, theta, u)
-                eta_yL = NeumannBC(n_t, theta, u)
-                g_x0 = DirichletBC(theta, u)
-                g_xL = DirichletBC(theta, u)
-                u0 = IC(u)
-                #Collect functions
-                thetas.append(theta.forward(0))
-                us.append(u.forward(0))
-                fs.append(f.forward(0))
-                eta_y0s.append(eta_y0.forward(0))
-                eta_yLs.append(eta_yL.forward(0))
-                g_x0s.append(g_x0.forward(0))
-                g_xLs.append(g_xL.forward(0))
-                u0s.append(u0.forward(0))
-                gradus.append(u.grad(0))
-        #Save set
-        self.theta = thetas
-        self.u = us
-        self.f = fs
-        self.eta_y0 = eta_y0s
-        self.eta_yL = eta_yLs
-        self.g_x0 = g_x0s
-        self.g_xL = g_xLs
-        self.u0 = u0s
-        self.gradu = gradus
-
-    def evaluate_functions_at_sensors(self):
-        self.theta_sensor = np.zeros((self.N_samples,self.sensornodes.shape[0]))
-        self.f_sensor = np.zeros((self.N_samples,self.sensornodes.shape[0]))
-        self.eta_y0_sensor = np.zeros((self.N_samples,self.sensornodes.shape[0]))
-        self.eta_yL_sensor = np.zeros((self.N_samples,self.sensornodes.shape[0]))
-        self.g_x0_sensor = np.zeros((self.N_samples,self.sensornodes.shape[0]))
-        self.g_xL_sensor = np.zeros((self.N_samples,self.sensornodes.shape[0]))
-        self.u0_sensor = np.zeros((self.N_samples,self.sensornodes.shape[0]))
-        self.u_sensor = np.zeros((self.N_samples,self.sensornodes.shape[0]))
-        #Evaluate input functions at sensor nodes
-        for i in range(self.N_samples):
-            self.theta_sensor[i] = self.theta[i](self.sensornodes)
-            self.f_sensor[i] = self.f[i](self.sensornodes)
-            self.eta_y0_sensor[i] = self.eta_y0[i](self.sensornodes)
-            self.eta_yL_sensor[i] = self.eta_yL[i](self.sensornodes)
-            self.g_x0_sensor[i] = self.g_x0[i](self.sensornodes)
-            self.g_xL_sensor[i] = self.g_xL[i](self.sensornodes)
-            self.u0_sensor[i] = self.u0[i](self.sensornodes)
-            self.u_sensor[i] = self.u[i](self.sensornodes)
+        self.u = ManufacturedSolution(N_samples, # Number of samples
+                                 d, # Number of spatial dimensions
+                                 l_min, # Minimum GRF length scale per dimension
+                                 l_max, # Maximum GRF length scale per dimension
+                                 b_u_min, # minimum solution field mean
+                                 b_u_max, # maximum solution field mean
+                                 c_u_min, # minimum solution field standard deviation
+                                 c_u_max, # maximum solution field standard deviation
+                                 device, # Device to perform computations on
+                                 dtype, # Data type for computations
+                                 n_RBF) # Number of basis functions per dimension for GRF interpolation
+        self.theta = ManufacturedSolution(N_samples, # Number of samples
+                            d, # Number of spatial dimensions
+                            l_min, # Minimum GRF length scale per dimension
+                            l_max, # Maximum GRF length scale per dimension
+                            b_theta_min, # minimum coefficient field mean
+                            b_theta_max, # maximum coefficient field mean
+                            c_theta_min, # minimum coefficient field standard deviation
+                            c_theta_max, # maximum coefficient field standard deviation
+                            device, # Device to perform computations on
+                            dtype, # Data type for computations
+                            n_RBF) # Number of basis functions per dimension for data generation
+        self.f = Forcing(self.theta, self.u)
+        n_y0 = torch.tensor([0,-1], dtype=dtype, device=device) #Normal vector at y0 boundary
+        n_yL = torch.tensor([0,1], dtype=dtype, device=device) #Normal vector at yL boundary
+        self.eta_y0, self.eta_yL = NeumannBC(n_y0, self.theta, self.u), NeumannBC(n_yL, self.theta, self.u)
+        self.g_x0, self.g_xL = DirichletBC(self.theta, self.u), DirichletBC(self.theta, self.u)
+        self.u0 = IC(self.u)
