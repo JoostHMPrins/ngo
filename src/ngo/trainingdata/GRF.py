@@ -115,7 +115,7 @@ class GRF:
         """
         K_i = self.compute_covariances()
         # Add jitter
-        K_i = tuple(K + 1e-8*torch.eye(K.shape[0], device=self.device, dtype=self.dtype) for K in K_i)
+        K_i = tuple(K + 1e-6*torch.eye(K.shape[0], device=self.device, dtype=self.dtype) for K in K_i)
         # Cholesky factorization
         L_i = tuple(torch.linalg.cholesky(K) for K in K_i)
         # Sample standard normal variables
@@ -201,26 +201,41 @@ class ManufacturedSolution:
     def forward(self, X):
         """"
         Evaluate manufactured solution at points X.
+        
         Args:
             X (tuple): Input coordinates for each dimension, each element a 1D tensor
-                of shape (N_points,).
+                of shape (Q_i,).
+
+        Returns:
+            torch.Tensor: Evaluated manufactured solution at points X, shape
+                (B, Q_0, Q_1, ..., Q_{d-1}).
         """
         return self.basis.forward(self.u_m, X)
     
     def grad(self, X):
         """"
         Evaluate gradient of manufactured solution at points X.
+        
         Args:
             X (tuple): Input coordinates for each dimension, each element a 1D tensor
-                of shape (N_points,).
+                of shape (Q_i,).
+        
+        Returns:
+            torch.Tensor: Evaluated gradient of manufactured solution at points X, shape
+                (B, Q_0, Q_1, ..., Q_{d-1}, d).
         """
         return self.basis.grad(self.u_m, X)
     
     def laplacian(self, X):
         """"
         Evaluate laplacian of manufactured solution at points X.
+        
         Args:
             X (tuple): Input coordinates for each dimension, each element a 1D tensor
-                of shape (N_points,).
+                of shape (Q_i,).
+        
+        Returns:
+            torch.Tensor: Evaluated d laplacian terms of manufactured solution at points X, shape
+                (B, Q_0, Q_1, ..., Q_{d-1}, d).
         """
         return self.basis.laplacian(self.u_m, X)
