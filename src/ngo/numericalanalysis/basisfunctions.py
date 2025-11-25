@@ -40,7 +40,6 @@ class GaussianRBFBasis:
             torch.tensor: B matrices of basis values, shape (B,N,Q).     
         """
         basis_values = torch.exp(-0.5*((x[None,None,:] - self.mus[None,:,None]) / self.lambdas[:,None,None])**2)
-
         return basis_values
     
     def grad(self, x):
@@ -88,6 +87,8 @@ class BSplineBasis:
         self.dtype = dtype
         self.device = device
         self.N = N
+        self.L = 1.0  # Scaling to parent domain [0,L]
+        self.Dx = 0 # Translation to parent domain if needed
         self.p = p
         self.C = C
         self.knot_vector = torch.zeros(self.p+1, dtype=self.dtype, device=self.device)
@@ -164,6 +165,9 @@ class BSplineBasis:
         Returns:
             (B, N, Q) tensor with I_{i,p}(x).
         """
+        # Scale x to parent domain
+        x = (x - self.Dx) / self.L
+        # Compute basis functions
         output = self._basis_dp(x)
         # Add batch dimension
         output = output[None,:,:]
@@ -179,6 +183,9 @@ class BSplineBasis:
         Returns:
             (B, N, Q) tensor with d/dx I_{i,p}(x).
         """
+        # Scale x to parent domain
+        x = (x - self.Dx) / self.L
+        # Compute basis function derivatives
         I_p, I_pm1 = self._basis_dp(x, return_prev=True)
         N, p = self.N, self.p
         if p == 0:
@@ -195,6 +202,8 @@ class BSplineBasis:
         output = term1 - term2
         # Add batch dimension
         output = output[None,:,:]
+        # Scale derivative back to original domain
+        output = output / self.L
         return output
     
 
@@ -582,34 +591,6 @@ class TensorProductBasis:
             # Contract along i-th dimension
             u_q = opt_einsum.contract('B...n,Bnq->B...q', u_q, Phi_i)
         return u_q
-    
-    def integrate(self, u_m, W_q, X_q):
-        """
-        Integrate the tensor-product expansion over the domain using
-        provided quadrature weights and points.
-
-        Args:
-            u_m (torch.tensor): Modal coefficients with shape (B, prod(N)) or
-                              (B, N_1, N_2, ..., N_d). B is batch size.
-            W_q (tuple/list): Sequence of quadrature weight arrays for each dimension.
-                              W_q[i] has shape (Q_i,).
-            X_q (tuple/list): Sequence of quadrature point arrays for each dimension.
-                              X_q[i] has shape (Q_i,).
-
-        Returns:
-            torch.tensor: Integrated values over the domain, shape (B,).
-        """
-        integral = u_m
-        # Sequentially contract with basis evaluations and quadrature weights
-        for i in range(self.d):
-            Phi_i = self.bases[i].forward(X_q[i])  # (B, N_i, Q_i)
-            W_i = W_q[i]  # (Q_i,)
-            integral_i = opt_einsum.contract('q,Bnq->Bn', W_i, Phi_i)  # (B, N_i)
-            # Combine basis evaluation and weights
-            integral = opt_einsum.contract('Bn...,Bn->B...', integral, integral_i)
-            # integral = integral.moveaxis(1, -1)  # move basis axis to the end for next einsum
-        # After all contractions, integral has shape (B,)
-        return integral
 
     def grad(self, u_m, X):
         """
@@ -692,3 +673,31 @@ class TensorProductBasis:
         #Reshape such that the last axis indexes the coordinate to which derivative has been taken
         lapu_q = torch.stack(lapu_q, axis=-1)
         return lapu_q
+
+    def integrate(self, u_m, W_q, X_q):
+        """
+        Integrate the tensor-product expansion over the domain using
+        provided quadrature weights and points.
+
+        Args:
+            u_m (torch.tensor): Modal coefficients with shape (B, prod(N)) or
+                              (B, N_1, N_2, ..., N_d). B is batch size.
+            W_q (tuple/list): Sequence of quadrature weight arrays for each dimension.
+                              W_q[i] has shape (Q_i,).
+            X_q (tuple/list): Sequence of quadrature point arrays for each dimension.
+                              X_q[i] has shape (Q_i,).
+
+        Returns:
+            torch.tensor: Integrated values over the domain, shape (B,).
+        """
+        integral = u_m
+        # Sequentially contract with basis evaluations and quadrature weights
+        for i in range(self.d):
+            Phi_i = self.bases[i].forward(X_q[i])  # (B, N_i, Q_i)
+            W_i = W_q[i]  # (Q_i,)
+            integral_i = opt_einsum.contract('q,Bnq->Bn', W_i, Phi_i)  # (B, N_i)
+            # Combine basis evaluation and weights
+            integral = opt_einsum.contract('Bn...,Bn->B...', integral, integral_i)
+            # integral = integral.moveaxis(1, -1)  # move basis axis to the end for next einsum
+        # After all contractions, integral has shape (B,)
+        return integral
