@@ -172,7 +172,7 @@ class BSplineBasis:
         # Add batch dimension
         output = output[None,:,:]
         return output
-
+    
     def grad(self, x: torch.Tensor) -> torch.Tensor:
         """
         Evaluate derivatives d/dx I_{i,p}(x) for all i in parallel.
@@ -185,27 +185,28 @@ class BSplineBasis:
         """
         # Scale x to parent domain
         x = (x - self.Dx) / self.L
+        
         # Compute basis function derivatives
         I_p, I_pm1 = self._basis_dp(x, return_prev=True)
         N, p = self.N, self.p
         if p == 0:
             return torch.zeros_like(I_p)
 
-        t = self.knot_vector
-        den1 = (t[p:p+N] - t[:N]).unsqueeze(1)          # (N,1)
-        den2 = (t[p+1:p+1+N] - t[1:N+1]).unsqueeze(1)   # (N,1)
+        # No need to fix I_pm1 endpoint here - it's already handled in _basis_dp
+        # The issue is that _basis_dp is called recursively and handles endpoints correctly
+        
+        den1 = (self.knot_vector[p:p+N] - self.knot_vector[:N]).unsqueeze(1)
+        den2 = (self.knot_vector[p+1:p+1+N] - self.knot_vector[1:N+1]).unsqueeze(1)
 
         term1 = torch.where(den1 > 0, (p / den1) * I_pm1, torch.zeros_like(I_pm1))
         I_pm1_ip1 = torch.cat([I_pm1[1:], torch.zeros_like(I_pm1[:1])], dim=0)
         term2 = torch.where(den2 > 0, (p / den2) * I_pm1_ip1, torch.zeros_like(I_pm1))
 
         output = term1 - term2
-        # Add batch dimension
         output = output[None,:,:]
         # Scale derivative back to original domain
         output = output / self.L
         return output
-    
 
 class SincBasis:
     """
@@ -475,101 +476,26 @@ class TensorProductBasis:
         for i in range(self.d):
             Phi += (self.bases[i].forward(X[i]),)
         return Phi
-    
-    def dPhi(self, X):
-        """
-        Evaluate the derivatives of the 1D basis functions at provided points.
 
-        Args:
-            X (tuple/list): Sequence of point arrays for each dimension.
-                            X[i] has shape (Q_i,).
-        Returns:
-            tuple: Sequence of basis derivative matrices for each dimension.
-                   Each element has shape (N_i, Q_i).
-        """
-        # Construct basis derivatives
-        dPhi = ()
-        # For each dimension, compute basis derivative matrix
-        for i in range(self.d):
-            dPhi += (self.bases[i].grad(X[i]),)
-        return dPhi
-    
-    def ddPhi(self, X):
-        """
-        Evaluate the second derivatives of the 1D basis functions at provided points.
+    # def integrals(self, W, X):
+    #     """
 
-        Args:
-            X (tuple/list): Sequence of point arrays for each dimension.
-                            X[i] has shape (Q_i,).
-        Returns:
-            tuple: Sequence of basis second derivative matrices for each dimension.
-                   Each element has shape (N_i, Q_i).
-        """
-        # Construct basis second derivatives
-        ddPhi = ()
-        # For each dimension, compute basis second derivative matrix
-        for i in range(self.d):
-            ddPhi += (self.bases[i].laplacian(X[i]),)
-        return ddPhi
+    #     """
+    #     IPhi = ()
+    #     for i in range(self.d):
+    #         # Weight basis evaluations by quadrature weights
+    #         Phi_i = self.bases[i].forward(X[i])
+    #         IPhi_i = opt_einsum.contract('q,Bnq->Bn', W[i], Phi_i)
+    #         IPhi += (IPhi_i,)
+    #         print(IPhi_i.shape)
+    #     return IPhi
 
-    def gradPhi_i(self, X, i):
-        """
-        Evaluate the derivatives of the 1D basis functions in dimension i at provided points.
-
-        Args:
-            X (tuple/list): Sequence of point arrays for each dimension.
-                            X[i] has shape (Q_i,).
-            i (int): Dimension index for which to compute the basis derivatives.
-        
-        Returns:
-            tuple: Sequence of basis evaluation matrices for each dimension,
-                   with the i-th element replaced by its derivative.
-                   Each element has shape (N_i, Q_i).
-        """
-        # Compute basis evaluation matrices
-        Phi = self.Phi(X)
-        # Compute basis derivative matrix in dimension i
-        dPhi_i = self.bases[i].grad(X[i])
-        # Define gradPhi_i tuple as list to allow modification
-        gradPhi_i = list(Phi)
-        # Replace basis evaluation in dimension i with its derivative
-        gradPhi_i[i] = dPhi_i
-        # Convert back to tuple
-        gradPhi_i = tuple(gradPhi_i)
-        return gradPhi_i
-    
-    def laplacianPhi_i(self, X, i):
-        """
-        Evaluate the second derivatives of the 1D basis functions in dimension i at provided points.
-
-        Args:
-            X (tuple/list): Sequence of point arrays for each dimension.
-                            X[i] has shape (Q_i,).
-            i (int): Dimension index for which to compute the basis second derivatives.
-
-        Returns:
-            tuple: Sequence of basis evaluation matrices for each dimension,
-                   with the i-th element replaced by its second derivative.
-                   Each element has shape (N_i, Q_i).
-        """
-        # Compute basis evaluation matrices
-        Phi = self.Phi(X)
-        # Compute basis second derivative matrix in dimension i
-        laplacianPhi_i = self.bases[i].laplacian(X[i])
-        # Define laplacianPhi_i tuple as list to allow modification
-        laplacianPhi_i = list(Phi)
-        # Replace basis evaluation in dimension i with its second derivative
-        laplacianPhi_i[i] = laplacianPhi_i
-        # Convert back to tuple
-        laplacianPhi_i = tuple(laplacianPhi_i)
-        return laplacianPhi_i
-
-    def forward(self, u_m, X):
+    def forward(self, U_m, X):
         """
         Evaluate the tensor-product expansion at provided points.
 
         Args:
-            u_m (torch.tensor): Modal coefficients with shape (B, prod(N)) or
+            U_m (torch.tensor): Modal coefficients with shape (B, prod(N)) or
                               (B, N_1, N_2, ..., N_d). B is batch size.
             X (tuple/list): Sequence of point arrays for each dimension.
                             X[i] has shape (Q_i,).
@@ -579,9 +505,7 @@ class TensorProductBasis:
                         shape (B, Q_i_0, ..., Q_i_{d-1}).
         """
         # reshape coefficients into (B, N_0, N_1, ..., N_{d-1})
-        u_q = u_m.reshape(u_m.shape[0],*self.N)
-        # # Compute basis evaluation matrices
-        # Phi = self.Phi(X)
+        u_q = U_m.reshape(U_m.shape[0],*self.N)
         # sequentially contract coefficient tensor with each 1D basis evaluation
         for i in range(self.d):
             # move basis axis to the end for einsum
@@ -592,14 +516,14 @@ class TensorProductBasis:
             u_q = opt_einsum.contract('B...n,Bnq->B...q', u_q, Phi_i)
         return u_q
 
-    def grad(self, u_m, X):
+    def grad(self, U_m, X):
         """
         Compute partial derivatives of the tensor-product expansion.
         For each spatial dimension i the method replaces the 1D basis eval in
         that dimension with its derivative and contracts as in `forward`.
 
         Args:
-            u_m (torch.tensor): Modal coefficients, shape (B, prod(n)) or (B, N_0, ..., N_{d-1}).
+            U_m (torch.tensor): Modal coefficients, shape (B, prod(n)) or (B, N_0, ..., N_{d-1}).
             X (tuple/list): Sequence of point arrays for each dimension.
                             x[i] has shape (Q_i,).
         Returns:
@@ -607,14 +531,11 @@ class TensorProductBasis:
                         (B, Q_i_0, ..., Q_i_{d-1}, d). The last axis indexes
                         partial derivatives w.r.t. each coordinate.
         """
-        # #Compute function evaluation and gradient matrices
-        # Phi = self.Phi(X)
-        # dPhi = self.dPhi(X)
         # Compute derivative for each dimension by contracting with dPhi in that dim.
         gradu_q = ()
         for i in range(self.d):
             # start from coefficients reshaped to (B, N_0, ..., N_{d-1})
-            u_q = u_m.reshape(u_m.shape[0],*self.N)
+            u_q = U_m.reshape(U_m.shape[0],*self.N)
             for j in range(self.d):
                 u_q = u_q.moveaxis(1, -1)  # move basis axis to the end for einsum
                 if j==i:
@@ -633,14 +554,14 @@ class TensorProductBasis:
         gradu_q = torch.stack(gradu_q, axis=-1)
         return gradu_q
     
-    def laplacian(self, u_m, X):
+    def laplacian(self, U_m, X):
         """
         Compute Laplacian of the tensor-product expansion.
         For each spatial dimension i the method replaces the 1D basis eval in
         that dimension with its second derivative and contracts as in `forward`.
 
         Args:
-            u_m (torch.tensor): Modal coefficients, shape (B, prod(N)) or (B, N_0, ..., N_{d-1}).
+            U_m (torch.tensor): Modal coefficients, shape (B, prod(N)) or (B, N_0, ..., N_{d-1}).
             X (tuple/list): Sequence of point arrays for each dimension.
                             x[i] has shape (Q_i,).
         Returns:
@@ -648,39 +569,36 @@ class TensorProductBasis:
                         (B, Q_i_0, ..., Q_i_{d-1}, d). The last axis indexes
                         second derivatives w.r.t. each coordinate.
         """
-        #Compute function evaluation and second derivative matrices
-        Phi = self.Phi(X)
-        ddPhi = self.ddPhi(X)
         # Compute derivative for each dimension by contracting with ddPhi in that dim.
         lapu_q = ()
         for i in range(self.d):
             # start from coefficients reshaped to (B, N_0, ..., N_{d-1})
-            u_q = u_m.reshape(u_m.shape[0],*self.N)
+            U_q = U_m.reshape(U_m.shape[0],*self.N)
             for j in range(self.d):
-                u_q = u_q.moveaxis(1, -1)  # move basis axis to the end for einsum
+                U_q = U_q.moveaxis(1, -1)  # move basis axis to the end for einsum
                 if j==i:
                     # use second derivative matrix in the i-th dimension
                     ddPhi_j = self.bases[j].laplacian(X[j])
                     # contract along j-th dimension
-                    u_q = opt_einsum.contract('B...n,Bnq->B...q', u_q, ddPhi_j)
+                    U_q = opt_einsum.contract('B...n,Bnq->B...q', U_q, ddPhi_j)
                 else:
                     # use value matrix in other dimensions
                     Phi_j = self.bases[j].forward(X[j])
                     # contract along j-th dimension
-                    u_q = opt_einsum.contract('B...n,Bnq->B...q', u_q, Phi_j)
+                    U_q = opt_einsum.contract('B...n,Bnq->B...q', U_q, Phi_j)
             # append gradient in direction i to gradu_q tuple
-            lapu_q += (u_q,)
+            lapu_q += (U_q,)
         #Reshape such that the last axis indexes the coordinate to which derivative has been taken
         lapu_q = torch.stack(lapu_q, axis=-1)
         return lapu_q
 
-    def integrate(self, u_m, W_q, X_q):
+    def integrate(self, U_m, W_q, X_q):
         """
         Integrate the tensor-product expansion over the domain using
         provided quadrature weights and points.
 
         Args:
-            u_m (torch.tensor): Modal coefficients with shape (B, prod(N)) or
+            U_m (torch.tensor): Modal coefficients with shape (B, prod(N)) or
                               (B, N_1, N_2, ..., N_d). B is batch size.
             W_q (tuple/list): Sequence of quadrature weight arrays for each dimension.
                               W_q[i] has shape (Q_i,).
@@ -690,7 +608,7 @@ class TensorProductBasis:
         Returns:
             torch.tensor: Integrated values over the domain, shape (B,).
         """
-        integral = u_m
+        integral = U_m
         # Sequentially contract with basis evaluations and quadrature weights
         for i in range(self.d):
             Phi_i = self.bases[i].forward(X_q[i])  # (B, N_i, Q_i)
@@ -701,3 +619,32 @@ class TensorProductBasis:
             # integral = integral.moveaxis(1, -1)  # move basis axis to the end for next einsum
         # After all contractions, integral has shape (B,)
         return integral
+    
+    def integrals(self, W_q, X_q):
+        """
+        Integrate the tensor-product expansion over the domain using
+        provided quadrature weights and points.
+
+        Args:
+            U_m (torch.tensor): Modal coefficients with shape (B, prod(N)) or
+                              (B, N_1, N_2, ..., N_d). B is batch size.
+            W_q (tuple/list): Sequence of quadrature weight arrays for each dimension.
+                              W_q[i] has shape (Q_i,).
+            X_q (tuple/list): Sequence of quadrature point arrays for each dimension.
+                              X_q[i] has shape (Q_i,).
+
+        Returns:
+            torch.tensor: Integrated values over the domain, shape (B,N_0,...,N_{d-1}).
+        """
+        Phi_0 = self.bases[0].forward(X_q[0])
+        integrals = opt_einsum.contract('q,Bnq->Bn', W_q[0], Phi_0)  # (B, N_0)
+        # Sequentially contract with basis evaluations and quadrature weights
+        for i in range(1,self.d):
+            Phi_i = self.bases[i].forward(X_q[i])  # (B, N_i, Q_i)
+            W_i = W_q[i]  # (Q_i,)
+            integral_i = opt_einsum.contract('q,Bnq->Bn', W_i, Phi_i)  # (B, N_i)
+            # Combine basis evaluation and weights
+            integrals = opt_einsum.contract('Bn...,Bm->Bnm...', integrals, integral_i)
+            # integrals = integrals.moveaxis(1, -1)  # move basis axis to the end for next einsum
+        # After all contractions, integral has shape (B,)
+        return integrals
