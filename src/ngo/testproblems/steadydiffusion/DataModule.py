@@ -72,7 +72,7 @@ class DataModule(pl.LightningDataModule):
         g_xL = manufacturedsolutions.g_xL
         u = manufacturedsolutions.u
         #Discretize input functions
-        self.theta_q, self.theta_x0_q, self.theta_xL_q, self.f_q, self.eta_y0_q, self.eta_yL_q, self.g_x0_q, self.g_xL_q = dummymodel.discretize_input_functions(theta, f, eta_y0, eta_yL, g_x0, g_xL)
+        self.theta_q, self.f_q, self.eta_y0_q, self.eta_yL_q, self.g_x0_q, self.g_xL_q = dummymodel.discretize_input_functions(theta, f, eta_y0, eta_yL, g_x0, g_xL)
         self.u_q = dummymodel.discretize_output_function(u)
         print('Assembling system...')
         if dummymodel.hparams['modeltype']=='model NGO' or dummymodel.hparams['modeltype']=='data NGO':

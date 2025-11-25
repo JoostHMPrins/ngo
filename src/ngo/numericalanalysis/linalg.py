@@ -232,7 +232,7 @@ def assemble_T(theta, psi, phi, W_q, X_q, derivative_orders):
     or its derivatives.
 
     Args:
-        theta: TensorProductBasis
+        theta: ManufacturedSolution
         psi: TensorProductBasis
         phi: TensorProductBasis
         W_q: d tuple of quadrature weights for each dimension, each of shape (Q_i,)
