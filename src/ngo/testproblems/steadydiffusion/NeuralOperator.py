@@ -160,25 +160,6 @@ class NeuralOperator(pl.LightningModule):
                 F += self.hparams['gamma_stabilization']*kron(assemble_T(theta, self.psi, self.phi, self.W_Gamma_xL, self.Xi_Gamma_xL, derivative_orders=((0,0),(0,0),(0,0))))
             theta_flat = theta.u_m.flatten(start_dim=1)
             F = opt_einsum.contract('Nl, Nlmn -> Nmn', theta_flat, F)
-
-#Laplace works
-            # # Volume term - derivative in x direction
-            # F = kron(assemble_B(self.psi, self.phi, self.W_Omega, self.Xi_Omega, derivative_orders=((1,0),(1,0))))
-            # # Volume term - derivative in y direction
-            # F += kron(assemble_B(self.psi, self.phi, self.W_Omega, self.Xi_Omega, derivative_orders=((0,1),(0,1))))
-            # # Boundary term at x0 (coming from Neumann complement)
-            # F += kron(assemble_B(self.psi, self.phi, self.W_Gamma_x0, self.Xi_Gamma_x0, derivative_orders=((0,0),(1,0))))
-            # # Boundary term at xL (coming from Neumann complement)
-            # F -= kron(assemble_B(self.psi, self.phi, self.W_Gamma_xL, self.Xi_Gamma_xL, derivative_orders=((0,0),(1,0))))
-            # # Boundary term at x0 (coming from Dirichlet complement)
-            # F += kron(assemble_B(self.psi, self.phi, self.W_Gamma_x0, self.Xi_Gamma_x0, derivative_orders=((1,0),(0,0))))
-            # # Boundary term at xL (coming from Dirichlet complement)
-            # F -= kron(assemble_B(self.psi, self.phi, self.W_Gamma_xL, self.Xi_Gamma_xL, derivative_orders=((1,0),(0,0))))
-            # if self.hparams.get('gamma_stabilization',0)!=0:
-            #     # Stabilization term at x0
-            #     F += self.hparams['gamma_stabilization']*kron(assemble_B(self.psi, self.phi, self.W_Gamma_x0, self.Xi_Gamma_x0, derivative_orders=((0,0),(0,0))))
-            #     # Stabilization term at xL
-            #     F += self.hparams['gamma_stabilization']*kron(assemble_B(self.psi, self.phi, self.W_Gamma_xL, self.Xi_Gamma_xL, derivative_orders=((0,0),(0,0))))
         return F
     
     def assemble_d(self, f, eta_y0, eta_yL, g_x0, g_xL):
