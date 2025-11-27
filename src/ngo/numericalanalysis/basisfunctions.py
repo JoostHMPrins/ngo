@@ -107,6 +107,11 @@ class BSplineBasis:
             )
         ))
         self.knot_vector = torch.cat((self.knot_vector, torch.ones(self.p+1, dtype=self.dtype, device=self.device)))
+        # Set tolerances based on dtype
+        if self.dtype == torch.float32:
+            self.rtol, self.atol = 1e-5, 1e-7
+        if self.dtype == torch.float64:
+            self.rtol, self.atol = 1e-13, 1e-15
 
     def _basis_dp(self, x: torch.Tensor, return_prev: bool = False):
         """
@@ -131,8 +136,12 @@ class BSplineBasis:
         # Use half-open intervals [t_i, t_{i+1})
         I = (t_i <= x) & (x < t_ip1)  # (N,Q) boolean
         
-        # Special case: include right endpoint for the last interval
-        I[-1] = I[-1] | (x == t_ip1[-1])
+        # # Special case: include right endpoint for the last interval
+        # I[-1] = I[-1] | (x == t_ip1[-1])
+
+        # Special case: include right endpoint using isclose
+        at_right_endpoint = torch.isclose(x, t_ip1[-1], rtol=self.rtol, atol=self.atol)
+        I[-1] = I[-1] | at_right_endpoint
         
         # Convert to float after logical operations
         I = I.to(self.dtype)

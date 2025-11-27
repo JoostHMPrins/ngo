@@ -201,13 +201,12 @@ class NeuralOperator(pl.LightningModule):
         Returns:
             np.ndarray: Projected input function, shape (N_samples, self.xi_OmegaT.shape[0]).
         """
-        coeffs = torch.ones((1,)+self.hparams['N_i'], dtype=self.dtype, device=self.device)
-        # print(self.phi.forward(coeffs, self.Xi_OmegaT))
+        self.M_i = self.assemble_M_i()
         d = assemble_L(self.phi, u, self.W_OmegaT, self.Xi_OmegaT, derivative_orders=(0,0,0))
         u_m_hat = kron_solve(self.M_i, d)  
         return u_m_hat
 
-    def project_on_psi_tT(self, u_q):
+    def project_on_psi_tT(self, u):
         """
         Project the input function onto the test basis at t=T.
 
@@ -217,12 +216,23 @@ class NeuralOperator(pl.LightningModule):
         Returns:
             np.ndarray: Projected input function, shape (N_samples, self.xi_Gamma_tT.shape[0]).
         """
-        basis_test_tT = self.basis_test.forward(self.xi_Gamma_tT)
-        d = opt_einsum.contract('q,qm,Nq->Nm', self.w_Gamma_tT, basis_test_tT, u_q)
-        M = np.kron(np.kron(self.M_t_psipsi_tT, self.M_x_psipsi), self.M_y_psipsi)
-        M_inv = np.linalg.pinv(M)
-        u_m = opt_einsum.contract('mn,Nm->Nn', M_inv, d)
+        self.phi.bases[0].Dx = -self.hparams['Dt'] #Shift basis to time step -1
+        d = assemble_L(self.phi, u, self.W_Gamma_tT, self.Xi_Gamma_tT, derivative_orders=(0,0,0)).flatten(start_dim=1)
+        self.phi.bases[0].Dx = 0.0 #Shift basis back
+        M_rr = kron(self.M_rr_i)
+        M_rr_inv = torch.linalg.pinv(M_rr)
+        u_m = opt_einsum.contract('Nnm,Nm->Nn', M_rr_inv, d)
         return u_m
+    
+    def project_initial_condition(self, u0):
+        self.phi.bases[0].Dx = -self.hparams['Dt'] # Translate basis in time to t=-Dt
+        d = assemble_L(self.phi, u0, self.W_Gamma_t0, self.Xi_Gamma_t0, derivative_orders=(0,0,0)).flatten(start_dim=1)
+        self.phi.bases[0].Dx = 0 # Translate basis in time back to t=0
+        M_rr = kron(self.M_rr_i)
+        M_rr_inv = torch.linalg.pinv(M_rr)
+        u0_m = opt_einsum.contract('Nnm,Nm->Nn', M_rr_inv, d)
+        return u0_m
+
     
     def assemble_F(self, theta):
         if  self.hparams['modeltype']=='data NGO':
@@ -361,9 +371,9 @@ class NeuralOperator(pl.LightningModule):
         Returns:
             None
         """ 
-        self.phi.bases[0].Dx += -self.hparams['Dt'] # Translate basis in time to t=-Dt
+        self.phi.bases[0].Dx = -self.hparams['Dt'] # Translate basis in time to t=-Dt
         M_lr_i = assemble_B(self.psi, self.phi, self.W_Gamma_t0, self.Xi_Gamma_t0, derivative_orders=((0,0,0),(0,0,0)))
-        self.phi.bases[0].Dx += self.hparams['Dt'] # Translate basis in time back to t=0
+        self.phi.bases[0].Dx = 0 # Translate basis in time back to t=0
         return M_lr_i
 
     #Conserved quantity
@@ -642,17 +652,16 @@ class NeuralOperator(pl.LightningModule):
         Returns:
             np.ndarray: Predicted solution coefficients u_m_hat, shape (N_samples, N).
         """
-        # If first timestep, project initial condition onto basis
-        # if self.timestep==0:
-        #     # u0 = self.project_initial_condition(u0)
-        #     # u0_m = u0.u_m
         # # If not first timestep, use previous solution as initial condition
         if self.timestep>0:
+            self.phi.bases[0].Dx += -self.hparams['Dt'] # Translate basis in time to t=-Dt
+            u0.forward = lambda x: self.phi.forward(self.u_m_hat, (x[0]+self.hparams['Dt'], x[1], x[2]))
+            self.phi.bases[0].Dx += self.hparams['Dt'] # Translate basis in time back to t=0
             u0_m = self.u_m_hat
-            u0.u.u_m = self.u_m_hat
         F = self.assemble_F(theta)/self.hparams['Dt']
         d = self.assemble_d(f, eta_y0, eta_yL, g_x0, g_xL, u0)/self.hparams['Dt']
         d_x = self.assemble_d_x(f, eta_y0, eta_yL, g_x0, g_xL)/self.hparams['Dt']
+        u0_m = self.project_input_function(u0)
         C = self.compute_C(f, eta_y0, eta_yL, g_x0, g_xL, u0)/self.hparams['Dt']
         C_m = self.compute_C_m(theta)/self.hparams['Dt']
         theta_bar = theta.basis.integrate(theta.u_m, self.W_OmegaT, self.Xi_OmegaT)/self.hparams['Dt']
@@ -701,13 +710,11 @@ class NeuralOperator(pl.LightningModule):
         Returns:
             np.ndarray: Predicted solution coefficients u_m_hat, shape (N_samples, N).
         """
-        # if self.timestep==0:
-        #     u0 = self.project_initial_condition(u0)
-        #     u0_m = u0.u_m
-        # # If not first timestep, use previous solution as initial condition
+        # If not first timestep, use previous solution as initial condition
         if self.timestep>0:
-            u0_m = self.u_m_hat
-            u0.u_m = self.u_m_hat
+            self.phi.bases[0].Dx += -self.hparams['Dt'] # Translate basis in time to t=-Dt
+            u0.forward = lambda x: self.phi.forward(self.u_m_hat, (x[0]+self.hparams['Dt'], x[1], x[2]))
+            self.phi.bases[0].Dx += self.hparams['Dt'] # Translate basis in time back to t=0
         F = self.assemble_F(theta)
         d = self.assemble_d(f, eta_y0, eta_yL, g_x0, g_xL, u0)
         u_m_hat = self.FEM_forward(F, d)
@@ -885,7 +892,7 @@ class NeuralOperator(pl.LightningModule):
         self.t_1 = self.t_0 + self.hparams['Dt']
         self.xi_t =  self.xi_t_0 + self.t_0
         self.psi.bases[0].Dx = self.t_0
-        # self.phi.bases[0].Dx = self.t_0
+        self.phi.bases[0].Dx = self.t_0
 
         # self.t_0 += self.hparams['Dt']
         # self.t_1 += self.hparams['Dt']

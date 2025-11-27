@@ -90,7 +90,7 @@ class DataModule(pl.LightningDataModule):
             self.C = dummymodel.compute_C(f, eta_y0, eta_yL, g_x0, g_xL, u0)/self.hparams['Dt']
             self.C_m = dummymodel.compute_C_m(theta)/self.hparams['Dt']
             self.theta_bar = theta.basis.integrate(theta.u_m, dummymodel.W_OmegaT, dummymodel.Xi_OmegaT)/self.hparams['Dt']
-            self.u_0_m = dummymodel.project_initial_condition(u0)
+            self.u_0_m = dummymodel.project_on_psi_tT(u0)
         print('Discretizing output function...')
         self.u = dummymodel.discretize_output_function(u)    
         if dummymodel.hparams['output_coefficients']==True:
