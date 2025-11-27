@@ -4,6 +4,9 @@
 import torch
 import opt_einsum
 
+from scipy.interpolate import BSpline
+import numpy as np
+
 # Local
 from ngo.ml.torch_utils import torch_repeat
 
@@ -207,6 +210,7 @@ class BSplineBasis:
         # Scale derivative back to original domain
         output = output / self.L
         return output
+    
 
 class SincBasis:
     """
