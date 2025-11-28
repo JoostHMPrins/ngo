@@ -11,7 +11,7 @@ import torch
 
 #Local
 from ngo.numericalanalysis.linalg import kron_matvec, kron_solve_triangular
-from ngo.numericalanalysis.basisfunctions import GaussianRBFBasis, TensorProductBasis
+from ngo.numericalanalysis.basisfunctions import GaussianRBFBasis, TensorProductBasis, BSplineBasis
 
 
 class GRF:
@@ -239,3 +239,24 @@ class ManufacturedSolution:
                 (B, Q_0, Q_1, ..., Q_{d-1}, d).
         """
         return self.basis.laplacian(self.u_m, X)
+
+
+class UnitFunction:
+    """
+    Dummy ManufacturedSolution-like function returning ones.
+    """
+    def __init__(self, d, device=None, dtype=None):
+        self.device = device
+        self.dtype = dtype
+        bases = ()
+        for i in range(d):
+            bases += (BSplineBasis(N=1, p=0, C=-1, dtype=dtype, device=device),)
+        self.basis = TensorProductBasis(bases)
+        self.u_m = torch.ones((1,)*(d+1), device=device, dtype=dtype) # Dummy coefficient
+        
+    def forward(self, X_q):
+        return self.basis.forward(self.u_m, X_q)
+
+    def grad(self, X_q):
+        return self.basis.grad(self.u_m, X_q)
+
