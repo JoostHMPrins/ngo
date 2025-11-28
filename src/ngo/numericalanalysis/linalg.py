@@ -289,15 +289,26 @@ def kron_vecT(U_m, T_i):
     Returns:
         A: d tuple of resulting Kronecker factors, each of shape (B,m_i,n_i)
     """
-    # Initialize empty A tuple
-    A = ()
+    # B_i = U_m
+    # print(B_i.shape)
+    # print(T_i[0].shape)
     # Sequentially contract each coefficient tensor axis with each Kronecker triple product
+    B_i = U_m
     for i in range(len(T_i)):
-        A_i = opt_einsum.contract('Bl...,Blmn->Bmn', U_m, T_i[i])
-        A += (A_i,)
-        # Move the new contraction axis to position 1
-        U_m = U_m.moveaxis(1, -1)
-    return A
+        B_i = opt_einsum.contract('Bl...,Blmn->B...mn', B_i, T_i[i])
+    # Current shape: (B, m0, n0, m1, n1, ..., m_{d-1}, n_{d-1})
+    d = len(T_i)
+    # Permute to (B, m0, m1, ..., m_{d-1}, n0, n1, ..., n_{d-1})
+    perm = [0] + [1 + 2*k for k in range(d)] + [2 + 2*k for k in range(d)]
+    B_i = B_i.permute(*perm)
+    # Flatten m-block and n-block
+    M = 1
+    N = 1
+    for Ti in T_i:
+        M *= Ti.shape[2]
+        N *= Ti.shape[3]
+    B = B_i.reshape(B_i.shape[0], M, N)
+    return B
 
 
 def kron_single(F_i):
