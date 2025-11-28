@@ -190,7 +190,7 @@ def conserve_energy(model, F, d_x, u_0_m, u_m_hat):
     return u_m_hat
 
 
-def conserve_mass_and_energy(model, d_x, u_0_m, C_m, C, u_m_hat):
+def conserve_mass_and_energy(model, d_x, u0_m, C_m, C, u_m_hat):
     """
     Enforces both mass and energy conservation constraints on model predictions using a quadratic programming approach.
     
@@ -222,7 +222,7 @@ def conserve_mass_and_energy(model, d_x, u_0_m, C_m, C, u_m_hat):
     CTd = opt_einsum.contract('Nn,Nn->N', C_m, d_x)
     uTd = opt_einsum.contract('Nn,Nn->N', u_m_hat, d_x)
     C_hat = opt_einsum.contract('Nn,Nn->N', u_m_hat, C_m)
-    u_im1TMu_im1 = opt_einsum.contract('Nn,mn,Nn->N', u_0_m, M, u_0_m)
+    u_im1TMu_im1 = opt_einsum.contract('Nn,mn,Nn->N', u0_m, M, u0_m)
  # Get dissipation parameter and construct augmented mass matrix Q
     alpha =  model.hparams['alpha']
     Q = 1/2*M + alpha*model.Identity/model.hparams['Dt']
@@ -244,6 +244,7 @@ def conserve_mass_and_energy(model, d_x, u_0_m, C_m, C, u_m_hat):
     a1[a1<0]=torch.inf
     a2[a2<0]=torch.inf
     a_plus = torch.min(a1,a2)
+    a_plus[a_plus==torch.inf]=1.0
     # Apply conservation constraints only to non-dissipative solutions
     a = torch.ones(u_m_hat.shape[0], dtype=model.dtype, device=model.device)
     a[non_dissipative] = a_plus[non_dissipative]
