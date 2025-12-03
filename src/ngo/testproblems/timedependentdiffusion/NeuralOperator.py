@@ -248,6 +248,9 @@ class NeuralOperator(pl.LightningModule):
         Returns:
             torch.Tensor: Assembled operator F.
         """
+        if self.hparams['project_materialparameters']==True:
+            theta.u_m = self.project_input_function(theta)
+            theta.basis = self.psi
         if  self.hparams['modeltype']=='data NGO':
             F = assemble_L(self.psi, theta, self.W_OmegaT, self.Xi_OmegaT, derivative_orders=(0,0,0))
         if  self.hparams['modeltype']=='model NGO' or self.hparams['modeltype']=='FEM' or self.hparams['modeltype']=='projection':
@@ -829,7 +832,7 @@ class NeuralOperator(pl.LightningModule):
         """
         u_m_hat = self.simforwardfunction(theta, f, eta_y0, eta_yL, g_x0, g_xL, u0, u)
         u_q_hat = u_m_hat if self.hparams['modeltype']=='NN' else self.phi.forward(u_m_hat, X)
-        torch.cuda.empty_cache()
+        self.time_step()
         return u_q_hat
 
     def simforward_coefficients(self, theta, f, eta_y0, eta_yL, g_x0, g_xL, u0, u):
