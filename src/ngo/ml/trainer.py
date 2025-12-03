@@ -24,17 +24,24 @@ def train(model, datamodule, hparams, logdir, sublogdir, label):
     Returns:
         None
     """
-    #Initialize logger and checkpointer
+    # Initialize logger and checkpointer
     logger, checkpoint_callback = logger_module.initialize_logger(logdir, sublogdir, label)
-    #Load data
+    # Load data
     data = datamodule(hparams)
-    #Model
+    # Model
     MLmodel = model(hparams)
-    #Training
+
+    # Device
+    if hparams['accelerator']=='gpu':
+        devices = [int(str(hparams['device']).split(':')[1])]
+    if hparams['accelerator']=='cpu':
+        devices = 1
+
+    # Training
     start = time.time() 
     trainer = pl.Trainer(logger=logger, 
                          accelerator=hparams['accelerator'], 
-                         devices=[int(str(hparams['device']).split(':')[1])],
+                         devices=devices,
                          strategy="auto",
                          precision=int(str(hparams['dtype']).split('float')[1]), 
                          max_epochs=hparams['epochs'], 
