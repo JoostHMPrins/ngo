@@ -490,19 +490,6 @@ class TensorProductBasis:
             Phi += (self.bases[i].forward(X[i]),)
         return Phi
 
-    # def integrals(self, W, X):
-    #     """
-
-    #     """
-    #     IPhi = ()
-    #     for i in range(self.d):
-    #         # Weight basis evaluations by quadrature weights
-    #         Phi_i = self.bases[i].forward(X[i])
-    #         IPhi_i = opt_einsum.contract('q,Bnq->Bn', W[i], Phi_i)
-    #         IPhi += (IPhi_i,)
-    #         print(IPhi_i.shape)
-    #     return IPhi
-
     def forward(self, U_m, X):
         """
         Evaluate the tensor-product expansion at provided points.
@@ -566,7 +553,7 @@ class TensorProductBasis:
         #Reshape such that the last axis indexes the coordinate to which derivative has been taken
         gradu_q = torch.stack(gradu_q, axis=-1)
         return gradu_q
-    
+
     def laplacian(self, U_m, X):
         """
         Compute Laplacian of the tensor-product expansion.

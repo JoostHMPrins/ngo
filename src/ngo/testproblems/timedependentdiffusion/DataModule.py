@@ -53,6 +53,7 @@ class DataModule(pl.LightningDataModule):
         self.N_samples = self.hparams['N_samples_train'] + self.hparams['N_samples_val']
         dummymodel = NeuralOperator(self.hparams)
         # Generate input and output functions
+        print('Generating input and output functions...')
         manufacturedsolutions = ManufacturedSolutions(self.N_samples,
                                                     hparams['d'],
                                                     hparams['l_min'],
