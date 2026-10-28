@@ -1,4 +1,4 @@
-# Copyright 2025 Joost Prins
+# Copyright (c) 2023-2025 Eindhoven University of Technology
 
 # 3rd Party
 import numpy as np

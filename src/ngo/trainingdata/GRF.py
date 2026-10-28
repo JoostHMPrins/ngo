@@ -1,4 +1,4 @@
-# Copyright 2025 Joost Prins
+# Copyright (c) 2023-2025 Eindhoven University of Technology
 """Gaussian Random Field (GRF) generator for training data.
 
 This module implements a Gaussian Random Field sampler using Kronecker-product

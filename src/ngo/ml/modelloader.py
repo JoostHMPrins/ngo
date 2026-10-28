@@ -1,4 +1,4 @@
-# Copyright 2025 Joost Prins
+# Copyright (c) 2023-2025 Eindhoven University of Technology
 
 # Local
 import os
