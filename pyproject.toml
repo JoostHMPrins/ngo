@@ -35,8 +35,8 @@ dependencies = [
 
 
 [project.urls]
-Homepage = "https://github.com/JoostHMPrins/ngo-pde-gk"
-Issues = "https://github.com/JoostHMPrins/ngo-pde-gk/issues"
+Homepage = "https://github.com/JoostHMPrins/ngo"
+Issues = "https://github.com/JoostHMPrins/ngo/issues"
 
 
 [build-system]

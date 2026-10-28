@@ -1,0 +1,28 @@
+cff-version: 1.2.0
+message: "If you use this code, please cite the paper below."
+title: "Neural Green's Operators (NGOs)"
+authors:
+  - family-names: Prins
+    given-names: Joost H. M.
+    orcid: "https://orcid.org/0009-0001-7614-8760"
+repository-code: "https://github.com/JoostHMPrins/ngo"
+license: MIT
+preferred-citation:
+  type: article
+  title: "Neural Green's operators for parametric partial differential equations"
+  authors:
+    - family-names: Melchers
+      given-names: H. A.
+      orcid: "https://orcid.org/0009-0003-4921-4253"
+    - family-names: Prins
+      given-names: J. H. M.
+      orcid: "https://orcid.org/0009-0001-7614-8760"
+    - family-names: Abdelmalik
+      given-names: M. R. A.
+      orcid: "https://orcid.org/0000-0001-7373-5110"
+  journal: "Computer Methods in Applied Mechanics and Engineering"
+  volume: 455
+  start: 118893
+  year: 2026
+  month: 6
+  doi: "10.1016/j.cma.2026.118893"
